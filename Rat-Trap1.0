@@ -1,0 +1,1018 @@
+gmw_tool.py – Stand‑alone script providing GMW archive functionality.
+
+
+
+This single Python script includes:
+
+
+
+1. The MBT2 storage implementation for voxel data (with recommended
+
+   defaults for maximal compaction) – this allows writing and reading
+
+   voxel records using Z‑order keys.  The code is derived from
+
+   `mbt_gmw.py` and is included here verbatim for convenience.
+
+
+
+2. Convenience functions `compress_folder_to_gmw` and
+
+   `extract_gmw` for packaging arbitrary directory trees into a
+
+   `.gmw` file and extracting them back.  A `.gmw` file in this
+
+   context is a tar archive compressed with Zstandard (if available)
+
+   or zlib and suffixed with the `.gmw` extension.
+
+
+
+3. A simple interactive command‑line interface that runs when the
+
+   script is executed directly.  The user is prompted to choose
+
+   whether to compress a folder or extract a `.gmw` archive and to
+
+   provide the relevant paths.  This makes the script usable
+
+   out‑of‑the‑box without any additional code.
+
+
+
+Usage:
+
+    python gmw_tool.py
+
+
+
+The script will prompt the user to select an action and enter
+
+input/output paths.  It relies only on the Python standard library and
+
+optionally the `zstandard` module for faster compression and smaller
+
+archives.  If `zstandard` is not installed, zlib will be used.
+
+"""
+
+
+
+import os
+
+import io
+
+import tarfile
+
+import struct
+
+import json
+
+import time
+
+import threading
+
+import zlib
+
+from dataclasses import dataclass
+
+from pathlib import Path
+
+from typing import List, Tuple, Optional, Iterable, Dict
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+
+try:
+
+    import zstandard as zstd  # optional
+
+    HAS_ZSTD = True
+
+except Exception:
+
+    zstd = None
+
+    HAS_ZSTD = False
+
+
+
+try:
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # optional
+
+    HAS_AESGCM = True
+
+except Exception:
+
+    AESGCM = None
+
+    HAS_AESGCM = False
+
+
+
+try:
+
+    import xxhash
+
+    HAS_XX = True
+
+except Exception:
+
+    xxhash = None
+
+    HAS_XX = False
+
+
+
+# -----------------------------------------------------------------------------
+
+# Morton encoding helpers for voxel keys
+
+
+
+_DILATE16 = [0] * 65536
+
+
+
+def _init_dilate():
+
+    for i in range(65536):
+
+        n = i
+
+        n = (n | (n << 16)) & 0x0000FFFF0000FFFF
+
+        n = (n | (n << 8)) & 0x00FF00FF00FF00FF
+
+        n = (n | (n << 4)) & 0x0F0F0F0F0F0F0F0F
+
+        n = (n | (n << 2)) & 0x3333333333333333
+
+        n = (n | (n << 1)) & 0x5555555555555555
+
+        _DILATE16[i] = n
+
+
+
+_init_dilate()
+
+
+
+def morton64(x: int, y: int, z: int) -> int:
+
+    x &= 0x1FFFFF
+
+    y &= 0x1FFFFF
+
+    z &= 0x1FFFFF
+
+    xx = _DILATE16[x & 0xFFFF] | (_DILATE16[(x >> 16) & 0xFFFF] << 32)
+
+    yy = _DILATE16[y & 0xFFFF] | (_DILATE16[(y >> 16) & 0xFFFF] << 32)
+
+    zz = _DILATE16[z & 0xFFFF] | (_DILATE16[(z >> 16) & 0xFFFF] << 32)
+
+    return (xx | (yy << 1) | (zz << 2)) & ((1 << 64) - 1)
+
+
+
+def inv_morton64(k: int) -> Tuple[int, int, int]:
+
+    def compact(n: int) -> int:
+
+        n &= 0x5555555555555555
+
+        n = (n | (n >> 1)) & 0x3333333333333333
+
+        n = (n | (n >> 2)) & 0x0F0F0F0F0F0F0F0F
+
+        n = (n | (n >> 4)) & 0x00FF00FF00FF00FF
+
+        n = (n | (n >> 8)) & 0x0000FFFF0000FFFF
+
+        n = (n | (n >> 16)) & 0x00000000FFFFFFFF
+
+        return n
+
+    x = compact(k) & 0x1FFFFF
+
+    y = compact(k >> 1) & 0x1FFFFF
+
+    z = compact(k >> 2) & 0x1FFFFF
+
+    return x, y, z
+
+
+
+# Varint helpers
+
+
+
+def enc_varint(n: int) -> bytes:
+
+    out = bytearray()
+
+    while True:
+
+        b = n & 0x7F
+
+        n >>= 7
+
+        if n:
+
+            out.append(0x80 | b)
+
+        else:
+
+            out.append(b)
+
+            break
+
+    return bytes(out)
+
+
+
+def dec_varint(buf: bytes, off: int) -> Tuple[int, int]:
+
+    shift = 0
+
+    val = 0
+
+    while True:
+
+        b = buf[off]
+
+        off += 1
+
+        val |= (b & 0x7F) << shift
+
+        if not (b & 0x80):
+
+            break
+
+        shift += 7
+
+    return val, off
+
+
+
+# Bloom filter hash (deterministic)
+
+
+
+def _bloom_hash(key: int, i: int) -> int:
+
+    x = (key + 0x9E3779B97F4A7C15 + i) & 0xFFFFFFFFFFFFFFFF
+
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9 & 0xFFFFFFFFFFFFFFFF
+
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EB & 0xFFFFFFFFFFFFFFFF
+
+    x = x ^ (x >> 31)
+
+    return x & 0xFFFFFFFF
+
+
+
+def _bloom_add(bits: bytearray, key: int, m: int, h: int = 3) -> None:
+
+    for i in range(h):
+
+        hv = _bloom_hash(key, i) % m
+
+        bits[hv // 8] |= 1 << (hv % 8)
+
+
+
+def _bloom_maybe(bits: bytes, key: int, m: int, h: int = 3) -> bool:
+
+    for i in range(h):
+
+        hv = _bloom_hash(key, i) % m
+
+        if not (bits[hv // 8] & (1 << (hv % 8))):
+
+            return False
+
+    return True
+
+
+
+# Format constants
+
+
+
+MAGIC = b"MBT2\0"
+
+VERSION = 2
+
+
+
+FLAG_ZLIB = 1 << 0
+
+FLAG_ZSTD = 1 << 1
+
+FLAG_AESGCM = 1 << 2
+
+FLAG_VARINT = 1 << 3
+
+FLAG_COLUMN = 1 << 4
+
+FLAG_HILBERT = 1 << 5
+
+FLAG_KEY_128 = 1 << 6
+
+
+
+HEADER = struct.Struct("<5sB I H I Q")
+
+ENTRY = struct.Struct("<Q I Q I Q 32s H I")
+
+FOOTER = struct.Struct("<I 32s 32s I")
+
+
+
+@dataclass
+
+class WriterCfg:
+
+    """Recommended configuration for writing MBT2 archives."""
+
+    target_bucket_kb: int = 128
+
+    use_zstd: bool = True
+
+    zstd_level: int = 3
+
+    threads: int = max(1, os.cpu_count() or 1)
+
+    aesgcm_key: Optional[bytes] = None
+
+    sha256_each: bool = False
+
+    bloom_bits: int = 2048
+
+    column_layout: bool = True
+
+
+
+def _compress(raw: bytes, zstd_on: bool, lvl: int = 3) -> bytes:
+
+    if zstd_on and HAS_ZSTD:
+
+        return zstd.ZstdCompressor(level=lvl).compress(raw)
+
+    return zlib.compress(raw, 6)
+
+
+
+def _decompress(comp: bytes) -> bytes:
+
+    if HAS_ZSTD and len(comp) >= 4 and comp[:4] == b"\x28\xB5\x2F\xFD":
+
+        return zstd.ZstdDecompressor().decompress(comp)
+
+    return zlib.decompress(comp)
+
+
+
+def _maybe_encrypt(aes_key: Optional[bytes], data: bytes, aad: bytes) -> bytes:
+
+    if not aes_key or not HAS_AESGCM:
+
+        return data
+
+    nonce = os.urandom(12)
+
+    return nonce + AESGCM(aes_key).encrypt(nonce, data, aad)
+
+
+
+def _maybe_decrypt(aes_key: Optional[bytes], data: bytes, aad: bytes) -> bytes:
+
+    if not aes_key or not HAS_AESGCM:
+
+        return data
+
+    nonce, ct = data[:12], data[12:]
+
+    return AESGCM(aes_key).decrypt(nonce, ct, aad)
+
+
+
+def _xx64(b: bytes) -> int:
+
+    if HAS_XX:
+
+        return xxhash.xxh64(b).intdigest()
+
+    return int.from_bytes(hashlib.blake2b(b, digest_size=8).digest(), "little")
+
+
+
+def _autotune_bucket_kb(n: int, approx_rec_bytes: int = 20) -> int:
+
+    recs = max(4096, min(12288, n // 80))
+
+    kb = max(64, min(256, (recs * approx_rec_bytes) // 1024))
+
+    return int(kb)
+
+
+
+def _pack_bucket(keys: List[int], masses: List[float], ents: List[float], taus: List[float], column: bool = True) -> bytes:
+
+    n = len(keys)
+
+    if n == 0:
+
+        return b""
+
+    out = bytearray()
+
+    out += struct.pack("<Q", keys[0])
+
+    prev = keys[0]
+
+    for i in range(1, n):
+
+        d = keys[i] - prev
+
+        out += enc_varint(d)
+
+        prev = keys[i]
+
+    if column:
+
+        out += struct.pack(f"<{n}f", *masses)
+
+        out += struct.pack(f"<{n}f", *ents)
+
+        out += struct.pack(f"<{n}f", *taus)
+
+    else:
+
+        for i in range(n):
+
+            out += struct.pack("<fff", masses[i], ents[i], taus[i])
+
+    return bytes(out)
+
+
+
+def _build_buckets(sorted_recs: List[Tuple[int, float, float, float]], target_kb: int) -> List[Tuple[List[int], List[float], List[float], List[float]]]:
+
+    target = target_kb * 1024
+
+    out = []
+
+    ks: List[int] = []
+
+    ms: List[float] = []
+
+    es: List[float] = []
+
+    ts: List[float] = []
+
+    size = 0
+
+    for k, m, e, t in sorted_recs:
+
+        add = (3 if ks else 8) + 12
+
+        if size + add > target and ks:
+
+            out.append((ks, ms, es, ts))
+
+            ks, ms, es, ts = [], [], [], []
+
+            size = 0
+
+        ks.append(k)
+
+        ms.append(m)
+
+        es.append(e)
+
+        ts.append(t)
+
+        size += add
+
+    if ks:
+
+        out.append((ks, ms, es, ts))
+
+    return out
+
+
+
+def write_mbt2(path: Path, records: List[Tuple[int, float, float, float]], cfg: WriterCfg = WriterCfg()) -> Dict:
+
+    path = Path(path)
+
+    t_sort0 = time.perf_counter()
+
+    records.sort(key=lambda r: r[0])
+
+    t_sort = time.perf_counter() - t_sort0
+
+    if cfg.target_bucket_kb <= 0:
+
+        cfg.target_bucket_kb = _autotune_bucket_kb(len(records))
+
+    buckets = _build_buckets(records, cfg.target_bucket_kb)
+
+    nb = len(buckets)
+
+    flags = 0
+
+    flags |= FLAG_ZSTD if (cfg.use_zstd and HAS_ZSTD) else FLAG_ZLIB
+
+    flags |= FLAG_VARINT
+
+    if cfg.column_layout:
+
+        flags |= FLAG_COLUMN
+
+    if cfg.aesgcm_key and HAS_AESGCM:
+
+        flags |= FLAG_AESGCM
+
+    with open(path, "w+b") as f:
+
+        f.write(HEADER.pack(MAGIC, VERSION, flags, cfg.target_bucket_kb, nb, 0))
+
+        header_end = f.tell()
+
+        bloom_bytes = cfg.bloom_bits // 8
+
+        entry_size = ENTRY.size + bloom_bytes
+
+        table_ofs = header_end
+
+        f.seek(table_ofs + nb * entry_size)
+
+        metas = []
+
+        lock = threading.Lock()
+
+        def write_bucket(i: int, b) -> None:
+
+            ks, ms, es, ts = b
+
+            raw = _pack_bucket(ks, ms, es, ts, column=bool(flags & FLAG_COLUMN))
+
+            comp = _compress(raw, zstd_on=bool(flags & FLAG_ZSTD), lvl=cfg.zstd_level)
+
+            comp = _maybe_encrypt(cfg.aesgcm_key if (flags & FLAG_AESGCM) else None, comp, aad=struct.pack("<I", i))
+
+            xx = _xx64(comp)
+
+            sh = hashlib.sha256(comp).digest() if cfg.sha256_each else b"\x00" * 32
+
+            bloom = bytearray(bloom_bytes)
+
+            for kk in ks:
+
+                _bloom_add(bloom, kk, cfg.bloom_bits)
+
+            with lock:
+
+                pos = f.tell()
+
+                f.write(comp)
+
+                metas.append((ks[0], len(ks), pos, len(comp), xx, sh, bytes(bloom)))
+
+        t_comp0 = time.perf_counter()
+
+        with ThreadPoolExecutor(max_workers=cfg.threads) as ex:
+
+            futs = [ex.submit(write_bucket, i, b) for i, b in enumerate(buckets)]
+
+            for fu in as_completed(futs):
+
+                fu.result()
+
+        t_comp = time.perf_counter() - t_comp0
+
+        metas.sort(key=lambda m: m[0])
+
+        data_end = f.tell()
+
+        f.seek(table_ofs)
+
+        for (start, count, off, length, xx, sh, bloom) in metas:
+
+            f.write(ENTRY.pack(start, count, off, length, xx, sh, len(bloom), 0))
+
+            f.write(bloom)
+
+        f.seek(table_ofs)
+
+        table_blob = f.read(nb * entry_size)
+
+        table_hash = hashlib.sha256(table_blob).digest()
+
+        leaves = [sh if cfg.sha256_each else xx.to_bytes(8, "little") for (_, _, _, _, xx, sh, _) in metas]
+
+        if leaves:
+
+            cur = [hashlib.sha256(x).digest() if len(x) != 32 else x for x in leaves]
+
+            while len(cur) > 1:
+
+                nxt = []
+
+                for i in range(0, len(cur), 2):
+
+                    a = cur[i]
+
+                    b = cur[i + 1] if i + 1 < len(cur) else a
+
+                    nxt.append(hashlib.sha256(a + b).digest())
+
+                cur = nxt
+
+            merkle = cur[0]
+
+        else:
+
+            merkle = b"\x00" * 32
+
+        f.seek(data_end)
+
+        feature_crc = zlib.crc32(struct.pack("<IHH", VERSION, cfg.target_bucket_kb, flags)) & 0xFFFFFFFF
+
+        f.write(FOOTER.pack(nb * entry_size, table_hash, merkle, feature_crc))
+
+        end_pos = f.tell()
+
+        f.seek(0)
+
+        f.write(HEADER.pack(MAGIC, VERSION, flags, cfg.target_bucket_kb, nb, table_ofs))
+
+        f.seek(end_pos)
+
+        manifest = {
+
+            "nbuckets": nb,
+
+            "schema": 0,
+
+            "flags": flags,
+
+            "target_bucket_kb": cfg.target_bucket_kb,
+
+            "compressor": "zstd" if (flags & FLAG_ZSTD) else "zlib",
+
+            "aesgcm": bool(flags & FLAG_AESGCM),
+
+            "column": bool(flags & FLAG_COLUMN),
+
+            "varint": bool(flags & FLAG_VARINT),
+
+            "bloom_bits": cfg.bloom_bits,
+
+        }
+
+        man_bytes = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
+
+        f.write(man_bytes)
+
+        f.write(struct.pack("<I", len(man_bytes)))
+
+    return {
+
+        "file_mb": os.path.getsize(path) / (1024 * 1024),
+
+        "nbuckets": nb,
+
+        "bucket_kb": cfg.target_bucket_kb,
+
+        "flags": flags,
+
+    }
+
+
+
+@dataclass
+
+class Reader:
+
+    path: Path
+
+    flags: int
+
+    bucket_kb: int
+
+    table_pos: int
+
+    nbuckets: int
+
+    entry_size: int
+
+    index: List[Tuple[int, int, int, int]]
+
+    blooms: List[bytes]
+
+    f: io.BufferedReader
+
+
+
+def open_reader(path: Path) -> Reader:
+
+    f = open(path, "rb")
+
+    hdr = f.read(HEADER.size)
+
+    magic, ver, flags, bucket_kb, nb, table_pos = HEADER.unpack(hdr)
+
+    assert magic == MAGIC and ver == VERSION, "Invalid MBT2 file"
+
+    try:
+
+        f.seek(-4, os.SEEK_END)
+
+        mlen = struct.unpack("<I", f.read(4))[0]
+
+        f.seek(-4 - mlen, os.SEEK_END)
+
+        man_bytes = f.read(mlen)
+
+        manifest = json.loads(man_bytes)
+
+        bloom_bits = manifest.get("bloom_bits", 2048)
+
+    except Exception:
+
+        bloom_bits = 2048
+
+    bloom_bytes = bloom_bits // 8
+
+    entry_size = ENTRY.size + bloom_bytes
+
+    f.seek(table_pos)
+
+    index = []
+
+    blooms = []
+
+    for _ in range(nb):
+
+        start, count, off, length, xx, sh, bb, stats_off = ENTRY.unpack(f.read(ENTRY.size))
+
+        bloom = f.read(bb)
+
+        index.append((start, count, off, length))
+
+        blooms.append(bloom)
+
+    return Reader(Path(path), flags, bucket_kb, table_pos, nb, entry_size, index, blooms, f)
+
+
+
+def _bucket_for(index: List[Tuple[int, int, int, int]], key: int) -> int:
+
+    lo, hi = 0, len(index) - 1
+
+    while lo <= hi:
+
+        mid = (lo + hi) // 2
+
+        if index[mid][0] <= key and (mid == len(index) - 1 or index[mid + 1][0] > key):
+
+            return mid
+
+        if index[mid][0] < key:
+
+            lo = mid + 1
+
+        else:
+
+            hi = mid - 1
+
+    return max(0, min(len(index) - 1, lo))
+
+
+
+def lookup(reader: Reader, x: int, y: int, z: int, aes_key: Optional[bytes] = None) -> Optional[Tuple[float, float, float]]:
+
+    key = morton64(x, y, z)
+
+    i = _bucket_for(reader.index, key)
+
+    start, count, off, length = reader.index[i]
+
+    bloom = reader.blooms[i]
+
+    if not _bloom_maybe(bloom, key, 8 * len(bloom)):
+
+        return None
+
+    reader.f.seek(off)
+
+    comp = reader.f.read(length)
+
+    comp = _maybe_decrypt(aes_key if (reader.flags & FLAG_AESGCM) else None, comp, struct.pack("<I", i))
+
+    raw = _decompress(comp)
+
+    p = 0
+
+    first = struct.unpack_from("<Q", raw, p)[0]
+
+    p += 8
+
+    cur = first
+
+    pos = 0
+
+    while pos < count and cur < key:
+
+        d, p = dec_varint(raw, p)
+
+        cur += d
+
+        pos += 1
+
+    if cur != key:
+
+        return None
+
+    for _ in range(pos, count - 1):
+
+        _, p = dec_varint(raw, p)
+
+    fsz = 4 * count
+
+    masses_off = p
+
+    ents_off = p + fsz
+
+    taus_off = p + 2 * fsz
+
+    j = pos
+
+    mass = struct.unpack_from("<f", raw, masses_off + 4 * j)[0]
+
+    ent = struct.unpack_from("<f", raw, ents_off + 4 * j)[0]
+
+    tau = struct.unpack_from("<f", raw, taus_off + 4 * j)[0]
+
+    return mass, ent, tau
+
+
+
+def full_scan(reader: Reader) -> Tuple[int, float]:
+
+    total = 0
+
+    mass_sum = 0.0
+
+    for (start, count, off, length), bloom in zip(reader.index, reader.blooms):
+
+        reader.f.seek(off)
+
+        comp = reader.f.read(length)
+
+        raw = _decompress(comp)
+
+        p = 8
+
+        for _ in range(count - 1):
+
+            _, p = dec_varint(raw, p)
+
+        masses = struct.unpack_from(f"<{count}f", raw, p)
+
+        total += count
+
+        mass_sum += float(sum(masses))
+
+    return total, mass_sum
+
+
+
+# -----------------------------------------------------------------------------
+
+# Generic .gmw archive helpers
+
+
+
+def compress_folder_to_gmw(folder_path: str, output_path: str, use_zstd: bool = True, zstd_level: int = 3) -> None:
+
+    folder = Path(folder_path)
+
+    output = Path(output_path)
+
+    assert folder.is_dir(), f"{folder_path} is not a directory"
+
+    buf = io.BytesIO()
+
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+
+        tf.add(folder, arcname=".")
+
+    tar_data = buf.getvalue()
+
+    if use_zstd and HAS_ZSTD:
+
+        comp = zstd.ZstdCompressor(level=zstd_level).compress(tar_data)
+
+    else:
+
+        comp = zlib.compress(tar_data, 6)
+
+    with open(output, "wb") as out_f:
+
+        out_f.write(comp)
+
+
+
+def extract_gmw(gmw_path: str, output_dir: str) -> None:
+
+    gmw_file = Path(gmw_path)
+
+    out_dir = Path(output_dir)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    comp_data = gmw_file.read_bytes()
+
+    if HAS_ZSTD and len(comp_data) >= 4 and comp_data[:4] == b"\x28\xB5\x2F\xFD":
+
+        tar_data = zstd.ZstdDecompressor().decompress(comp_data)
+
+    else:
+
+        tar_data = zlib.decompress(comp_data)
+
+    with io.BytesIO(tar_data) as buf:
+
+        with tarfile.open(fileobj=buf, mode="r") as tf:
+
+            tf.extractall(path=out_dir)
+
+
+
+# -----------------------------------------------------------------------------
+
+# Simple interactive command‑line interface
+
+
+
+def main() -> None:
+
+    print("GMW Archive Tool")
+
+    print("=================")
+
+    print("1) Compress a folder into a .gmw archive")
+
+    print("2) Extract a .gmw archive into a folder")
+
+    choice = input("Choose an action (1/2): ").strip()
+
+    if choice == "1":
+
+        inp = input("Enter the path of the folder to compress: ").strip().strip('"')
+
+        outp = input("Enter the output .gmw file name: ").strip().strip('"')
+
+        if not outp.endswith(".gmw"):
+
+            outp += ".gmw"
+
+        try:
+
+            compress_folder_to_gmw(inp, outp, use_zstd=True)
+
+            print(f"Folder '{inp}' compressed into '{outp}'.")
+
+        except Exception as e:
+
+            print("Error during compression:", e)
+
+    elif choice == "2":
+
+        inp = input("Enter the path of the .gmw file to extract: ").strip().strip('"')
+
+        outp = input("Enter the output folder: ").strip().strip('"')
+
+        try:
+
+            extract_gmw(inp, outp)
+
+            print(f"Archive '{inp}' extracted into '{outp}'.")
+
+        except Exception as e:
+
+            print("Error during extraction:", e)
+
+    else:
+
+        print("Invalid choice. Exiting.")
+
