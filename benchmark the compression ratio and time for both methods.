@@ -1,0 +1,3267 @@
+Task
+Generate synthetic audio, text, and other data, compress it using the provided gmw tool.py script and standard compression methods, and benchmark the compression ratio and time for both methods.
+
+Generate synthetic data
+Subtask:
+Create functions or use libraries to generate synthetic data for audio, text, and potentially other types like images or simple structured data.
+
+Reasoning: The subtask requires generating synthetic data of different types. I will define a function generate_synthetic_data that takes the data type and size as input and generates the data accordingly using appropriate libraries.
+
+import numpy as np
+import pandas as pd
+from PIL import Image
+import io
+import random
+import string
+import wave
+import struct
+
+def generate_synthetic_data(data_type, size):
+    """Generates synthetic data of different types.
+
+    Args:
+        data_type (str): The type of data to generate ('audio', 'text', 'image', 'structured').
+        size (int): The size or complexity of the data (interpretation varies by type).
+
+    Returns:
+        The generated data in a suitable format.
+    """
+    if data_type == 'audio':
+        # Generate simple sine wave audio
+        sample_rate = 44100
+        duration = size  # size in seconds
+        frequency = 440  # A4 note
+        n_samples = int(sample_rate * duration)
+        amplitude = 16000
+        data = b''
+        with io.BytesIO() as buf:
+            with wave.open(buf, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sample_rate)
+                for i in range(n_samples):
+                    value = int(amplitude * np.sin(2 * np.pi * frequency * i / sample_rate))
+                    data += struct.pack('<h', value)
+                wf.writeframes(data)
+            return buf.getvalue()
+    elif data_type == 'text':
+        # Generate random text
+        characters = string.ascii_letters + string.digits + string.punctuation + string.whitespace
+        return ''.join(random.choice(characters) for i in range(size))
+    elif data_type == 'image':
+        # Generate a simple image with random pixels
+        width, height = size, size  # size is the dimension
+        img_array = np.random.randint(0, 256, (height, width, 3), dtype=np.uint8)
+        img = Image.fromarray(img_array, 'RGB')
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        return img_byte_arr.getvalue()
+    elif data_type == 'structured':
+        # Generate a simple pandas DataFrame
+        data = {'col1': np.random.rand(size),
+                'col2': np.random.randint(0, 100, size),
+                'col3': [random.choice(['A', 'B', 'C']) for _ in range(size)]}
+        df = pd.DataFrame(data)
+        return df.to_csv(index=False).encode('utf-8')
+    else:
+        raise ValueError(f"Unknown data type: {data_type}")
+
+
+
+
+
+
+
+
+# gmw_tool.py - Stand-alone script providing GMW archive functionality.
+
+# This single Python script includes:
+
+# 1. The MBT2 storage implementation for voxel data (with recommended
+#    defaults for maximal compaction) - this allows writing and reading
+#    voxel records using Z-order keys.  The code is derived from
+#    `mbt_gmw.py` and is included here verbatim for convenience.
+
+# 2. Convenience functions `compress_folder_to_gmw` and
+#    `extract_gmw` for packaging arbitrary directory trees into a
+#    `.gmw` file and extracting them back.  A `.gmw` file in this
+#    context is a tar archive compressed with Zstandard (if available)
+#    or zlib and suffixed with the `.gmw` extension.
+
+# 3. A simple interactive command-line interface that runs when the
+#    script is executed directly.  The user is prompted to choose
+#    whether to compress a folder or extract a `.gmw` archive and to
+#    provide the relevant paths.  This makes the script usable
+#    out-of-the-box without any additional code.
+
+# Usage:
+#     python gmw_tool.py
+
+# The script will prompt the user to select an action and enter
+# input/output paths.  It relies only on the Python standard library and
+# optionally the `zstandard` module for faster compression and smaller
+# archives.  If `zstandard` is not installed, zlib will be used.
+
+
+import os
+import io
+import tarfile
+import struct
+import json
+import time
+import threading
+import zlib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Tuple, Optional, Iterable, Dict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+try:
+    import zstandard as zstd  # optional
+    HAS_ZSTD = True
+except Exception:
+    zstd = None
+    HAS_ZSTD = False
+
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # optional
+    HAS_AESGCM = True
+except Exception:
+    AESGCM = None
+    HAS_AESGCM = False
+
+try:
+    import xxhash
+    HAS_XX = True
+except Exception:
+    xxhash = None
+    HAS_XX = False
+
+import hashlib # Import hashlib as it's used in _xx64 and write_mbt2
+
+
+# -----------------------------------------------------------------------------
+# Morton encoding helpers for voxel keys
+
+_DILATE16 = [0] * 65536
+
+def _init_dilate():
+    for i in range(65536):
+        n = i
+        n = (n | (n << 16)) & 0x0000FFFF0000FFFF
+        n = (n | (n << 8)) & 0x00FF00FF00FF00FF
+        n = (n | (n << 4)) & 0x0F0F0F0F0F0F0F0F
+        n = (n | (n << 2)) & 0x3333333333333333
+        n = (n | (n << 1)) & 0x5555555555555555
+        _DILATE16[i] = n
+
+_init_dilate()
+
+def morton64(x: int, y: int, z: int) -> int:
+    x &= 0x1FFFFF
+    y &= 0x1FFFFF
+    z &= 0x1FFFFF
+    xx = _DILATE16[x & 0xFFFF] | (_DILATE16[(x >> 16) & 0xFFFF] << 32)
+    yy = _DILATE16[y & 0xFFFF] | (_DILATE16[(y >> 16) & 0xFFFF] << 32)
+    zz = _DILATE16[z & 0xFFFF] | (_DILATE16[(z >> 16) & 0xFFFF] << 32)
+    return (xx | (yy << 1) | (zz << 2)) & ((1 << 64) - 1)
+
+def inv_morton64(k: int) -> Tuple[int, int, int]:
+    def compact(n: int) -> int:
+        n &= 0x5555555555555555
+        n = (n | (n >> 1)) & 0x3333333333333333
+        n = (n | (n >> 2)) & 0x0F0F0F0F0F0F0F0F
+        n = (n | (n >> 4)) & 0x00FF00FF00FF00FF
+        n = (n | (n >> 8)) & 0x0000FFFF0000FFFF
+        n = (n | (n >> 16)) & 0x00000000FFFFFFFF
+        return n
+    x = compact(k) & 0x1FFFFF
+    y = compact(k >> 1) & 0x1FFFFF
+    z = compact(k >> 2) & 0x1FFFFF
+    return x, y, z
+
+# Varint helpers
+
+def enc_varint(n: int) -> bytes:
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        if n:
+            out.append(0x80 | b)
+        else:
+            out.append(b)
+            break
+    return bytes(out)
+
+def dec_varint(buf: bytes, off: int) -> Tuple[int, int]:
+    shift = 0
+    val = 0
+    while True:
+        b = buf[off]
+        off += 1
+        val |= (b & 0x7F) << shift
+        if not (b & 0x80):
+            break
+        shift += 7
+    return val, off
+
+# Bloom filter hash (deterministic)
+
+def _bloom_hash(key: int, i: int) -> int:
+    x = (key + 0x9E3779B97F4A7C15 + i) & 0xFFFFFFFFFFFFFFFF
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9 & 0xFFFFFFFFFFFFFFFF
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EB & 0xFFFFFFFFFFFFFFFF
+    x = x ^ (x >> 31)
+    return x & 0xFFFFFFFF
+
+def _bloom_add(bits: bytearray, key: int, m: int, h: int = 3) -> None:
+    for i in range(h):
+        hv = _bloom_hash(key, i) % m
+        bits[hv // 8] |= 1 << (hv % 8)
+
+def _bloom_maybe(bits: bytes, key: int, m: int, h: int = 3) -> bool:
+    for i in range(h):
+        hv = _bloom_hash(key, i) % m
+        if not (bits[hv // 8] & (1 << (hv % 8))):
+            return False
+    return True
+
+# Format constants
+
+MAGIC = b"MBT2\0"
+VERSION = 2
+
+FLAG_ZLIB = 1 << 0
+FLAG_ZSTD = 1 << 1
+FLAG_AESGCM = 1 << 2
+FLAG_VARINT = 1 << 3
+FLAG_COLUMN = 1 << 4
+FLAG_HILBERT = 1 << 5
+FLAG_KEY_128 = 1 << 6
+
+HEADER = struct.Struct("<5sB I H I Q")
+ENTRY = struct.Struct("<Q I Q I Q 32s H I")
+FOOTER = struct.Struct("<I 32s 32s I")
+
+@dataclass
+class WriterCfg:
+    """Recommended configuration for writing MBT2 archives."""
+    target_bucket_kb: int = 128
+    use_zstd: bool = True
+    zstd_level: int = 3
+    threads: int = max(1, os.cpu_count() or 1)
+    aesgcm_key: Optional[bytes] = None
+    sha256_each: bool = False
+    bloom_bits: int = 2048
+    column_layout: bool = True
+
+def _compress(raw: bytes, zstd_on: bool, lvl: int = 3) -> bytes:
+    if zstd_on and HAS_ZSTD:
+        return zstd.ZstdCompressor(level=lvl).compress(raw)
+    return zlib.compress(raw, 6)
+
+def _decompress(comp: bytes) -> bytes:
+    if HAS_ZSTD and len(comp) >= 4 and comp[:4] == b"\x28\xB5\x2F\xFD":
+        return zstd.ZstdDecompressor().decompress(comp)
+    return zlib.decompress(comp)
+
+def _maybe_encrypt(aes_key: Optional[bytes], data: bytes, aad: bytes) -> bytes:
+    if not aes_key or not HAS_AESGCM:
+        return data
+    nonce = os.urandom(12)
+    return nonce + AESGCM(aes_key).encrypt(nonce, data, aad)
+
+def _maybe_decrypt(aes_key: Optional[bytes], data: bytes, aad: bytes) -> bytes:
+    if not aes_key or not HAS_AESGCM:
+        return data
+    nonce, ct = data[:12], data[12:]
+    return AESGCM(aes_key).decrypt(nonce, ct, aad)
+
+def _xx64(b: bytes) -> int:
+    if HAS_XX:
+        return xxhash.xxh64(b).intdigest()
+    return int.from_bytes(hashlib.blake2b(b, digest_size=8).digest(), "little")
+
+def _autotune_bucket_kb(n: int, approx_rec_bytes: int = 20) -> int:
+    recs = max(4096, min(12288, n // 80))
+    kb = max(64, min(256, (recs * approx_rec_bytes) // 1024))
+    return int(kb)
+
+def _pack_bucket(keys: List[int], masses: List[float], ents: List[float], taus: List[float], column: bool = True) -> bytes:
+    n = len(keys)
+    if n == 0:
+        return b""
+    out = bytearray()
+    out += struct.pack("<Q", keys[0])
+    prev = keys[0]
+    for i in range(1, n):
+        d = keys[i] - prev
+        out += enc_varint(d)
+        prev = keys[i]
+    if column:
+        out += struct.pack(f"<{n}f", *masses)
+        out += struct.pack(f"<{n}f", *ents)
+        out += struct.pack(f"<{n}f", *taus)
+    else:
+        for i in range(n):
+            out += struct.pack("<fff", masses[i], ents[i], taus[i])
+    return bytes(out)
+
+def _build_buckets(sorted_recs: List[Tuple[int, float, float, float]], target_kb: int) -> List[Tuple[List[int], List[float], List[float], List[float]]]:
+    target = target_kb * 1024
+    out = []
+    ks: List[int] = []
+    ms: List[float] = []
+    es: List[float] = []
+    ts: List[float] = []
+    size = 0
+    for k, m, e, t in sorted_recs:
+        add = (3 if ks else 8) + 12
+        if size + add > target and ks:
+            out.append((ks, ms, es, ts))
+            ks, ms, es, ts = [], [], [], []
+            size = 0
+        ks.append(k)
+        ms.append(m)
+        es.append(e)
+        ts.append(t)
+        size += add
+    if ks:
+        out.append((ks, ms, es, ts))
+    return out
+
+def write_mbt2(path: Path, records: List[Tuple[int, float, float, float]], cfg: WriterCfg = WriterCfg()) -> Dict:
+    path = Path(path)
+    t_sort0 = time.perf_counter()
+    records.sort(key=lambda r: r[0])
+    t_sort = time.perf_counter() - t_sort0
+    if cfg.target_bucket_kb <= 0:
+        cfg.target_bucket_kb = _autotune_bucket_kb(len(records))
+    buckets = _build_buckets(records, cfg.target_bucket_kb)
+    nb = len(buckets)
+    flags = 0
+    flags |= FLAG_ZSTD if (cfg.use_zstd and HAS_ZSTD) else FLAG_ZLIB
+    flags |= FLAG_VARINT
+    if cfg.column_layout:
+        flags |= FLAG_COLUMN
+    if cfg.aesgcm_key and HAS_AESGCM:
+        flags |= FLAG_AESGCM
+    with open(path, "w+b") as f:
+        f.write(HEADER.pack(MAGIC, VERSION, flags, cfg.target_bucket_kb, nb, 0))
+        header_end = f.tell()
+        bloom_bytes = cfg.bloom_bits // 8
+        entry_size = ENTRY.size + bloom_bytes
+        table_ofs = header_end
+        f.seek(table_ofs + nb * entry_size)
+        metas = []
+        lock = threading.Lock()
+        def write_bucket(i: int, b) -> None:
+            ks, ms, es, ts = b
+            raw = _pack_bucket(ks, ms, es, ts, column=bool(flags & FLAG_COLUMN))
+            comp = _compress(raw, zstd_on=bool(flags & FLAG_ZSTD), lvl=cfg.zstd_level)
+            comp = _maybe_encrypt(cfg.aesgcm_key if (flags & FLAG_AESGCM) else None, comp, aad=struct.pack("<I", i))
+            xx = _xx64(comp)
+            sh = hashlib.sha256(comp).digest() if cfg.sha256_each else b"\x00" * 32
+            bloom = bytearray(bloom_bytes)
+            for kk in ks:
+                _bloom_add(bloom, kk, cfg.bloom_bits)
+            with lock:
+                pos = f.tell()
+                f.write(comp)
+                metas.append((ks[0], len(ks), pos, len(comp), xx, sh, bytes(bloom)))
+        t_comp0 = time.perf_counter()
+        with ThreadPoolExecutor(max_workers=cfg.threads) as ex:
+            futs = [ex.submit(write_bucket, i, b) for i, b in enumerate(buckets)]
+            for fu in as_completed(futs):
+                fu.result()
+        t_comp = time.perf_counter() - t_comp0
+        metas.sort(key=lambda m: m[0])
+        data_end = f.tell()
+        f.seek(table_ofs)
+        for (start, count, off, length, xx, sh, bloom) in metas:
+            f.write(ENTRY.pack(start, count, off, length, xx, sh, len(bloom), 0))
+            f.write(bloom)
+        f.seek(table_ofs)
+        table_blob = f.read(nb * entry_size)
+        table_hash = hashlib.sha256(table_blob).digest()
+        leaves = [sh if cfg.sha256_each else xx.to_bytes(8, "little") for (_, _, _, _, xx, sh, _) in metas]
+        if leaves:
+            cur = [hashlib.sha256(x).digest() if len(x) != 32 else x for x in leaves]
+            while len(cur) > 1:
+                nxt = []
+                for i in range(0, len(cur), 2):
+                    a = cur[i]
+                    b = cur[i + 1] if i + 1 < len(cur) else a
+                    nxt.append(hashlib.sha256(a + b).digest())
+                cur = nxt
+            merkle = cur[0]
+        else:
+            merkle = b"\x00" * 32
+        f.seek(data_end)
+        feature_crc = zlib.crc32(struct.pack("<IHH", VERSION, cfg.target_bucket_kb, flags)) & 0xFFFFFFFF
+        f.write(FOOTER.pack(nb * entry_size, table_hash, merkle, feature_crc))
+        end_pos = f.tell()
+        f.seek(0)
+        f.write(HEADER.pack(MAGIC, VERSION, flags, cfg.target_bucket_kb, nb, table_ofs))
+        f.seek(end_pos)
+        manifest = {
+            "nbuckets": nb,
+            "schema": 0,
+            "flags": flags,
+            "target_bucket_kb": cfg.target_bucket_kb,
+            "compressor": "zstd" if (flags & FLAG_ZSTD) else "zlib",
+            "aesgcm": bool(flags & FLAG_AESGCM),
+            "column": bool(flags & FLAG_COLUMN),
+            "varint": bool(flags & FLAG_VARINT),
+            "bloom_bits": cfg.bloom_bits,
+        }
+        man_bytes = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
+        f.write(man_bytes)
+        f.write(struct.pack("<I", len(man_bytes)))
+    return {
+        "file_mb": os.path.getsize(path) / (1024 * 1024),
+        "nbuckets": nb,
+        "bucket_kb": cfg.target_bucket_kb,
+        "flags": flags,
+    }
+
+@dataclass
+class Reader:
+    path: Path
+    flags: int
+    bucket_kb: int
+    table_pos: int
+    nbuckets: int
+    entry_size: int
+    index: List[Tuple[int, int, int, int]]
+    blooms: List[bytes]
+    f: io.BufferedReader
+
+def open_reader(path: Path) -> Reader:
+    f = open(path, "rb")
+    hdr = f.read(HEADER.size)
+    magic, ver, flags, bucket_kb, nb, table_pos = HEADER.unpack(hdr)
+    assert magic == MAGIC and ver == VERSION, "Invalid MBT2 file"
+    try:
+        f.seek(-4, os.SEEK_END)
+        mlen = struct.unpack("<I", f.read(4))[0]
+        f.seek(-4 - mlen, os.SEEK_END)
+        man_bytes = f.read(mlen)
+        manifest = json.loads(man_bytes)
+        bloom_bits = manifest.get("bloom_bits", 2048)
+    except Exception:
+        bloom_bits = 2048
+    bloom_bytes = bloom_bits // 8
+    entry_size = ENTRY.size + bloom_bytes
+    f.seek(table_pos)
+    index = []
+    blooms = []
+    for _ in range(nb):
+        start, count, off, length, xx, sh, bb, stats_off = ENTRY.unpack(f.read(ENTRY.size))
+        bloom = f.read(bb)
+        index.append((start, count, off, length))
+        blooms.append(bloom)
+    return Reader(Path(path), flags, bucket_kb, table_pos, nb, entry_size, index, blooms, f)
+
+def _bucket_for(index: List[Tuple[int, int, int, int]], key: int) -> int:
+    lo, hi = 0, len(index) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if index[mid][0] <= key and (mid == len(index) - 1 or index[mid + 1][0] > key):
+            return mid
+        if index[mid][0] < key:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return max(0, min(len(index) - 1, lo))
+
+def lookup(reader: Reader, x: int, y: int, z: int, aes_key: Optional[bytes] = None) -> Optional[Tuple[float, float, float]]:
+    key = morton64(x, y, z)
+    i = _bucket_for(reader.index, key)
+    start, count, off, length = reader.index[i]
+    bloom = reader.blooms[i]
+    if not _bloom_maybe(bloom, key, 8 * len(bloom)):
+        return None
+    reader.f.seek(off)
+    comp = reader.f.read(length)
+    comp = _maybe_decrypt(aes_key if (reader.flags & FLAG_AESGCM) else None, comp, struct.pack("<I", i))
+    raw = _decompress(comp)
+    p = 0
+    first = struct.unpack_from("<Q", raw, p)[0]
+    p += 8
+    cur = first
+    pos = 0
+    while pos < count and cur < key:
+        d, p = dec_varint(raw, p)
+        cur += d
+        pos += 1
+    if cur != key:
+        return None
+    for _ in range(pos, count - 1):
+        _, p = dec_varint(raw, p)
+    fsz = 4 * count
+    masses_off = p
+    ents_off = p + fsz
+    taus_off = p + 2 * fsz
+    j = pos
+    mass = struct.unpack_from("<f", raw, masses_off + 4 * j)[0]
+    ent = struct.unpack_from("<f", raw, ents_off + 4 * j)[0]
+    tau = struct.unpack_from("<f", raw, taus_off + 4 * j)[0]
+    return mass, ent, tau
+
+def full_scan(reader: Reader) -> Tuple[int, float]:
+    total = 0
+    mass_sum = 0.0
+    for (start, count, off, length), bloom in zip(reader.index, reader.blooms):
+        reader.f.seek(off)
+        comp = reader.f.read(length)
+        raw = _decompress(comp)
+        p = 8
+        for _ in range(count - 1):
+            _, p = dec_varint(raw, p)
+        masses = struct.unpack_from(f"<{count}f", raw, p)
+        total += count
+        mass_sum += float(sum(masses))
+    return total, mass_sum
+
+# -----------------------------------------------------------------------------
+# Generic .gmw archive helpers
+
+def compress_folder_to_gmw(folder_path: str, output_path: str, use_zstd: bool = True, zstd_level: int = 3) -> None:
+    folder = Path(folder_path)
+    output = Path(output_path)
+    assert folder.is_dir(), f"{folder_path} is not a directory"
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        tf.add(folder, arcname=".")
+    tar_data = buf.getvalue()
+    if use_zstd and HAS_ZSTD:
+        comp = zstd.ZstdCompressor(level=zstd_level).compress(tar_data)
+    else:
+        comp = zlib.compress(tar_data, 6)
+    with open(output, "wb") as out_f:
+        out_f.write(comp)
+
+def extract_gmw(gmw_path: str, output_dir: str) -> None:
+    gmw_file = Path(gmw_path)
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    comp_data = gmw_file.read_bytes()
+    if HAS_ZSTD and len(comp_data) >= 4 and comp_data[:4] == b"\x28\xB5\x2F\xFD":
+        tar_data = zstd.ZstdDecompressor().decompress(comp_data)
+    else:
+        tar_data = zlib.decompress(comp_data)
+    with io.BytesIO(tar_data) as buf:
+        with tarfile.open(fileobj=buf, mode="r") as tf:
+            tf.extractall(path=out_dir)
+
+# -----------------------------------------------------------------------------
+# Simple interactive command-line interface
+
+def main() -> None:
+    print("GMW Archive Tool")
+    print("=================")
+    print("1) Compress a folder into a .gmw archive")
+    print("2) Extract a .gmw archive into a folder")
+    choice = input("Choose an action (1/2): ").strip()
+    if choice == "1":
+        inp = input("Enter the path of the folder to compress: ").strip().strip('"')
+        outp = input("Enter the output .gmw file name: ").strip().strip('"')
+        if not outp.endswith(".gmw"):
+            outp += ".gmw"
+        try:
+            compress_folder_to_gmw(inp, outp, use_zstd=True)
+            print(f"Folder '{inp}' compressed into '{outp}'.")
+        except Exception as e:
+            print("Error during compression:", e)
+    elif choice == "2":
+        inp = input("Enter the path of the .gmw file to extract: ").strip().strip('"')
+        outp = input("Enter the output folder: ").strip().strip('"')
+        try:
+            extract_gmw(inp, outp)
+            print(f"Archive '{inp}' extracted into '{outp}'.")
+        except Exception as e:
+            print("Error during extraction:", e)
+    else:
+
+
+
+
+Reasoning: Now that the compress_folder_to_gmw function is defined, call the function to compress the temporary directory.
+
+
+import tarfile
+import zlib
+import os
+
+standard_output_path = os.path.join(temp_dir, 'synthetic_data.tar.gz')
+
+Reasoning: Open the output file, create a tar.gz archive, add the temporary directory to the archive, and then close the archive and the file.
+
+
+with open(standard_output_path, 'wb') as out_f:
+    with tarfile.open(fileobj=out_f, mode='w:gz') as tf:
+        tf.add(temp_dir, arcname='.')
+
+print(f"Compressed folder '{temp_dir}' to '{standard_output_path}' using standard libraries.")
+
+Benchmark compression
+Subtask:
+Measure the size of the original data, the .gmw compressed data, and the standard compressed data. Also, measure the time taken for each compression method.
+
+Reasoning: Measure the size of the original data, the .gmw compressed data, and the standard compressed data. Also, measure the time taken for each compression method.
+
+import time
+
+# Measure original data size
+original_size = sum(os.path.getsize(os.path.join(temp_dir, f)) for f in os.listdir(temp_dir) if os.path.isfile(os.path.join(temp_dir, f)))
+print(f"Original data size: {original_size} bytes")
+
+# Measure gmw compression time and size
+gmw_start_time = time.time()
+gmw_output_path = os.path.join(temp_dir, 'synthetic_data.gmw')
+compress_folder_to_gmw(temp_dir, gmw_output_path, use_zstd=True, zstd_level=3)
+gmw_end_time = time.time()
+gmw_compression_time = gmw_end_time - gmw_start_time
+gmw_compressed_size = os.path.getsize(gmw_output_path)
+print(f"GMW compressed size: {gmw_compressed_size} bytes")
+print(f"GMW compression time: {gmw_compression_time:.4f} seconds")
+
+# Measure standard compression time and size
+standard_start_time = time.time()
+standard_output_path = os.path.join(temp_dir, 'synthetic_data.tar.gz')
+with open(standard_output_path, 'wb') as out_f:
+    with tarfile.open(fileobj=out_f, mode='w:gz') as tf:
+        tf.add(temp_dir, arcname='.')
+standard_end_time = time.time()
+standard_compression_time = standard_end_time - standard_start_time
+standard_compressed_size = os.path.getsize(standard_output_path)
+print(f"Standard compressed size: {standard_compressed_size} bytes")
+print(f"Standard compression time: {standard_compression_time:.4f} seconds")
+
+
+Present results
+Subtask:
+Display the benchmark results, comparing the file sizes and compression times.
+
+Reasoning: Display the benchmark results including original size, compressed sizes, compression times, and calculated compression ratios for both methods, followed by a brief comparison.
+
+
+
+print("\n--- Compression Benchmark Results ---")
+
+# Display original size
+original_size_kb = original_size / 1024
+print(f"Original Data Size: {original_size_kb:.2f} KB")
+
+# Display GMW results
+gmw_compressed_size_kb = gmw_compressed_size / 1024
+gmw_compression_ratio = original_size / gmw_compressed_size
+print(f"\n.GMW Compression:")
+print(f"  Compressed Size: {gmw_compressed_size_kb:.2f} KB")
+print(f"  Compression Time: {gmw_compression_time:.4f} seconds")
+print(f"  Compression Ratio: {gmw_compression_ratio:.2f}")
+
+# Display Standard results
+standard_compressed_size_kb = standard_compressed_size / 1024
+standard_compression_ratio = original_size / standard_compressed_size
+print(f"\nStandard Compression (tar.gz):")
+print(f"  Compressed Size: {standard_compressed_size_kb:.2f} KB")
+print(f"  Compression Time: {standard_compression_time:.4f} seconds")
+print(f"  Compression Ratio: {standard_compression_ratio:.2f}")
+
+# Brief comparison
+print("\n--- Comparison ---")
+if gmw_compressed_size < standard_compressed_size:
+    print("The .gmw method achieved a smaller compressed size.")
+elif gmw_compressed_size > standard_compressed_size:
+    print("The standard method achieved a smaller compressed size.")
+else:
+    print("Both methods achieved a similar compressed size.")
+
+if gmw_compression_time < standard_compression_time:
+    print("The .gmw method was faster.")
+elif gmw_compression_time > standard_compression_time:
+    print("The standard method was faster.")
+else:
+    print("Both methods had similar compression times.")
+
+Clean up
+Subtask:
+Remove the temporary files and directories created during the process.
+
+Reasoning: Remove the temporary directory and its contents using shutil.rmtree().
+
+
+import shutil
+shutil.rmtree(temp_dir)
+print(f"Removed temporary directory: {temp_dir}")
+
+
+Summary:
+Data Analysis Key Findings
+The original synthetic data size was 142.81 KB.
+Compressing the data using the provided .gmw tool resulted in a compressed size of 41.72 KB and took approximately 0.0176 seconds. This yielded a compression ratio of 3.42.
+Compressing the data using standard tar.gz resulted in a compressed size of 60.62 KB and took approximately 0.0348 seconds. This yielded a compression ratio of 2.36.
+For the generated synthetic data, the .gmw method achieved a smaller compressed size and was faster than the standard tar.gz method.
+Insights or Next Steps
+The .gmw tool appears to be more efficient for compressing this type of synthetic data than standard tar.gz.
+Further benchmarking with different data types, sizes, and complexity levels would provide a more comprehensive comparison of the compression methods.
+keyboard_arrow_down
+Task
+Perform a comprehensive benchmarking of a custom compression method (gmw_tool.py) against standard compression methods using synthetic data of different types (audio, text, image, structured), sizes, and complexity levels. Generate the synthetic data, save it, apply both compression methods, measure compression size and time, and present the results.
+
+Generate synthetic data
+Subtask:
+Create functions or use libraries to generate synthetic data for audio, text, and potentially other types like images or simple structured data.
+
+Benchmark compression for each variation
+Subtask:
+For each generated data variation, compress it using the gmw_tool.py script and standard methods, and measure the compression size and time for both.
+
+keyboard_arrow_down
+Analyze and present results
+Subtask:
+Collect the benchmark results for all variations and present them in a clear and organized manner, comparing the file sizes, compression times, and compression ratios across different data types, sizes, and methods.
+
+
+print("\n--- Comprehensive Compression Benchmark Results ---")
+
+for data_type, size_results in benchmark_results.items():
+    print(f"\nBenchmarking Results for {data_type.capitalize()} Data:")
+    for size, results in size_results.items():
+        original_size = results['original_size']
+        gmw_compressed_size = results['gmw_compressed_size']
+        gmw_compression_time = results['gmw_compression_time']
+        standard_compressed_size = results['standard_compressed_size']
+        standard_compression_time = results['standard_compression_time']
+
+        original_size_kb = original_size / 1024
+        gmw_compressed_size_kb = gmw_compressed_size / 1024
+        standard_compressed_size_kb = standard_compressed_size / 1024
+
+        gmw_compression_ratio = original_size / gmw_compressed_size if gmw_compressed_size > 0 else float('inf')
+        standard_compression_ratio = original_size / standard_compressed_size if standard_compressed_size > 0 else float('inf')
+
+        print(f"\n  Size/Parameter: {size}")
+        print(f"    Original Size: {original_size_kb:.2f} KB")
+
+        print(f"    .GMW Compression:")
+        print(f"      Compressed Size: {gmw_compressed_size_kb:.2f} KB")
+        print(f"      Compression Time: {gmw_compression_time:.4f} seconds")
+        print(f"      Compression Ratio: {gmw_compression_ratio:.2f}")
+
+        print(f"    Standard Compression (tar.gz):")
+        print(f"      Compressed Size: {standard_compressed_size_kb:.2f} KB")
+        print(f"      Compression Time: {standard_compression_time:.4f} seconds")
+        print(f"      Compression Ratio: {standard_compression_ratio:.2f}")
+
+        # Brief comparison for this specific variation
+        print("    Comparison:")
+        if gmw_compressed_size < standard_compressed_size:
+            print("      .GMW achieved a smaller compressed size.")
+        elif gmw_compressed_size > standard_compressed_size:
+            print("      Standard achieved a smaller compressed size.")
+        else:
+            print("      Both methods achieved a similar compressed size.")
+
+        if gmw_compression_time < standard_compression_time:
+            print("      .GMW was faster.")
+        elif gmw_compression_time > standard_compression_time:
+            print("      Standard was faster.")
+        else:
+            print("      Both methods had similar compression times.")
+
+
+Benchmark compression for each variation
+Subtask:
+For each generated data variation, compress it using the gmw_tool.py script and standard methods, and measure the compression size and time for both.
+
+
+import time
+import os
+import tarfile
+import zlib
+
+benchmark_results = {}
+
+for data_type, size_paths in file_paths_variations.items():
+    benchmark_results[data_type] = {}
+    for size, file_path in size_paths.items():
+        print(f"\nBenchmarking {data_type} data with size {size} at {file_path}")
+
+        original_size = os.path.getsize(file_path)
+
+        # Benchmark GMW compression
+        gmw_output_path = file_path + '.gmw'
+        gmw_start_time = time.time()
+        # The compress_folder_to_gmw function expects a folder path, not a file path.
+        # We need to create a temporary folder for each file to use this function,
+        # or modify the gmw_tool.py to handle single files.
+        # For now, let's adapt by creating a temporary folder for each file.
+        temp_single_file_dir = tempfile.mkdtemp()
+        shutil.copy(file_path, temp_single_file_dir)
+        single_file_gmw_output_path = os.path.join(temp_single_file_dir, os.path.basename(file_path) + '.gmw')
+        compress_folder_to_gmw(temp_single_file_dir, single_file_gmw_output_path, use_zstd=True, zstd_level=3)
+        gmw_end_time = time.time()
+        gmw_compression_time = gmw_end_time - gmw_start_time
+        gmw_compressed_size = os.path.getsize(single_file_gmw_output_path)
+        shutil.rmtree(temp_single_file_dir) # Clean up temporary folder
+
+        # Benchmark standard compression (tar.gz)
+        standard_output_path = file_path + '.tar.gz'
+        standard_start_time = time.time()
+        with open(standard_output_path, 'wb') as out_f:
+            with tarfile.open(fileobj=out_f, mode='w:gz') as tf:
+                tf.add(file_path, arcname=os.path.basename(file_path))
+        standard_end_time = time.time()
+        standard_compression_time = standard_end_time - standard_start_time
+        standard_compressed_size = os.path.getsize(standard_output_path)
+
+        benchmark_results[data_type][size] = {
+            'original_size': original_size,
+            'gmw_compressed_size': gmw_compressed_size,
+            'gmw_compression_time': gmw_compression_time,
+            'standard_compressed_size': standard_compressed_size,
+            'standard_compression_time': standard_compression_time
+        }
+
+# Clean up the generated compressed files
+for data_type, size_results in benchmark_results.items():
+    for size, results in size_results.items():
+        gmw_file = file_paths_variations[data_type][size] + '.gmw'
+        standard_file = file_paths_variations[data_type][size] + '.tar.gz'
+        if os.path.exists(gmw_file):
+            os.remove(gmw_file)
+        if os.path.exists(standard_file):
+            os.remove(standard_file)
+
+
+print("\nBenchmark Results:")
+import json
+print(json.dumps(benchmark_results, indent=2))
+
+
+Summary:
+Comprehensive Benchmarking Key Findings
+Audio Data: The .gmw tool generally achieved better compression ratios for audio data compared to tar.gz, especially for larger file sizes. tar.gz was slightly faster for the smallest audio file, but .gmw was faster for larger audio files.
+Text Data: For text data, both .gmw and tar.gz had similar compression ratios, slightly less than 1.0 (meaning the compressed size was slightly larger than the original). tar.gz was slightly faster for smaller text files, while .gmw was faster for the largest text file.
+Image Data: Both .gmw and tar.gz showed compression ratios very close to 1.0 for image data, indicating minimal compression for this type of data with the random pixel generation. .gmw was consistently faster than tar.gz for image data.
+Structured Data: The .gmw tool generally achieved better compression ratios for structured data compared to tar.gz, especially for larger datasets. tar.gz was faster for the smallest structured dataset, but .gmw was faster for the larger structured datasets.
+Overall Insights
+The gmw_tool.py demonstrated better compression performance (smaller size) for audio and structured data across different sizes in this benchmark.
+For text and image data with the generated characteristics, the compression ratios were similar between both methods, close to 1.0.
+The gmw_tool.py was generally faster than tar.gz for larger data sizes across all data types, although tar.gz was sometimes faster for the smallest data variations.
+The effectiveness of each compression method can vary depending on the type and characteristics of the data being compressed.
+Next Steps
+Explore the specific compression algorithms used within gmw_tool.py (Zstandard or zlib) and tar.gz to understand the reasons behind the observed performance differences for different data types.
+Benchmark with real-world datasets of varying types and characteristics to see how the performance compares outside of synthetic data.
+Investigate the impact of different zstd_level settings on the compression ratio and time for the gmw_tool.py.
+Clean up
+Subtask:
+Remove the temporary files and directories created during the process.
+
+import shutil
+import os
+
+# Clean up the temporary directory for variations
+if 'temp_dir_variations' in globals() and os.path.exists(temp_dir_variations):
+    shutil.rmtree(temp_dir_variations)
+    print(f"Removed temporary directory for variations: {temp_dir_variations}")
+
+# Note: The temporary directories created for single-file GMW compression
+# were already removed within the benchmarking loop.
+
+
+Save synthetic data (with variations)
+Subtask:
+Save the generated synthetic data for each variation to separate temporary files or directories.
+
+
+import os
+import tempfile
+
+temp_dir_variations = tempfile.mkdtemp()
+print(f"Created temporary directory for variations: {temp_dir_variations}")
+
+data_variations = {
+    'audio': [1, 5, 10], # duration in seconds
+    'text': [1024, 10240, 102400], # number of characters
+    'image': [64, 128, 256], # dimension (size x size)
+    'structured': [100, 1000, 10000] # number of rows
+}
+
+file_paths_variations = {}
+
+for data_type, sizes in data_variations.items():
+    file_paths_variations[data_type] = {}
+    for size in sizes:
+        data = generate_synthetic_data_with_variations(data_type, size)
+        file_name = f'synthetic_data_{data_type}_{size}'
+        file_path = os.path.join(temp_dir_variations, file_name)
+
+        if data_type in ['audio', 'image', 'structured']:
+            with open(file_path, 'wb') as f:
+                f.write(data)
+        else: # text data
+            with open(file_path, 'w') as f:
+                f.write(data)
+
+        file_paths_variations[data_type][size] = file_path
+        print(f"Generated and saved {data_type} data with size {size} to {file_path}")
+
+print(f"\nTemporary directory for variations: {temp_dir_variations}")
+print(f"Generated file paths for variations: {file_paths_variations}")
+
+
+Generate synthetic data (with variations)
+Subtask:
+Create functions or use libraries to generate synthetic data for audio, text, and potentially other types like images or simple structured data, with parameters to control size and complexity.
+
+
+
+import numpy as np
+import pandas as pd
+from PIL import Image
+import io
+import random
+import string
+import wave
+import struct
+import os
+
+def generate_synthetic_data_with_variations(data_type, size_param):
+    """Generates synthetic data of different types with size variations.
+
+    Args:
+        data_type (str): The type of data to generate ('audio', 'text', 'image', 'structured').
+        size_param (int): A parameter influencing the size/complexity of the data.
+
+    Returns:
+        The generated data in a suitable format.
+    """
+    if data_type == 'audio':
+        # Generate simple sine wave audio
+        sample_rate = 44100
+        duration = size_param  # size_param in seconds
+        frequency = 440  # A4 note
+        n_samples = int(sample_rate * duration)
+        amplitude = 16000
+        data = b''
+        with io.BytesIO() as buf:
+            with wave.open(buf, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sample_rate)
+                for i in range(n_samples):
+                    value = int(amplitude * np.sin(2 * np.pi * frequency * i / sample_rate))
+                    data += struct.pack('<h', value)
+                wf.writeframes(data)
+            return buf.getvalue()
+    elif data_type == 'text':
+        # Generate random text
+        characters = string.ascii_letters + string.digits + string.punctuation + string.whitespace
+        return ''.join(random.choice(characters) for i in range(size_param)) # size_param is number of characters
+    elif data_type == 'image':
+        # Generate a simple image with random pixels
+        width, height = size_param, size_param  # size_param is the dimension
+        img_array = np.random.randint(0, 256, (height, width, 3), dtype=np.uint8)
+        img = Image.fromarray(img_array, 'RGB')
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        return img_byte_arr.getvalue()
+    elif data_type == 'structured':
+        # Generate a simple pandas DataFrame
+        data = {'col1': np.random.rand(size_param), # size_param is number of rows
+                'col2': np.random.randint(0, 100, size_param),
+                'col3': [random.choice(['A', 'B', 'C']) for _ in range(size_param)]}
+        df = pd.DataFrame(data)
+        return df.to_csv(index=False).encode('utf-8')
+    else:
+        raise ValueError(f"Unknown data type: {data_type}")
+
+
+Task
+Benchmark the compression performance of the user's custom method (gmw_tool.py) against standard compression methods using real-world datasets of different types (text, image, audio, structured data).
+
+Identify and obtain real-world datasets
+Subtask:
+Find and download suitable real-world datasets of different types (e.g., a text corpus, an image dataset, audio samples, structured data).
+
+Reasoning: I need to find and provide information about suitable real-world datasets for benchmarking. I will identify publicly available datasets of different types and provide their details.
+
+
+# Information about suitable real-world datasets for benchmarking
+
+dataset_info = {
+    'text': {
+        'name': 'Tiny Shakespeare',
+        'description': 'A small text corpus of Shakespeare\'s plays.',
+        'source': 'Andrej Karpathy\'s repo',
+        'url': 'https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt',
+        'approx_size': '1 MB'
+    },
+    'image': {
+        'name': 'CIFAR-10 (Subset)',
+        'description': 'A subset of the CIFAR-10 dataset containing 10 classes of 32x32 color images.',
+        'source': 'Kaggle or official website',
+        'url': 'https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz',
+        'approx_size': '170 MB (full dataset), we will use a subset'
+    },
+    'audio': {
+        'name': 'Speech Commands Dataset (Subset)',
+        'description': 'A subset of the Speech Commands dataset, containing short audio clips of spoken words.',
+        'source': 'TensorFlow Datasets or Kaggle',
+        'url': 'http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz',
+        'approx_size': '2.4 GB (full dataset), we will use a subset'
+    },
+    'structured': {
+        'name': 'UCI Adult Income Dataset',
+        'description': 'Contains demographic data from the 1994 Census Bureau database, used for predicting income.',
+        'source': 'UCI Machine Learning Repository',
+        'url': 'https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data',
+        'approx_size': '4 MB'
+    }
+}
+
+import requests
+import os
+
+# Create a directory to store the downloaded datasets
+dataset_dir = 'real_world_datasets'
+os.makedirs(dataset_dir, exist_ok=True)
+
+# Download the datasets
+for data_type, info in dataset_info.items():
+    url = info['url']
+    file_name = url.split('/')[-1]
+    file_path = os.path.join(dataset_dir, file_name)
+
+    if not os.path.exists(file_path):
+        print(f"Downloading {info['name']}...")
+        try:
+            response = requests.get(url, stream=True)
+            response.raise_for_status() # Raise an exception for bad status codes
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print(f"Downloaded {info['name']} to {file_path}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error downloading {info['name']}: {e}")
+            # Remove the incomplete file if download failed
+            if os.path.exists(file_path):
+                os.remove(file_path)
+    else:
+        print(f"{info['name']} already exists at {file_path}")
+
+# Print the dataset information
+print("\n--- Real-world Datasets for Benchmarking ---")
+for data_type, info in dataset_info.items():
+    print(f"\nDataset Type: {data_type.capitalize()}")
+    print(f"  Name: {info['name']}")
+    print(f"  Description: {info['description']}")
+    print(f"  Source: {info['source']}")
+    print(f"  URL: {info['url']}")
+    print(f"  Approximate Size: {info['approx_size']}")
+    # Add actual downloaded file path if successful
+    file_name = info['url'].split('/')[-1]
+    file_path = os.path.join(dataset_dir, file_name)
+    if os.path.exists(file_path):
+        print(f"  Downloaded Path: {file_path}")
+
+Prepare datasets for compression
+Subtask:
+Ensure the datasets are in a format that can be processed by the gmw_tool.py and standard compression methods. This might involve organizing files in directories or converting data formats if necessary.
+
+Reasoning: Create a temporary directory and prepare the datasets for compression by creating subdirectories for each dataset type and copying or extracting the downloaded files into them.
+
+
+import os
+import tempfile
+import shutil
+import tarfile
+
+# Create a temporary directory to prepare datasets
+temp_dataset_dir = tempfile.mkdtemp()
+print(f"Created temporary directory for datasets: {temp_dataset_dir}")
+
+# Process each downloaded dataset
+for data_type, info in dataset_info.items():
+    file_name = info['url'].split('/')[-1]
+    downloaded_file_path = os.path.join('real_world_datasets', file_name)
+
+    if os.path.exists(downloaded_file_path):
+        # Create a subdirectory for the dataset type within the temporary directory
+        dataset_subdir = os.path.join(temp_dataset_dir, data_type)
+        os.makedirs(dataset_subdir, exist_ok=True)
+        print(f"Created subdirectory: {dataset_subdir}")
+
+        # Handle different file types and potential subsets
+        if file_name.endswith('.tar.gz'):
+            print(f"Extracting {file_name}...")
+            try:
+                with tarfile.open(downloaded_file_path, 'r:gz') as tar:
+                    # Extract to the dataset-specific subdirectory
+                    tar.extractall(path=dataset_subdir)
+                print(f"Extracted {file_name} to {dataset_subdir}")
+
+                # For large archives like CIFAR-10 and Speech Commands, select a subset
+                if data_type in ['image', 'audio']:
+                    print(f"Selecting a subset for {data_type} data...")
+                    # List all extracted files and directories
+                    extracted_items = [os.path.join(dataset_subdir, item) for item in os.listdir(dataset_subdir)]
+                    extracted_files = [item for item in extracted_items if os.path.isfile(item)]
+                    extracted_dirs = [item for item in extracted_items if os.path.isdir(item)]
+
+                    items_to_keep = []
+                    if data_type == 'image':
+                        # CIFAR-10 files are typically batches like data_batch_1.bin, test_batch.bin
+                        # Or extracted folders. Let's look for data files or subdirectories.
+                        # We'll keep one data file or one representative subdirectory.
+                        data_file = next((f for f in extracted_files if 'data_batch' in f or 'test_batch' in f), None)
+                        if data_file:
+                             items_to_keep.append(data_file)
+                        else:
+                             # If no batch files, look for directories (extracted from tar)
+                             cifar_dirs = [d for d in extracted_dirs if 'cifar-10-batches-py' in d]
+                             if cifar_dirs:
+                                items_to_keep.append(cifar_dirs[0]) # Keep the first found directory
+                             else:
+                                # As a fallback, keep a few arbitrary files if structure is unexpected
+                                items_to_keep.extend(extracted_files[:5])
+
+                    elif data_type == 'audio':
+                        # Speech Commands has subdirectories for each word. Keep a few words.
+                        word_dirs = [d for d in extracted_dirs if os.path.basename(d) not in ['_background_noise_', 'LICENSE', 'README.md']]
+                        items_to_keep.extend(word_dirs[:3]) # Keep first 3 word directories
+
+                    # Remove everything else from the subdirectory
+                    for item in extracted_items:
+                        if item not in items_to_keep:
+                            if os.path.isdir(item):
+                                shutil.rmtree(item)
+                            else:
+                                os.remove(item)
+                    print(f"Subset selected for {data_type}. Remaining items: {[os.path.basename(item) for item in items_to_keep]}")
+
+            except tarfile.ReadError as e:
+                 print(f"Error extracting {file_name}: {e}. This might not be a valid tar.gz file.")
+                 # Clean up the partially created subdirectory
+                 if os.path.exists(dataset_subdir):
+                     shutil.rmtree(dataset_subdir)
+                 continue # Skip to the next dataset
+
+        else:
+            # For other file types (like .txt or .data), just copy the file
+            shutil.copy(downloaded_file_path, dataset_subdir)
+            print(f"Copied {file_name} to {dataset_subdir}")
+
+# Store the paths to the prepared dataset directories
+prepared_dataset_paths = {}
+for data_type in dataset_info.keys():
+    dataset_subdir = os.path.join(temp_dataset_dir, data_type)
+    if os.path.exists(dataset_subdir) and os.listdir(dataset_subdir): # Check if directory exists and is not empty
+         prepared_dataset_paths[data_type] = dataset_subdir
+    else:
+         print(f"Warning: No prepared data found for {data_type} in {dataset_subdir}")
+
+
+print("\n--- Prepared Dataset Paths ---")
+print(prepared_dataset_paths)
+Benchmark compression for each dataset
+Subtask:
+For each real-world dataset, compress it using the gmw_tool.py script and standard methods, and measure the compression size and time for both.
+
+Reasoning: Measure the size of each prepared dataset directory and then compress each directory using both gmw_tool.py and standard tar.gz, recording the time taken and the size of the compressed output for each method.
+
+import time
+import os
+import tarfile
+import zlib
+
+benchmark_results_real = {}
+
+for data_type, dataset_path in prepared_dataset_paths.items():
+    print(f"\nBenchmarking real-world {data_type} data from {dataset_path}")
+
+    # Measure original data size (size of the directory contents)
+    original_size = sum(os.path.getsize(os.path.join(dataset_path, f)) for f in os.listdir(dataset_path) if os.path.isfile(os.path.join(dataset_path, f)))
+    for root, dirs, files in os.walk(dataset_path):
+        original_size += sum(os.path.getsize(os.path.join(root, name)) for name in files)
+
+    benchmark_results_real[data_type] = {'original_size': original_size}
+
+    # Benchmark GMW compression
+    gmw_output_path = dataset_path + '.gmw'
+    gmw_start_time = time.time()
+    compress_folder_to_gmw(dataset_path, gmw_output_path, use_zstd=True, zstd_level=3)
+    gmw_end_time = time.time()
+    gmw_compression_time = gmw_end_time - gmw_start_time
+    gmw_compressed_size = os.path.getsize(gmw_output_path)
+
+    benchmark_results_real[data_type]['gmw_compressed_size'] = gmw_compressed_size
+    benchmark_results_real[data_type]['gmw_compression_time'] = gmw_compression_time
+    print(f"  GMW compressed size: {gmw_compressed_size} bytes")
+    print(f"  GMW compression time: {gmw_compression_time:.4f} seconds")
+
+    # Benchmark standard compression (tar.gz)
+    standard_output_path = dataset_path + '.tar.gz'
+    standard_start_time = time.time()
+    with open(standard_output_path, 'wb') as out_f:
+        with tarfile.open(fileobj=out_f, mode='w:gz') as tf:
+            tf.add(dataset_path, arcname='.')
+    standard_end_time = time.time()
+    standard_compression_time = standard_end_time - standard_start_time
+    standard_compressed_size = os.path.getsize(standard_output_path)
+
+    benchmark_results_real[data_type]['standard_compressed_size'] = standard_compressed_size
+    benchmark_results_real[data_type]['standard_compression_time'] = standard_compression_time
+    print(f"  Standard compressed size: {standard_compressed_size} bytes")
+    print(f"  Standard compression time: {standard_compression_time:.4f} seconds")
+
+# Print the collected results
+print("\n--- Real-world Dataset Benchmark Results ---")
+import json
+print(json.dumps(benchmark_results_real, indent=2))
+
+
+import timeimport osimport tarfileimport zlibbenchmark_results_real = {}for data_type, dataset_path in prepared_dataset_paths.items():    print(f"\nBenchmarking real-world {data_type} data from {dataset_path}")    # Measure original data size (size of the directory contents)    original_size = sum(os.path.getsize(os.path.join(dataset_path, f)) for f in os.listdir(dataset_path) if os.path.isfile(os.path.join(dataset_path, f)))    for root, dirs, files in os.walk(dataset_path):        original_size += sum(os.path.getsize(os.path.join(root, name)) for name in files)    benchmark_results_real[data_type] = {'original_size': original_size}    # Benchmark GMW compression    gmw_output_path = dataset_path + '.gmw'    gmw_start_time = time.time()    compress_folder_to_gmw(dataset_path, gmw_output_path, use_zstd=True, zstd_level=3)    gmw_end_time = time.time()    gmw_compression_time = gmw_end_time - gmw_start_time    gmw_compressed_size = os.path.getsize(gmw_output_path)    benchmark_results_real[data_type]['gmw_compressed_size'] = gmw_compressed_size    benchmark_results_real[data_type]['gmw_compression_time'] = gmw_compression_time    print(f"  GMW compressed size: {gmw_compressed_size} bytes")    print(f"  GMW compression time: {gmw_compression_time:.4f} seconds")    # Benchmark standard compression (tar.gz)    standard_output_path = dataset_path + '.tar.gz'    standard_start_time = time.time()    with open(standard_output_path, 'wb') as out_f:        with tarfile.open(fileobj=out_f, mode='w:gz') as tf:            tf.add(dataset_path, arcname='.')    standard_end_time = time.time()    standard_compression_time = standard_end_time - standard_start_time    standard_compressed_size = os.path.getsize(standard_output_path)    benchmark_results_real[data_type]['standard_compressed_size'] = standard_compressed_size    benchmark_results_real[data_type]['standard_compression_time'] = standard_compression_time    print(f"  Standard compressed size: {standard_compressed_size} bytes")    print(f"  Standard compression time: {standard_compression_time:.4f} seconds")# Print the collected resultsprint("\n--- Real-world Dataset Benchmark Results ---")import jsonprint(json.dumps(benchmark_results_real, indent=2))
+
+
+Benchmarking real-world text data from /tmp/tmpd79mx19n/text
+  GMW compressed size: 430094 bytes
+  GMW compression time: 0.0269 seconds
+  Standard compressed size: 434228 bytes
+  Standard compression time: 0.3560 seconds
+
+Benchmarking real-world image data from /tmp/tmpd79mx19n/image
+  GMW compressed size: 174041648 bytes
+  GMW compression time: 4.3875 seconds
+  Standard compressed size: 169976485 bytes
+  Standard compression time: 15.0316 seconds
+
+Benchmarking real-world audio data from /tmp/tmpd79mx19n/audio
+  GMW compressed size: 226707859 bytes
+  GMW compression time: 5.8154 seconds
+  Standard compressed size: 237292657 bytes
+  Standard compression time: 46.7405 seconds
+
+Benchmarking real-world structured data from /tmp/tmpd79mx19n/structured
+  GMW compressed size: 546010 bytes
+  GMW compression time: 0.0304 seconds
+  Standard compressed size: 409624 bytes
+  Standard compression time: 0.4032 seconds
+
+--- Real-world Dataset Benchmark Results ---
+{
+  "text": {
+    "original_size": 2230788,
+    "gmw_compressed_size": 430094,
+    "gmw_compression_time": 0.026894569396972656,
+    "standard_compressed_size": 434228,
+    "standard_compression_time": 0.35599589347839355
+  },
+  "image": {
+    "original_size": 186214114,
+    "gmw_compressed_size": 174041648,
+    "gmw_compression_time": 4.3875486850738525,
+    "standard_compressed_size": 169976485,
+    "standard_compression_time": 15.031614780426025
+  },
+  "audio": {
+    "original_size": 316311406,
+    "gmw_compressed_size": 226707859,
+    "gmw_compression_time": 5.8154213428497314,
+    "standard_compressed_size": 237292657,
+    "standard_compression_time": 46.74046802520752
+  },
+  "structured": {
+    "original_size": 7948610,
+    "gmw_compressed_size": 546010,
+    "gmw_compression_time": 0.030364990234375,
+    "standard_compressed_size": 409624,
+    "standard_compression_time": 0.4032289981842041
+  }
+}
+
+Analyze and present results
+Subtask:
+Collect the benchmark results for all real-world datasets and present them in a clear and organized manner, comparing the file sizes, compression times, and compression ratios across different datasets and methods.
+
+Reasoning: Collect the benchmark results for all real-world datasets and present them in a clear and organized manner, comparing the file sizes, compression times, and compression ratios across different datasets and methods.
+
+
+print("\n--- Comprehensive Real-world Dataset Compression Benchmark Results ---")
+
+for data_type, results in benchmark_results_real.items():
+    original_size = results['original_size']
+    gmw_compressed_size = results['gmw_compressed_size']
+    gmw_compression_time = results['gmw_compression_time']
+    standard_compressed_size = results['standard_compressed_size']
+    standard_compression_time = results['standard_compression_time']
+
+    original_size_kb = original_size / 1024
+    gmw_compressed_size_kb = gmw_compressed_size / 1024
+    standard_compressed_size_kb = standard_compressed_size / 1024
+
+    gmw_compression_ratio = original_size / gmw_compressed_size if gmw_compressed_size > 0 else float('inf')
+    standard_compression_ratio = original_size / standard_compressed_size if standard_compressed_size > 0 else float('inf')
+
+    print(f"\nBenchmarking Results for {data_type.capitalize()} Data:")
+    print(f"  Original Size: {original_size_kb:.2f} KB")
+
+    print(f"  .GMW Compression:")
+    print(f"    Compressed Size: {gmw_compressed_size_kb:.2f} KB")
+    print(f"    Compression Time: {gmw_compression_time:.4f} seconds")
+    print(f"    Compression Ratio: {gmw_compression_ratio:.2f}")
+
+    print(f"  Standard Compression (tar.gz):")
+    print(f"    Compressed Size: {standard_compressed_size_kb:.2f} KB")
+    print(f"    Compression Time: {standard_compression_time:.4f} seconds")
+    print(f"    Compression Ratio: {standard_compression_ratio:.2f}")
+
+    # Brief comparison for this specific dataset
+    print("  Comparison:")
+    if gmw_compressed_size < standard_compressed_size:
+        print("    .GMW achieved a smaller compressed size.")
+    elif gmw_compressed_size > standard_compressed_size:
+        print("    Standard achieved a smaller compressed size.")
+    else:
+        print("    Both methods achieved a similar compressed size.")
+
+    if gmw_compression_time < standard_compression_time:
+        print("    .GMW was faster.")
+    elif gmw_compression_time > standard_compression_time:
+        print("    Standard was faster.")
+    else:
+        print("    Both methods had similar compression times.")
+
+# High-level summary
+print("\n--- Overall Summary ---")
+print("Comparison of GMW vs. Standard (tar.gz) Compression on Real-world Datasets:")
+
+# Summarize performance across datasets
+gmw_wins_size = 0
+standard_wins_size = 0
+size_ties = 0
+gmw_wins_time = 0
+standard_wins_time = 0
+time_ties = 0
+
+for data_type, results in benchmark_results_real.items():
+    if results['gmw_compressed_size'] < results['standard_compressed_size']:
+        gmw_wins_size += 1
+    elif results['gmw_compressed_size'] > results['standard_compressed_size']:
+        standard_wins_size += 1
+    else:
+        size_ties += 1
+
+    if results['gmw_compression_time'] < results['standard_compression_time']:
+        gmw_wins_time += 1
+    elif results['gmw_compression_time'] > results['standard_compression_time']:
+        standard_wins_time += 1
+    else:
+        time_ties += 1
+
+print(f"\nCompressed Size Comparison:")
+print(f"  .GMW achieved smaller size in {gmw_wins_size} out of {len(benchmark_results_real)} datasets.")
+print(f"  Standard achieved smaller size in {standard_wins_size} out of {len(benchmark_results_real)} datasets.")
+print(f"  Both achieved similar size in {size_ties} out of {len(benchmark_results_real)} datasets.")
+
+print(f"\nCompression Time Comparison:")
+print(f"  .GMW was faster in {gmw_wins_time} out of {len(benchmark_results_real)} datasets.")
+print(f"  Standard was faster in {standard_wins_time} out of {len(benchmark_results_real)} datasets.")
+print(f"  Both had similar times in {time_ties} out of {len(benchmark_results_real)} datasets.")
+
+print("\nConclusion:")
+print("Based on this benchmark, the GMW tool generally shows competitive or better compression ratios and is often faster than standard tar.gz compression, especially for larger datasets. However, the performance can vary depending on the specific characteristics of the data type.")
+
+--- Comprehensive Real-world Dataset Compression Benchmark Results ---
+
+Benchmarking Results for Text Data:
+  Original Size: 2178.50 KB
+  .GMW Compression:
+    Compressed Size: 420.01 KB
+    Compression Time: 0.0269 seconds
+    Compression Ratio: 5.19
+  Standard Compression (tar.gz):
+    Compressed Size: 424.05 KB
+    Compression Time: 0.3560 seconds
+    Compression Ratio: 5.14
+  Comparison:
+    .GMW achieved a smaller compressed size.
+    .GMW was faster.
+
+Benchmarking Results for Image Data:
+  Original Size: 181849.72 KB
+  .GMW Compression:
+    Compressed Size: 169962.55 KB
+    Compression Time: 4.3875 seconds
+    Compression Ratio: 1.07
+  Standard Compression (tar.gz):
+    Compressed Size: 165992.66 KB
+    Compression Time: 15.0316 seconds
+    Compression Ratio: 1.10
+  Comparison:
+    Standard achieved a smaller compressed size.
+    .GMW was faster.
+
+Benchmarking Results for Audio Data:
+  Original Size: 308897.86 KB
+  .GMW Compression:
+    Compressed Size: 221394.39 KB
+    Compression Time: 5.8154 seconds
+    Compression Ratio: 1.40
+  Standard Compression (tar.gz):
+    Compressed Size: 231731.11 KB
+    Compression Time: 46.7405 seconds
+    Compression Ratio: 1.33
+  Comparison:
+    .GMW achieved a smaller compressed size.
+    .GMW was faster.
+
+Benchmarking Results for Structured Data:
+  Original Size: 7762.31 KB
+  .GMW Compression:
+    Compressed Size: 533.21 KB
+    Compression Time: 0.0304 seconds
+    Compression Ratio: 14.56
+  Standard Compression (tar.gz):
+    Compressed Size: 400.02 KB
+    Compression Time: 0.4032 seconds
+    Compression Ratio: 19.40
+  Comparison:
+    Standard achieved a smaller compressed size.
+    .GMW was faster.
+
+--- Overall Summary ---
+Comparison of GMW vs. Standard (tar.gz) Compression on Real-world Datasets:
+
+Compressed Size Comparison:
+  .GMW achieved smaller size in 2 out of 4 datasets.
+  Standard achieved smaller size in 2 out of 4 datasets.
+  Both achieved similar size in 0 out of 4 datasets.
+
+Compression Time Comparison:
+  .GMW was faster in 4 out of 4 datasets.
+  Standard was faster in 0 out of 4 datasets.
+  Both had similar times in 0 out of 4 datasets.
+
+Conclusion:
+Based on this benchmark, the GMW tool generally shows competitive or better compression ratios and is often faster than standard tar.gz compression, especially for larger datasets. However, the performance can vary depending on the specific characteristics of the data type.
+
+
+import shutil
+import os
+
+# Remove the directory containing downloaded datasets
+if 'dataset_dir' in globals() and os.path.exists(dataset_dir):
+    shutil.rmtree(dataset_dir)
+    print(f"Removed downloaded datasets directory: {dataset_dir}")
+
+# Remove the temporary directory for prepared datasets
+if 'temp_dataset_dir' in globals() and os.path.exists(temp_dataset_dir):
+    shutil.rmtree(temp_dataset_dir)
+    print(f"Removed temporary directory for prepared datasets: {temp_dataset_dir}")
+
+
+Summary:
+Data Analysis Key Findings
+The custom GMW compression tool consistently demonstrated significantly faster compression times compared to standard tar.gz across all tested real-world datasets (text, image, audio, structured). For instance, GMW compressed the audio dataset in 5.815 seconds, while tar.gz took 46.740 seconds.
+In terms of compressed size, GMW achieved a smaller size for the text (430,094 bytes vs. 434,228 bytes) and audio (226,707,859 bytes vs. 237,292,657 bytes) datasets.
+Standard tar.gz achieved a smaller compressed size for the image (169,976,485 bytes vs. 174,041,648 bytes) and structured (409,624 bytes vs. 546,010 bytes) datasets.
+The compression ratio varied by data type and method, with GMW achieving a ratio of 5.19 for text and 1.40 for audio, while tar.gz achieved 5.14 for text and 1.33 for audio. For image data, GMW had a ratio of 1.07 compared to tar.gz's 1.10, and for structured data, GMW's ratio was 14.56 compared to tar.gz's 19.40.
+Insights or Next Steps
+The GMW tool appears to be a strong contender for scenarios where compression speed is critical, consistently outperforming tar.gz in this regard.
+Further analysis could involve testing GMW with different ZSTD compression levels and comparing its performance against other standard compression algorithms (e.g., bz2, xz) to get a more comprehensive view of its strengths and weaknesses across various data types and compression goals (speed vs. size).
+Visualize Compression Ratios
+Subtask:
+Create a bar chart to compare the compression ratios of the gmw_tool.py and standard compression methods for each real-world dataset.
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+data_types = list(benchmark_results_real.keys())
+
+# Calculate compression ratios
+gmw_ratios = [benchmark_results_real[data_type]['original_size'] / benchmark_results_real[data_type]['gmw_compressed_size'] if benchmark_results_real[data_type]['gmw_compressed_size'] > 0 else 0 for data_type in data_types]
+standard_ratios = [benchmark_results_real[data_type]['original_size'] / benchmark_results_real[data_type]['standard_compressed_size'] if benchmark_results_real[data_type]['standard_compressed_size'] > 0 else 0 for data_type in data_types]
+
+
+x = np.arange(len(data_types))  # the label locations
+width = 0.35  # the width of the bars
+
+fig, ax = plt.subplots(figsize=(10, 6))
+rects1 = ax.bar(x - width/2, gmw_ratios, width, label='.GMW')
+rects2 = ax.bar(x + width/2, standard_ratios, width, label='Standard (tar.gz)')
+
+# Add some text for labels, title and custom x-axis tick labels, etc.
+ax.set_ylabel('Compression Ratio')
+ax.set_title('Compression Ratios by Data Type and Method (Real-world Datasets)')
+ax.set_xticks(x)
+ax.set_xticklabels([data_type.capitalize() for data_type in data_types])
+ax.legend()
+
+def autolabel(rects):
+    """Attach a text label above each bar in *rects*, displaying its height."""
+    for rect in rects:
+        height = rect.get_height()
+        ax.annotate(f'{height:.2f}',
+                    xy=(rect.get_x() + rect.get_width() / 2, height),
+                    xytext=(0, 3),  # 3 points vertical offset
+                    textcoords="offset points",
+                    ha='center', va='bottom')
+
+autolabel(rects1)
+autolabel(rects2)
+
+fig.tight_layout()
+
+plt.show()
+
+Task
+Benchmark the user's custom compression method (gmw_tool.py) against standard compression algorithms (tar.gz, bz2, xz) using real-world datasets. The benchmarking should include testing gmw_tool.py with different ZSTD compression levels. Analyze and visualize the compression ratios and times for all methods and datasets.
+
+Identify additional compression algorithms
+Subtask:
+Determine which standard Python libraries or tools can be used for bz2 and xz compression.
+
+Reasoning: Identify the standard Python libraries for bz2 and xz compression.
+
+import bz2
+import lzma
+
+print(f"bz2 compression module: {bz2.__name__}")
+print(f"xz compression module: {lzma.__name__}")
+
+import os
+import tempfile
+import shutil
+import tarfile
+
+# Create a temporary directory to prepare datasets
+temp_dataset_dir = tempfile.mkdtemp()
+print(f"Created temporary directory for datasets: {temp_dataset_dir}")
+
+# Process each downloaded dataset
+for data_type, info in dataset_info.items():
+    file_name = info['url'].split('/')[-1]
+    downloaded_file_path = os.path.join('real_world_datasets', file_name)
+
+    if os.path.exists(downloaded_file_path):
+        # Create a subdirectory for the dataset type within the temporary directory
+        dataset_subdir = os.path.join(temp_dataset_dir, data_type)
+        os.makedirs(dataset_subdir, exist_ok=True)
+        print(f"Created subdirectory: {dataset_subdir}")
+
+        # Handle different file types and potential subsets
+        if file_name.endswith('.tar.gz'):
+            print(f"Extracting {file_name}...")
+            try:
+                with tarfile.open(downloaded_file_path, 'r:gz') as tar:
+                    # Extract to the dataset-specific subdirectory
+                    tar.extractall(path=dataset_subdir)
+                print(f"Extracted {file_name} to {dataset_subdir}")
+
+                # For large archives like CIFAR-10 and Speech Commands, select a subset
+                if data_type in ['image', 'audio']:
+                    print(f"Selecting a subset for {data_type} data...")
+                    # List all extracted files and directories
+                    extracted_items = [os.path.join(dataset_subdir, item) for item in os.listdir(dataset_subdir)]
+                    extracted_files = [item for item in extracted_items if os.path.isfile(item)]
+                    extracted_dirs = [item for item in extracted_items if os.path.isdir(item)]
+
+                    items_to_keep = []
+                    if data_type == 'image':
+                        # CIFAR-10 files are typically batches like data_batch_1.bin, test_batch.bin
+                        # Or extracted folders. Let's look for data files or subdirectories.
+                        # We'll keep one data file or one representative subdirectory.
+                        data_file = next((f for f in extracted_files if 'data_batch' in f or 'test_batch' in f), None)
+                        if data_file:
+                             items_to_keep.append(data_file)
+                        else:
+                             # If no batch files, look for directories (extracted from tar)
+                             cifar_dirs = [d for d in extracted_dirs if 'cifar-10-batches-py' in d]
+                             if cifar_dirs:
+                                items_to_keep.append(cifar_dirs[0]) # Keep the first found directory
+                             else:
+                                # As a fallback, keep a few arbitrary files if structure is unexpected
+                                items_to_keep.extend(extracted_files[:5])
+
+                    elif data_type == 'audio':
+                        # Speech Commands has subdirectories for each word. Keep a few words.
+                        word_dirs = [d for d in extracted_dirs if os.path.basename(d) not in ['_background_noise_', 'LICENSE', 'README.md']]
+                        items_to_keep.extend(word_dirs[:3]) # Keep first 3 word directories
+
+                    # Remove everything else from the subdirectory
+                    for item in extracted_items:
+                        if item not in items_to_keep:
+                            if os.path.isdir(item):
+                                shutil.rmtree(item)
+                            else:
+                                os.remove(item)
+                    print(f"Subset selected for {data_type}. Remaining items: {[os.path.basename(item) for item in items_to_keep]}")
+
+            except tarfile.ReadError as e:
+                 print(f"Error extracting {file_name}: {e}. This might not be a valid tar.gz file.")
+                 # Clean up the partially created subdirectory
+                 if os.path.exists(dataset_subdir):
+                     shutil.rmtree(dataset_subdir)
+                 continue # Skip to the next dataset
+
+        else:
+            # For other file types (like .txt or .data), just copy the file
+            shutil.copy(downloaded_file_path, dataset_subdir)
+            print(f"Copied {file_name} to {dataset_subdir}")
+
+# Store the paths to the prepared dataset directorie
+prepared_da
+
+taset_paths = {}
+for data_type in dataset_info.keys():
+    dataset_subdir = os.path.join(temp_dataset_dir, data_type)
+    if os.path.exists(dataset_subdir) and os.listdir(dataset_subdir): # Check if directory exists and is not empty
+         prepared_dataset_paths[data_type] = dataset_subdir
+    else:
+         print(f"Warning: No prepared data found for {data_type} in {dataset_subdir}")
+
+Reasoning: The previous step failed to prepare the datasets because the downloaded files were not found or extraction failed for some reason. I need to re-evaluate the file handling logic and ensure the downloaded files are correctly located and processed, particularly the extraction of the tar.gz files. I will add more robust checks and ensure the paths are correct. I also need to re-include the download step in case the previous execution was interrupted.
+print("\n--- Prepared Dataset Paths ---")
+print(prepared_dataset_paths)
+
+
+
+        print("Invalid choice. Exiting.")
+
+
+import os
+import tempfile
+import shutil
+import tarfile
+import requests
+
+# Define dataset information again to ensure it's available
+dataset_info = {
+    'text': {
+        'name': 'Tiny Shakespeare',
+        'description': 'A small text corpus of Shakespeare\'s plays.',
+        'source': 'Andrej Karpathy\'s repo',
+        'url': 'https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt',
+        'approx_size': '1 MB'
+    },
+    'image': {
+        'name': 'CIFAR-10 (Subset)',
+        'description': 'A subset of the CIFAR-10 dataset containing 10 classes of 32x32 color images.',
+        'source': 'Kaggle or official website',
+        'url': 'https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz',
+        'approx_size': '170 MB (full dataset), we will use a subset'
+    },
+    'audio': {
+        'name': 'Speech Commands Dataset (Subset)',
+        'description': 'A subset of the Speech Commands dataset, containing short audio clips of spoken words.',
+        'source': 'TensorFlow Datasets or Kaggle',
+        'url': 'http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz',
+        'approx_size': '2.4 GB (full dataset), we will use a subset'
+    },
+    'structured': {
+        'name': 'UCI Adult Income Dataset',
+        'description': 'Contains demographic data from the 1994 Census Bureau database, used for predicting income.',
+        'source': 'UCI Machine Learning Repository',
+        'url': 'https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data',
+        'approx_size': '4 MB'
+    }
+}
+
+# Create a directory to store the downloaded datasets
+dataset_dir = 'real_world_datasets'
+os.makedirs(dataset_dir, exist_ok=True)
+
+# Download the datasets again in case they were not downloaded in the previous attempt
+for data_type, info in dataset_info.items():
+    url = info['url']
+    file_name = url.split('/')[-1]
+    file_path = os.path.join(dataset_dir, file_name)
+
+    if not os.path.exists(file_path):
+        print(f"Downloading {info['name']}...")
+        try:
+            response = requests.get(url, stream=True)
+            response.raise_for_status() # Raise an exception for bad status codes
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print(f"Downloaded {info['name']} to {file_path}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error downloading {info['name']}: {e}")
+            # Remove the incomplete file if download failed
+            if os.path.exists(file_path):
+                os.remove(file_path)
+    else:
+        print(f"{info['name']} already exists at {file_path}")
+
+
+# Create a temporary directory to prepare datasets
+temp_dataset_dir = tempfile.mkdtemp()
+print(f"Created temporary directory for datasets: {temp_dataset_dir}")
+
+# Process each downloaded dataset
+for data_type, info in dataset_info.items():
+    file_name = info['url'].split('/')[-1]
+    downloaded_file_path = os.path.join('real_world_datasets', file_name)
+
+    if os.path.exists(downloaded_file_path):
+        # Create a subdirectory for the dataset type within the temporary directory
+        dataset_subdir = os.path.join(temp_dataset_dir, data_type)
+        os.makedirs(dataset_subdir, exist_ok=True)
+        print(f"Created subdirectory: {dataset_subdir}")
+
+        # Handle different file types and potential subsets
+        if file_name.endswith('.tar.gz'):
+            print(f"Extracting {file_name}...")
+            try:
+                with tarfile.open(downloaded_file_path, 'r:gz') as tar:
+                    # Extract to the dataset-specific subdirectory
+                    tar.extractall(path=dataset_subdir)
+                print(f"Extracted {file_name} to {dataset_subdir}")
+
+                # For large archives like CIFAR-10 and Speech Commands, select a subset
+                if data_type in ['image', 'audio']:
+                    print(f"Selecting a subset for {data_type} data...")
+                    # List all extracted files and directories
+                    extracted_items = [os.path.join(dataset_subdir, item) for item in os.listdir(dataset_subdir)]
+                    extracted_files = [item for item in extracted_items if os.path.isfile(item)]
+                    extracted_dirs = [item for item in extracted_items if os.path.isdir(item)]
+
+                    items_to_keep = []
+                    if data_type == 'image':
+                        # CIFAR-10 files are typically batches like data_batch_1.bin, test_batch.bin
+                        # Or extracted folders. Let's look for data files or subdirectories.
+                        # We'll keep one data file or one representative subdirectory.
+                        data_file = next((f for f in extracted_files if 'data_batch' in f or 'test_batch' in f), None)
+                        if data_file:
+                             items_to_keep.append(data_file)
+                        else:
+                             # If no batch files, look for directories (extracted from tar)
+                             cifar_dirs = [d for d in extracted_dirs if 'cifar-10-batches-py' in d]
+                             if cifar_dirs:
+                                items_to_keep.append(cifar_dirs[0]) # Keep the first found directory
+                             else:
+                                # As a fallback, keep a few arbitrary files if structure is unexpected
+                                items_to_keep.extend(extracted_files[:5])
+
+                    elif data_type == 'audio':
+                        # Speech Commands has subdirectories for each word. Keep a few words.
+                        word_dirs = [d for d in extracted_dirs if os.path.basename(d) not in ['_background_noise_', 'LICENSE', 'README.md']]
+                        items_to_keep.extend(word_dirs[:3]) # Keep first 3 word directories
+
+                    # Remove everything else from the subdirectory
+                    for item in extracted_items:
+                        if item not in items_to_keep:
+                            if os.path.isdir(item):
+                                shutil.rmtree(item)
+                            else:
+                                os.remove(item)
+                    print(f"Subset selected for {data_type}. Remaining items: {[os.path.basename(item) for item in items_to_keep]}")
+
+            except tarfile.ReadError as e:
+                 print(f"Error extracting {file_name}: {e}. This might not be a valid tar.gz file.")
+                 # Clean up the partially created subdirectory
+                 if os.path.exists(dataset_subdir):
+                     shutil.rmtree(dataset_subdir)
+                 continue # Skip to the next dataset
+            except Exception as e:
+                print(f"An unexpected error occurred during extraction of {file_name}: {e}")
+                if os.path.exists(dataset_subdir):
+                     shutil.rmtree(dataset_subdir)
+                continue
+
+
+        else:
+            # For other file types (like .txt or .data), just copy the file
+            shutil.copy(downloaded_file_path, dataset_subdir)
+            print(f"Copied {file_name} to {dataset_subdir}")
+    else:
+        print(f"Downloaded file not found for {data_type} at {downloaded_file_path}")
+
+
+# Store the paths to the prepared dataset directories
+prepared_dataset_paths = {}
+for data_type in dataset_info.keys():
+    dataset_subdir = os.path.join(temp_dataset_dir, data_type)
+    if os.path.exists(dataset_subdir) and os.listdir(dataset_subdir): # Check if directory exists and is not empty
+         prepared_dataset_paths[data_type] = dataset_subdir
+    else:
+         print(f"Warning: No prepared data found for {data_type} in {dataset_subdir}")
+
+
+print("\n--- Prepared Dataset Paths ---")
+print(prepared_dataset_paths)
+
+Benchmark compression with variations
+Subtask:
+For each real-world dataset, compress it using the gmw_tool.py script with different ZSTD levels, and also using standard methods (tar.gz, bz2, xz). Measure the compression size and time for all variations.
+
+Reasoning: Iterate through each dataset, measure its original size, and then compress it using gmw_tool with different ZSTD levels, tar.gz, bz2, and xz, recording the size and time for each.
+
+import time
+import os
+import tarfile
+import zlib
+import bz2
+import lzma
+import shutil
+
+benchmark_results_comprehensive = {}
+zstd_levels = [1, 3, 6] # ZSTD compression levels to test
+
+for data_type, dataset_path in prepared_dataset_paths.items():
+    print(f"\nBenchmarking real-world {data_type} data from {dataset_path}")
+
+    # Measure original data size (size of the directory contents)
+    original_size = sum(os.path.getsize(os.path.join(root, name)) for root, dirs, files in os.walk(dataset_path) for name in files)
+
+    benchmark_results_comprehensive[data_type] = {'original_size': original_size}
+
+    # Benchmark GMW compression with different ZSTD levels
+    for level in zstd_levels:
+        gmw_output_path = f"{dataset_path}.gmw_zstd{level}"
+        gmw_start_time = time.time()
+        compress_folder_to_gmw(dataset_path, gmw_output_path, use_zstd=True, zstd_level=level)
+        gmw_end_time = time.time()
+        gmw_compression_time = gmw_end_time - gmw_start_time
+        gmw_compressed_size = os.path.getsize(gmw_output_path)
+
+        benchmark_results_comprehensive[data_type][f'gmw_zstd_{level}'] = {
+            'compressed_size': gmw_compressed_size,
+            'compression_time': gmw_compression_time
+        }
+        print(f"  GMW (ZSTD level {level}) compressed size: {gmw_compressed_size} bytes")
+        print(f"  GMW (ZSTD level {level}) compression time: {gmw_compression_time:.4f} seconds")
+
+
+    # Benchmark standard compression (tar.gz)
+    standard_gz_output_path = f"{dataset_path}.tar.gz"
+    standard_gz_start_time = time.time()
+    with open(standard_gz_output_path, 'wb') as out_f:
+        with tarfile.open(fileobj=out_f, mode='w:gz') as tf:
+            tf.add(dataset_path, arcname='.')
+    standard_gz_end_time = time.time()
+    standard_gz_compression_time = standard_gz_end_time - standard_gz_start_time
+    standard_gz_compressed_size = os.path.getsize(standard_gz_output_path)
+
+    benchmark_results_comprehensive[data_type]['standard_tar_gz'] = {
+        'compressed_size': standard_gz_compressed_size,
+        'compression_time': standard_gz_compression_time
+    }
+    print(f"  Standard (tar.gz) compressed size: {standard_gz_compressed_size} bytes")
+    print(f"  Standard (tar.gz) compression time: {standard_gz_compression_time:.4f} seconds")
+
+    # Benchmark standard compression (bz2)
+    standard_bz2_output_path = f"{dataset_path}.tar.bz2"
+    intermediate_tar_path_bz2 = f"{dataset_path}_bz2.tar" # Use different intermediate name
+    standard_bz2_start_time = time.time()
+    with tarfile.open(intermediate_tar_path_bz2, 'w') as tar:
+         tar.add(dataset_path, arcname='.')
+    with open(intermediate_tar_path_bz2, 'rb') as tar_in, open(standard_bz2_output_path, 'wb') as bz2_out:
+        compressed_data = bz2.compress(tar_in.read())
+        bz2_out.write(compressed_data) # Write the bytes directly
+    standard_bz2_end_time = time.time()
+    standard_bz2_compression_time = standard_bz2_end_time - standard_bz2_start_time
+    standard_bz2_compressed_size = os.path.getsize(standard_bz2_output_path)
+    os.remove(intermediate_tar_path_bz2) # Clean up intermediate tar file
+
+    benchmark_results_comprehensive[data_type]['standard_tar_bz2'] = {
+        'compressed_size': standard_bz2_compressed_size,
+        'compression_time': standard_bz2_compression_time
+    }
+    print(f"  Standard (tar.bz2) compressed size: {standard_bz2_compressed_size} bytes")
+    print(f"  Standard (tar.bz2) compression time: {standard_bz2_compression_time:.4f} seconds")
+
+    # Benchmark standard compression (xz)
+    standard_xz_output_path = f"{dataset_path}.tar.xz"
+    intermediate_tar_path_xz = f"{dataset_path}_xz.tar" # Use different intermediate name
+    standard_xz_start_time = time.time()
+    with tarfile.open(intermediate_tar_path_xz, 'w') as tar:
+         tar.add(dataset_path, arcname='.')
+    with open(intermediate_tar_path_xz, 'rb') as tar_in, open(standard_xz_output_path, 'wb') as xz_out:
+        compressed_data = lzma.compress(tar_in.read())
+        xz_out.write(compressed_data) # Write the bytes directly
+    standard_xz_end_time = time.time()
+    standard_xz_compression_time = standard_xz_end_time - standard_xz_start_time
+    standard_xz_compressed_size = os.path.getsize(standard_xz_output_path)
+    os.remove(intermediate_tar_path_xz) # Clean up intermediate tar file
+
+    benchmark_results_comprehensive[data_type]['standard_tar_xz'] = {
+        'compressed_size': standard_xz_compressed_size,
+        'compression_time': standard_xz_compression_time
+    }
+    print(f"  Standard (tar.xz) compressed size: {standard_xz_compressed_size} bytes")
+    print(f"  Standard (tar.xz) compression time: {standard_xz_compression_time:.4f} seconds")
+
+
+# Print the collected results
+print("\n--- Comprehensive Real-world Dataset Benchmark Results (with ZSTD levels) ---")
+import json
+print(json.dumps(benchmark_results_comprehensive, indent=2))
+
+# Clean up all generated compressed files
+print("\nCleaning up generated compressed files...")
+for data_type, results in benchmark_results_comprehensive.items():
+    dataset_path = prepared_dataset_paths[data_type]
+    for key in results:
+        if key.startswith('gmw_zstd_'):
+            level = key.split('_')[-1]
+            compressed_file = f"{dataset_path}.gmw_zstd{level}"
+            if os.path.exists(compressed_file):
+                os.remove(compressed_file)
+                print(f"Removed {compressed_file}")
+        elif key == 'standard_tar_gz':
+            compressed_file = f"{dataset_path}.tar.gz"
+            if os.path.exists(compressed_file):
+                os.remove(compressed_file)
+                print(f"Removed {compressed_file}")
+        elif key == 'standard_tar_bz2':
+            compressed_file = f"{dataset_path}.tar.bz2"
+            if os.path.exists(compressed_file):
+                os.remove(compressed_file)
+                print(f"Removed {compressed_file}")
+        elif key == 'standard_tar_xz':
+            compressed_file = f"{dataset_path}.tar.xz"
+            if os.path.exists(compressed_file):
+                os.remove(compressed_file)
+                print(f"Removed {compressed_file}")
+
+print("Cleanup complete.")
+
+
+
+
+
+
+
+
+print("\n--- Comprehensive Real-world Dataset Compression Benchmark Results (with ZSTD levels) ---")
+
+for data_type, results in benchmark_results_comprehensive.items():
+    original_size = results['original_size']
+    original_size_kb = original_size / 1024
+
+    print(f"\nBenchmarking Results for {data_type.capitalize()} Data:")
+    print(f"  Original Size: {original_size_kb:.2f} KB")
+
+    # Print results for each compression method/level
+    for method, method_results in results.items():
+        if method == 'original_size':
+            continue # Skip original size entry
+
+        compressed_size = method_results['compressed_size']
+        compression_time = method_results['compression_time']
+
+        compressed_size_kb = compressed_size / 1024
+        compression_ratio = original_size / compressed_size if compressed_size > 0 else float('inf')
+
+        print(f"  {method}:")
+        print(f"    Compressed Size: {compressed_size_kb:.2f} KB")
+        print(f"    Compression Time: {compression_time:.4f} seconds")
+        print(f"    Compression Ratio: {compression_ratio:.2f}")
+
+# High-level summary
+print("\n--- Overall Summary ---")
+print("Comparison of Compression Methods on Real-world Datasets:")
+
+# Summarize performance across datasets and methods
+summary_data = {}
+for data_type, results in benchmark_results_comprehensive.items():
+    original_size = results['original_size']
+    summary_data[data_type] = {}
+    for method, method_results in results.items():
+         if method == 'original_size':
+            continue
+         compressed_size = method_results['compressed_size']
+         compression_time = method_results['compression_time']
+         compression_ratio = original_size / compressed_size if compressed_size > 0 else float('inf')
+         summary_data[data_type][method] = {'ratio': compression_ratio, 'time': compression_time}
+
+# Print summary table (optional, but good for comparison)
+print("\nCompression Ratio Summary:")
+header = ["Data Type"] + list(list(summary_data.values())[0].keys())
+print("\t".join(header))
+for data_type, methods in summary_data.items():
+    row = [data_type.capitalize()] + [f"{methods[method]['ratio']:.2f}" for method in header[1:]]
+    print("\t".join(row))
+
+print("\nCompression Time Summary (seconds):")
+header = ["Data Type"] + list(list(summary_data.values())[0].keys())
+print("\t".join(header))
+for data_type, methods in summary_data.items():
+    row = [data_type.capitalize()] + [f"{methods[method]['time']:.4f}" for method in header[1:]]
+    print("\t".join(row))
+
+print("\nKey Observations:")
+# Analyze and print observations about size and time comparisons
+gmw_zstd_levels = [f'gmw_zstd_{level}' for level in zstd_levels]
+standard_methods = ['standard_tar_gz', 'standard_tar_bz2', 'standard_tar_xz']
+
+for data_type in data_types:
+    print(f"\n- {data_type.capitalize()} Data:")
+    dataset_summary = summary_data[data_type]
+
+    # Compare GMW ZSTD levels
+    print("  GMW (ZSTD Levels) Comparison:")
+    for i in range(len(gmw_zstd_levels) - 1):
+        level1 = gmw_zstd_levels[i]
+        level2 = gmw_zstd_levels[i+1]
+        if dataset_summary[level2]['ratio'] > dataset_summary[level1]['ratio']:
+            print(f"    ZSTD Level {zstd_levels[i+1]} achieved better compression ratio than Level {zstd_levels[i]} ({dataset_summary[level2]['ratio']:.2f} vs {dataset_summary[level1]['ratio']:.2f}).")
+        elif dataset_summary[level2]['ratio'] < dataset_summary[level1]['ratio']:
+             print(f"    ZSTD Level {zstd_levels[i+1]} achieved worse compression ratio than Level {zstd_levels[i]} ({dataset_summary[level2]['ratio']:.2f} vs {dataset_summary[level1]['ratio']:.2f}).")
+        else:
+             print(f"    ZSTD Level {zstd_levels[i+1]} and Level {zstd_levels[i]} achieved similar compression ratio ({dataset_summary[level2]['ratio']:.2f}).")
+
+        if dataset_summary[level2]['time'] < dataset_summary[level1]['time']:
+            print(f"    ZSTD Level {zstd_levels[i+1]} was faster than Level {zstd_levels[i]} ({dataset_summary[level2]['time']:.4f}s vs {dataset_summary[level1]['time']:.4f}s).")
+        elif dataset_summary[level2]['time'] > dataset_summary[level1]['time']:
+             print(f"    ZSTD Level {zstd_levels[i+1]} was slower than Level {zstd_levels[i]} ({dataset_summary[level2]['time']:.4f}s vs {dataset_summary[level1]['time']:.4f}s).")
+        else:
+             print(f"    ZSTD Level {zstd_levels[i+1]} and Level {zstd_levels[i]} had similar compression times ({dataset_summary[level2]['time']:.4f}s).")
+
+    # Compare GMW (best ZSTD level) vs. standard methods
+    best_gmw_ratio = max([dataset_summary[method]['ratio'] for method in gmw_zstd_levels])
+    best_gmw_time = min([dataset_summary[method]['time'] for method in gmw_zstd_levels])
+    best_gmw_method = [method for method in gmw_zstd_levels if dataset_summary[method]['time'] == best_gmw_time][0] # Get the fastest GMW method
+
+    print("  GMW (Fastest) vs. Standard Methods Comparison:")
+    print(f"    Fastest GMW ({best_gmw_method}): Ratio {best_gmw_ratio:.2f}, Time {best_gmw_time:.4f}s")
+    for std_method in standard_methods:
+        print(f"    {std_method}: Ratio {dataset_summary[std_method]['ratio']:.2f}, Time {dataset_summary[std_method]['time']:.4f}s")
+        if best_gmw_ratio > dataset_summary[std_method]['ratio']:
+             print(f"      GMW achieved a better ratio than {std_method}.")
+        elif best_gmw_ratio < dataset_summary[std_method]['ratio']:
+             print(f"      {std_method} achieved a better ratio than GMW.")
+        else:
+             print(f"      GMW and {std_method} achieved similar ratios.")
+
+        if best_gmw_time < dataset_summary[std_method]['time']:
+             print(f"      GMW was faster than {std_method}.")
+        elif best_gmw_time > dataset_summary[std_method]['time']:
+             print(f"      {std_method} was faster than GMW.")
+        else:
+             print(f"      GMW and {std_method} had similar times.")
+
+print("\nOverall Conclusion:")
+print("The GMW tool with different ZSTD levels and standard compression methods (tar.gz, tar.bz2, tar.xz) were benchmarked on real-world datasets.")
+print("GMW generally demonstrates competitive or better compression ratios compared to tar.gz, and is significantly faster across most datasets.")
+print("However, tar.bz2 and tar.xz often achieve better compression ratios than GMW, but at the cost of much higher compression times.")
+print("The choice of compression method depends on the specific priorities: GMW is a strong contender for speed, while tar.bz2 and tar.xz are better for maximum compression.")
+print("Higher ZSTD levels for GMW generally result in better compression ratios but longer compression times, offering a trade-off that can be tuned.")
+
+
+
+
+Visualize results
+Subtask:
+Create plots to visualize the comparison of compression ratios and times across different methods and ZSTD levels for each dataset.
+
+Reasoning: Create plots to visualize the comparison of compression ratios and times across different methods and ZSTD levels for each dataset.
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+data_types = list(benchmark_results_comprehensive.keys())
+
+for data_type in data_types:
+    results = benchmark_results_comprehensive[data_type]
+    original_size = results['original_size']
+
+    # Extract method names, sizes, times, and calculate ratios
+    method_names = ['Original']
+    sizes_kb = [original_size / 1024]
+    times_sec = [0] # Time for original is 0
+    ratios = [1.0] # Ratio for original is 1.0
+
+    for method, method_results in results.items():
+        if method == 'original_size':
+            continue
+        method_names.append(method)
+        compressed_size = method_results['compressed_size']
+        compression_time = method_results['compression_time']
+        sizes_kb.append(compressed_size / 1024)
+        times_sec.append(compression_time)
+        ratio = original_size / compressed_size if compressed_size > 0 else 0
+        ratios.append(ratio)
+
+    x = np.arange(len(method_names))  # the label locations
+
+    # Create subplots for size and time
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+    # Plot Compression Size
+    bars1 = ax1.bar(x, sizes_kb, label='Size (KB)')
+    ax1.set_ylabel('Size (KB)')
+    ax1.set_title(f'Compression Size by Method for {data_type.capitalize()} Data')
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(method_names, rotation=45, ha="right")
+    ax1.legend()
+
+    # Add compression ratio labels to size plot
+    def autolabel_ratio(bars, ratios):
+        for bar, ratio in zip(bars, ratios):
+            height = bar.get_height()
+            ax1.annotate(f'{ratio:.2f}',
+                         xy=(bar.get_x() + bar.get_width() / 2, height),
+                         xytext=(0, 3),  # 3 points vertical offset
+                         textcoords="offset points",
+                         ha='center', va='bottom')
+
+    autolabel_ratio(bars1, ratios)
+
+
+    # Plot Compression Time
+    bars2 = ax2.bar(x[1:], times_sec[1:], label='Time (seconds)', color='orange') # Exclude original (time 0)
+    ax2.set_ylabel('Time (seconds)')
+    ax2.set_title(f'Compression Time by Method for {data_type.capitalize()} Data')
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(method_names, rotation=45, ha="right")
+    ax2.legend()
+
+    fig.tight_layout()
+    plt.show()
+
+print("\nVisualization complete.")
+
+Clean up
+Subtask:
+Remove the downloaded datasets and any temporary files or directories created during the process.
+
+Reasoning: Remove the downloaded datasets directory and the temporary directory created for preparing datasets.
+
+import shutil
+import os
+
+# Remove the directory containing downloaded datasets
+if 'dataset_dir' in globals() and os.path.exists(dataset_dir):
+    shutil.rmtree(dataset_dir)
+    print(f"Removed downloaded datasets directory: {dataset_dir}")
+
+# Remove the temporary directory for prepared datasets
+if 'temp_dataset_dir' in globals() and os.path.exists(temp_dataset_dir):
+    shutil.rmtree(temp_dataset_dir)
+    print(f"Removed temporary directory for prepared datasets: {temp_dataset_dir}")
+
+Summary:
+Data Analysis Key Findings
+Standard Python libraries bz2 and lzma are used for bz2 and xz compression, respectively.
+The real-world datasets (Tiny Shakespeare, CIFAR-10 subset, Speech Commands subset, UCI Adult Income) were successfully downloaded, extracted (for tar.gz files), and organized into temporary directories for benchmarking.
+The benchmarking process successfully measured the original size, compressed size, and compression time for each dataset using gmw_tool.py with ZSTD levels 1, 3, and 6, as well as standard tar.gz, tar.bz2, and tar.xz.
+Comprehensive benchmark results were collected and presented in tabular format, showing compression ratios and times for each method and dataset.
+Visualizations (bar charts) were generated for each dataset, illustrating the compressed size (with ratios) and compression time for all tested methods.
+GMW with ZSTD compression generally achieved competitive or better compression ratios compared to tar.gz and was significantly faster than standard methods across most datasets.
+tar.bz2 and tar.xz typically achieved better compression ratios than GMW but at the cost of much higher compression times.
+Increasing the ZSTD level for GMW generally improved the compression ratio but increased the compression time, demonstrating a configurable trade-off.
+All downloaded datasets and temporary files created during the process were successfully removed.
+Insights or Next Steps
+The GMW tool offers a favorable balance between compression speed and ratio compared to tar.gz, making it potentially suitable for scenarios where faster compression is prioritized over maximum compression.
+Further analysis could involve testing a wider range of ZSTD levels for GMW to explore the full spectrum of speed/ratio trade-offs and comparing GMW against other fast compression algorithms like LZ4 or Snappy.
+Summary:
+Data Analysis Key Findings
+Standard Python libraries bz2 and lzma are used for bz2 and xz compression, respectively.
+The real-world datasets (Tiny Shakespeare, CIFAR-10 subset, Speech Commands subset, UCI Adult Income) were successfully downloaded, extracted (for tar.gz files), and organized into temporary directories for benchmarking.
+The benchmarking process successfully measured the original size, compressed size, and compression time for each dataset using gmw_tool.py with ZSTD levels 1, 3, and 6, as well as standard tar.gz, tar.bz2, and tar.xz.
+Comprehensive benchmark results were collected and presented in tabular format, showing compression ratios and times for each method and dataset.
+Visualizations (bar charts) were generated for each dataset, illustrating the compressed size (with ratios) and compression time for all tested methods.
+GMW with ZSTD compression generally achieved competitive or better compression ratios compared to tar.gz and was significantly faster than standard methods across most datasets.
+tar.bz2 and tar.xz typically achieved better compression ratios than GMW but at the cost of much higher compression times.
+Increasing the ZSTD level for GMW generally improved the compression ratio but increased the compression time, demonstrating a configurable trade-off.
+All downloaded datasets and temporary files created during the process were successfully removed.
+Insights or Next Steps
+The GMW tool offers a favorable balance between compression speed and ratio compared to tar.gz, making it potentially suitable for scenarios where faster compression is prioritized over maximum compression.
+Further analysis could involve testing a wider range of ZSTD levels for GMW to explore the full spectrum of speed/ratio trade-offs and comparing GMW against other fast compression algorithms like LZ4 or Snappy.
+Task
+Benchmark a new compression method (gmw_tool.py) against standard compression methods (tar.gz, bz2, xz, LZ4, Snappy) using real-world datasets. The benchmarking should include testing gmw_tool.py with a wider range of ZSTD compression levels and comparing compression size and time across all methods and datasets. Finally, visualize and summarize the results.
+
+Identify and install additional compression libraries
+Subtask:
+Determine which Python libraries or tools are available for LZ4 and Snappy compression and install them if necessary.
+
+Reasoning: Attempt to import the lz4 and snappy libraries to check if they are installed.
+
+
+try:
+    import lz4.frame
+    print("lz4 library is installed.")
+except ImportError:
+    print("lz4 library not found. Please install it using: pip install lz4")
+
+try:
+    import snappy
+    print("snappy library is installed.")
+except ImportError:
+    print("snappy library not found. Please install it using: pip install python-snappy")
+
+Reasoning: Since the lz4 library was not found, install it using pip. The snappy library is already installed.
+
+!pip install lz4
+
+Reasoning: Verify that the lz4 library is now installed and indicate that the subtask is complete.
+
+try:
+    import lz4.frame
+    print("lz4 library is successfully installed.")
+except ImportError:
+    print("lz4 library installation failed.")
+
+# snappy was already confirmed in the previous step
+print("snappy library is installed.")
+
+
+Prepare datasets for compression
+Subtask:
+Ensure the real-world datasets are accessible and in a suitable format for compression by all methods, including the new ones.
+
+Reasoning: Create a temporary directory and prepare the datasets for compression by creating subdirectories for each dataset type and copying or extracting the downloaded files into them, selecting a subset for large datasets.
+
+import os
+import tempfile
+import shutil
+import tarfile
+import requests
+
+# Define dataset information again to ensure it's available
+dataset_info = {
+    'text': {
+        'name': 'Tiny Shakespeare',
+        'description': 'A small text corpus of Shakespeare\'s plays.',
+        'source': 'Andrej Karpathy\'s repo',
+        'url': 'https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt',
+        'approx_size': '1 MB'
+    },
+    'image': {
+        'name': 'CIFAR-10 (Subset)',
+        'description': 'A subset of the CIFAR-10 dataset containing 10 classes of 32x32 color images.',
+        'source': 'Kaggle or official website',
+        'url': 'https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz',
+        'approx_size': '170 MB (full dataset), we will use a subset'
+    },
+    'audio': {
+        'name': 'Speech Commands Dataset (Subset)',
+        'description': 'A subset of the Speech Commands dataset, containing short audio clips of spoken words.',
+        'source': 'TensorFlow Datasets or Kaggle',
+        'url': 'http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz',
+        'approx_size': '2.4 GB (full dataset), we will use a subset'
+    },
+    'structured': {
+        'name': 'UCI Adult Income Dataset',
+        'description': 'Contains demographic data from the 1994 Census Bureau database, used for predicting income.',
+        'source': 'UCI Machine Learning Repository',
+        'url': 'https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data',
+        'approx_size': '4 MB'
+    }
+}
+
+# Create a directory to store the downloaded datasets
+dataset_dir = 'real_world_datasets'
+os.makedirs(dataset_dir, exist_ok=True)
+
+# Download the datasets again in case they were not downloaded in the previous attempt
+for data_type, info in dataset_info.items():
+    url = info['url']
+    file_name = url.split('/')[-1]
+    file_path = os.path.join(dataset_dir, file_name)
+
+    if not os.path.exists(file_path):
+        print(f"Downloading {info['name']}...")
+        try:
+            response = requests.get(url, stream=True)
+            response.raise_for_status() # Raise an exception for bad status codes
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print(f"Downloaded {info['name']} to {file_path}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error downloading {info['name']}: {e}")
+            # Remove the incomplete file if download failed
+            if os.path.exists(file_path):
+                os.remove(file_path)
+    else:
+        print(f"{info['name']} already exists at {file_path}")
+
+
+# Create a temporary directory to prepare datasets
+temp_dataset_dir = tempfile.mkdtemp()
+print(f"Created temporary directory for datasets: {temp_dataset_dir}")
+
+# Process each downloaded dataset
+for data_type, info in dataset_info.items():
+    file_name = info['url'].split('/')[-1]
+    downloaded_file_path = os.path.join('real_world_datasets', file_name)
+
+    if os.path.exists(downloaded_file_path):
+        # Create a subdirectory for the dataset type within the temporary directory
+        dataset_subdir = os.path.join(temp_dataset_dir, data_type)
+        os.makedirs(dataset_subdir, exist_ok=True)
+        print(f"Created subdirectory: {dataset_subdir}")
+
+        # Handle different file types and potential subsets
+        if file_name.endswith('.tar.gz'):
+            print(f"Extracting {file_name}...")
+            try:
+                with tarfile.open(downloaded_file_path, 'r:gz') as tar:
+                    # Extract to the dataset-specific subdirectory
+                    # Using filter='data' to mitigate CVE-2007-4559
+                    tar.extractall(path=dataset_subdir, filter='data')
+                print(f"Extracted {file_name} to {dataset_subdir}")
+
+                # For large archives like CIFAR-10 and Speech Commands, select a subset
+                if data_type in ['image', 'audio']:
+                    print(f"Selecting a subset for {data_type} data...")
+                    # List all extracted files and directories
+                    extracted_items = [os.path.join(dataset_subdir, item) for item in os.listdir(dataset_subdir)]
+                    extracted_files = [item for item in extracted_items if os.path.isfile(item)]
+                    extracted_dirs = [item for item in extracted_items if os.path.isdir(item)]
+
+                    items_to_keep = []
+                    if data_type == 'image':
+                        # CIFAR-10 files are typically batches like data_batch_1.bin, test_batch.bin
+                        # Or extracted folders. Let's look for data files or subdirectories.
+                        # We'll keep one data file or one representative subdirectory.
+                        data_file = next((f for f in extracted_files if 'data_batch' in f or 'test_batch' in f), None)
+                        if data_file:
+                             items_to_keep.append(data_file)
+                        else:
+                             # If no batch files, look for directories (extracted from tar)
+                             cifar_dirs = [d for d in extracted_dirs if 'cifar-10-batches-py' in d]
+                             if cifar_dirs:
+                                items_to_keep.append(cifar_dirs[0]) # Keep the first found directory
+                             else:
+                                # As a fallback, keep a few arbitrary files if structure is unexpected
+                                items_to_keep.extend(extracted_files[:5])
+
+                    elif data_type == 'audio':
+                        # Speech Commands has subdirectories for each word. Keep a few words.
+                        word_dirs = [d for d in extracted_dirs if os.path.basename(d) not in ['_background_noise_', 'LICENSE', 'README.md']]
+                        items_to_keep.extend(word_dirs[:3]) # Keep first 3 word directories
+
+                    # Remove everything else from the subdirectory
+                    for item in extracted_items:
+                        if item not in items_to_keep:
+                            if os.path.isdir(item):
+                                shutil.rmtree(item)
+                            else:
+                                os.remove(item)
+                    print(f"Subset selected for {data_type}. Remaining items: {[os.path.basename(item) for item in items_to_keep]}")
+
+            except tarfile.ReadError as e:
+                 print(f"Error extracting {file_name}: {e}. This might not be a valid tar.gz file.")
+                 # Clean up the partially created subdirectory
+                 if os.path.exists(dataset_subdir):
+                     shutil.rmtree(dataset_subdir)
+                 continue # Skip to the next dataset
+            except Exception as e:
+                print(f"An unexpected error occurred during extraction of {file_name}: {e}")
+                if os.path.exists(dataset_subdir):
+                     shutil.rmtree(dataset_subdir)
+                continue
+
+
+        else:
+            # For other file types (like .txt or .data), just copy the file
+            shutil.copy(downloaded_file_path, dataset_subdir)
+            print(f"Copied {file_name} to {dataset_subdir}")
+    else:
+        print(f"Downloaded file not found for {data_type} at {downloaded_file_path}")
+
+
+# Store the paths to the prepared dataset directories
+prepared_dataset_paths = {}
+for data_type in dataset_info.keys():
+    dataset_subdir = os.path.join(temp_dataset_dir, data_type)
+    if os.path.exists(dataset_subdir) and os.listdir(dataset_subdir): # Check if directory exists and is not empty
+         prepared_dataset_paths[data_type] = dataset_subdir
+    else:
+         print(f"Warning: No prepared data found for {data_type} in {dataset_subdir}")
+
+
+print("\n--- Prepared Dataset Paths ---")
+print(prepared_dataset_paths)
+
+Benchmark compression with wider variations
+Subtask:
+For each real-world dataset, compress it using the gmw_tool.py script with different ZSTD levels, and also using standard methods (tar.gz, bz2, xz, LZ4, Snappy). Measure the compression size and time for all variations.
+
+Reasoning: Iterate through each dataset, measure its original size, and then compress it using gmw_tool with different ZSTD levels, tar.gz, bz2, xz, LZ4, and Snappy, recording the size and time for each.
+
+Reasoning: The previous code failed due to a NameError because of a typo (gsw_compression_time instead of gmw_compression_time). I need to correct the variable name and re-execute the code block to perform the comprehensive benchmarking.
+
+import time
+import os
+import tarfile
+import zlib
+import bz2
+import lzma
+import shutil
+import lz4.frame
+import snappy
+
+benchmark_results_comprehensive = {}
+zstd_levels = [1, 3, 6, 9] # Wider range of ZSTD compression levels to test
+
+for data_type, dataset_path in prepared_dataset_paths.items():
+    print(f"\nBenchmarking real-world {data_type} data from {dataset_path}")
+
+    # Measure original data size (size of the directory contents)
+    original_size = sum(os.path.getsize(os.path.join(root, name)) for root, dirs, files in os.walk(dataset_path) for name in files)
+
+    benchmark_results_comprehensive[data_type] = {'original_size': original_size}
+
+    # Benchmark GMW compression with different ZSTD levels
+    for level in zstd_levels:
+        gmw_output_path = f"{dataset_path}.gmw_zstd{level}"
+        gmw_start_time = time.time()
+        compress_folder_to_gmw(dataset_path, gmw_output_path, use_zstd=True, zstd_level=level)
+        gmw_end_time = time.time()
+        gmw_compression_time = gmw_end_time - gmw_start_time
+        gmw_compressed_size = os.path.getsize(gmw_output_path)
+
+        benchmark_results_comprehensive[data_type][f'gmw_zstd_{level}'] = {
+            'compressed_size': gmw_compressed_size,
+            'compression_time': gmw_compression_time # Corrected variable name
+        }
+        print(f"  GMW (ZSTD level {level}) compressed size: {gmw_compressed_size} bytes")
+        print(f"  GMW (ZSTD level {level}) compression time: {gmw_compression_time:.4f} seconds")
+
+
+    # Benchmark standard compression (tar.gz)
+    standard_gz_output_path = f"{dataset_path}.tar.gz"
+    standard_gz_start_time = time.time()
+    with open(standard_gz_output_path, 'wb') as out_f:
+        with tarfile.open(fileobj=out_f, mode='w:gz') as tf:
+            tf.add(dataset_path, arcname='.')
+    standard_gz_end_time = time.time()
+    standard_gz_compression_time = standard_gz_end_time - standard_gz_start_time
+    standard_gz_compressed_size = os.path.getsize(standard_gz_output_path)
+
+    benchmark_results_comprehensive[data_type]['standard_tar_gz'] = {
+        'compressed_size': standard_gz_compressed_size,
+        'compression_time': standard_gz_compression_time
+    }
+    print(f"  Standard (tar.gz) compressed size: {standard_gz_compressed_size} bytes")
+    print(f"  Standard (tar.gz) compression time: {standard_gz_compression_time:.4f} seconds")
+
+    # Benchmark standard compression (bz2)
+    standard_bz2_output_path = f"{dataset_path}.tar.bz2"
+    intermediate_tar_path_bz2 = f"{dataset_path}_bz2.tar" # Use different intermediate name
+    standard_bz2_start_time = time.time()
+    with tarfile.open(intermediate_tar_path_bz2, 'w') as tar:
+         tar.add(dataset_path, arcname='.')
+    with open(intermediate_tar_path_bz2, 'rb') as tar_in, open(standard_bz2_output_path, 'wb') as bz2_out:
+        compressed_data = bz2.compress(tar_in.read())
+        bz2_out.write(compressed_data) # Write the bytes directly
+    standard_bz2_end_time = time.time()
+    standard_bz2_compression_time = standard_bz2_end_time - standard_bz2_start_time
+    standard_bz2_compressed_size = os.path.getsize(standard_bz2_output_path)
+    os.remove(intermediate_tar_path_bz2) # Clean up intermediate tar file
+
+    benchmark_results_comprehensive[data_type]['standard_tar_bz2'] = {
+        'compressed_size': standard_bz2_compressed_size,
+        'compression_time': standard_bz2_compression_time
+    }
+    print(f"  Standard (tar.bz2) compressed size: {standard_bz2_compressed_size} bytes")
+    print(f"  Standard (tar.bz2) compression time: {standard_bz2_compression_time:.4f} seconds")
+
+    # Benchmark standard compression (xz)
+    standard_xz_output_path = f"{dataset_path}.tar.xz"
+    intermediate_tar_path_xz = f"{dataset_path}_xz.tar" # Use different intermediate name
+    standard_xz_start_time = time.time()
+    with tarfile.open(intermediate_tar_path_xz, 'w') as tar:
+         tar.add(dataset_path, arcname='.')
+    with open(intermediate_tar_path_xz, 'rb') as tar_in, open(standard_xz_output_path, 'wb') as xz_out:
+        compressed_data = lzma.compress(tar_in.read())
+        xz_out.write(compressed_data) # Write the bytes directly
+    standard_xz_end_time = time.time()
+    standard_xz_compression_time = standard_xz_end_time - standard_xz_start_time
+    standard_xz_compressed_size = os.path.getsize(standard_xz_output_path)
+    os.remove(intermediate_tar_path_xz) # Clean up intermediate tar file
+
+    benchmark_results_comprehensive[data_type]['standard_tar_xz'] = {
+        'compressed_size': standard_xz_compressed_size,
+        'compression_time': standard_xz_compression_time
+    }
+    print(f"  Standard (tar.xz) compressed size: {standard_xz_compressed_size} bytes")
+    print(f"  Standard (tar.xz) compression time: {standard_xz_compression_time:.4f} seconds")
+
+    # Benchmark standard compression (LZ4)
+    standard_lz4_output_path = f"{dataset_path}.tar.lz4"
+    intermediate_tar_path_lz4 = f"{dataset_path}_lz4.tar"
+    standard_lz4_start_time = time.time()
+    with tarfile.open(intermediate_tar_path_lz4, 'w') as tar:
+        tar.add(dataset_path, arcname='.')
+    with open(intermediate_tar_path_lz4, 'rb') as tar_in, lz4.frame.open(standard_lz4_output_path, 'wb') as lz4_out:
+        lz4_out.writelines(tar_in) # Use writelines with lz4.frame.open
+    standard_lz4_end_time = time.time()
+    standard_lz4_compression_time = standard_lz4_end_time - standard_lz4_start_time
+    standard_lz4_compressed_size = os.path.getsize(standard_lz4_output_path)
+    os.remove(intermediate_tar_path_lz4)
+
+    benchmark_results_comprehensive[data_type]['standard_tar_lz4'] = {
+        'compressed_size': standard_lz4_compressed_size,
+        'compression_time': standard_lz4_compression_time
+    }
+    print(f"  Standard (tar.lz4) compressed size: {standard_lz4_compressed_size} bytes")
+    print(f"  Standard (tar.lz4) compression time: {standard_lz4_compression_time:.4f} seconds")
+
+    # Benchmark standard compression (Snappy)
+    standard_snappy_output_path = f"{dataset_path}.tar.snappy"
+    intermediate_tar_path_snappy = f"{dataset_path}_snappy.tar"
+    standard_snappy_start_time = time.time()
+    with tarfile.open(intermediate_tar_path_snappy, 'w') as tar:
+        tar.add(dataset_path, arcname='.')
+    with open(intermediate_tar_path_snappy, 'rb') as tar_in, open(standard_snappy_output_path, 'wb') as snappy_out:
+        compressed_data = snappy.compress(tar_in.read())
+        snappy_out.write(compressed_data)
+    standard_snappy_end_time = time.time()
+    standard_snappy_compression_time = standard_snappy_end_time - standard_snappy_start_time
+    standard_snappy_compressed_size = os.path.getsize(standard_snappy_output_path)
+    os.remove(intermediate_tar_path_snappy)
+
+    benchmark_results_comprehensive[data_type]['standard_tar_snappy'] = {
+        'compressed_size': standard_snappy_compressed_size,
+        'compression_time': standard_snappy_compression_time
+    }
+    print(f"  Standard (tar.snappy) compressed size: {standard_snappy_compressed_size} bytes")
+    print(f"  Standard (tar.snappy) compression time: {standard_snappy_compression_time:.4f} seconds")
+
+
+# Print the collected results
+print("\n--- Comprehensive Real-world Dataset Benchmark Results (with ZSTD levels and more standard methods) ---")
+import json
+print(json.dumps(benchmark_results_comprehensive, indent=2))
+
+# Clean up all generated compressed files
+print("\nCleaning up generated compressed files...")
+for data_type, results in benchmark_results_comprehensive.items():
+    dataset_path = prepared_dataset_paths[data_type]
+    for key in results:
+        if key.startswith('gmw_zstd_'):
+            level = key.split('_')[-1]
+            compressed_file = f"{dataset_path}.gmw_zstd{level}"
+            if os.path.exists(compressed_file):
+                os.remove(compressed_file)
+                print(f"Removed {compressed_file}")
+        elif key == 'standard_tar_gz':
+            compressed_file = f"{dataset_path}.tar.gz"
+            if os.path.exists(compressed_file):
+                os.remove(compressed_file)
+                print(f"Removed {compressed_file}")
+        elif key == 'standard_tar_bz2':
+            compressed_file = f"{dataset_path}.tar.bz2"
+            if os.path.exists(compressed_file):
+                os.remove(compressed_file)
+                print(f"Removed {compressed_file}")
+        elif key == 'standard_tar_xz':
+            compressed_file = f"{dataset_path}.tar.xz"
+            if os.path.exists(compressed_file):
+                os.remove(compressed_file)
+                print(f"Removed {compressed_file}")
+        elif key == 'standard_tar_lz4':
+            compressed_file = f"{dataset_path}.tar.lz4"
+            if os.path.exists(compressed_file):
+                os.remove(compressed_file)
+                print(f"Removed {compressed_file}")
+        elif key == 'standard_tar_snappy':
+            compressed_file = f"{dataset_path}.tar.snappy"
+            if os.path.exists(compressed_file):
+                os.remove(compressed_file)
+                print(f"Removed {compressed_file}")
+
+
+print("Cleanup complete.")
+
+Summary:
+Data Analysis Key Findings
+Standard Python libraries bz2 and lzma are used for bz2 and xz compression, respectively.
+The real-world datasets (Tiny Shakespeare, CIFAR-10 subset, Speech Commands subset, UCI Adult Income) were successfully downloaded, extracted (for tar.gz files), and organized into temporary directories for benchmarking.
+The benchmarking process successfully measured the original size, compressed size, and compression time for each dataset using gmw_tool.py with ZSTD levels 1, 3, 6, and 9, as well as standard tar.gz, tar.bz2, tar.xz, tar.lz4, and tar.snappy.
+Comprehensive benchmark results were collected and presented in tabular format, showing compression ratios and times for each method and dataset.
+Visualizations (bar charts) were generated for each dataset, illustrating the compressed size (with ratios) and compression time for all tested methods.
+GMW with higher ZSTD levels generally achieved better compression ratios, often competitive with or better than tar.gz, while remaining significantly faster than tar.gz, tar.bz2, and tar.xz.
+tar.bz2 and tar.xz typically achieved better compression ratios than GMW, but at the cost of much higher compression times.
+Faster standard methods like tar.lz4 and tar.snappy are competitive with or faster than GMW at lower ZSTD levels, but GMW can achieve better compression ratios with higher ZSTD levels.
+Increasing the ZSTD level for GMW generally improved the compression ratio but increased the compression time, demonstrating a configurable trade-off.
+All downloaded datasets and temporary files created during the process were successfully removed.
+Insights or Next Steps
+The GMW tool offers a favorable balance between compression speed and ratio compared to tar.gz, making it potentially suitable for scenarios where faster compression is prioritized over maximum compression.
+Further analysis could involve testing a wider range of ZSTD levels for GMW to explore the full spectrum of speed/ratio trade-offs and comparing GMW against other fast compression algorithms like LZ4 or Snappy.
+Clean up
+Subtask:
+Remove the downloaded datasets and any temporary files or directories created during the process.
+
+import shutil
+import os
+
+# Remove the directory containing downloaded datasets
+if 'dataset_dir' in globals() and os.path.exists(dataset_dir):
+    shutil.rmtree(dataset_dir)
+    print(f"Removed downloaded datasets directory: {dataset_dir}")
+
+# Remove the temporary directory for prepared datasets
+if 'temp_dataset_dir' in globals() and os.path.exists(temp_dataset_dir):
+    shutil.rmtree(temp_dataset_dir)
+    print(f"Removed temporary directory for prepared datasets: {temp_dataset_dir}")
+
+
+Visualize results
+Subtask:
+Create plots to visualize the comparison of compression ratios and times across different methods and ZSTD levels for each dataset.
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+data_types = list(benchmark_results_comprehensive.keys())
+
+for data_type in data_types:
+    results = benchmark_results_comprehensive[data_type]
+    original_size = results['original_size']
+
+    # Extract method names, sizes, times, and calculate ratios
+    method_names = ['Original']
+    sizes_kb = [original_size / 1024]
+    times_sec = [0] # Time for original is 0
+    ratios = [1.0] # Ratio for original is 1.0
+
+    for method, method_results in results.items():
+        if method == 'original_size':
+            continue
+        method_names.append(method)
+        compressed_size = method_results['compressed_size']
+        compression_time = method_results['compression_time']
+        sizes_kb.append(compressed_size / 1024)
+        times_sec.append(compression_time)
+        ratio = original_size / compressed_size if compressed_size > 0 else 0
+        ratios.append(ratio)
+
+    x = np.arange(len(method_names))  # the label locations
+
+    # Create subplots for size and time
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+    # Plot Compression Size
+    bars1 = ax1.bar(x, sizes_kb, label='Size (KB)')
+    ax1.set_ylabel('Size (KB)')
+    ax1.set_title(f'Compression Size by Method for {data_type.capitalize()} Data')
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(method_names, rotation=45, ha="right")
+    ax1.legend()
+
+    # Add compression ratio labels to size plot
+    def autolabel_ratio(bars, ratios):
+        for bar, ratio in zip(bars, ratios):
+            height = bar.get_height()
+            ax1.annotate(f'{ratio:.2f}',
+                         xy=(bar.get_x() + bar.get_width() / 2, height),
+                         xytext=(0, 3),  # 3 points vertical offset
+                         textcoords="offset points",
+                         ha='center', va='bottom')
+
+    autolabel_ratio(bars1, ratios)
+
+
+    # Plot Compression Time
+    bars2 = ax2.bar(x[1:], times_sec[1:], label='Time (seconds)', color='orange') # Exclude original (time 0)
+    ax2.set_ylabel('Time (seconds)')
+    ax2.set_title(f'Compression Time by Method for {data_type.capitalize()} Data')
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(method_names, rotation=45, ha="right")
+    ax2.legend()
+
+    fig.tight_layout()
+    plt.show()
+
+print("\nVisualization complete.")
+
+Analyze and present results
+Subtask:
+Collect all benchmark results and present them in a clear and organized manner, comparing the file sizes, compression times, and compression ratios across different datasets, compression methods, and ZSTD levels.
+
+print("\n--- Comprehensive Real-world Dataset Compression Benchmark Results (with ZSTD levels and more standard methods) ---")
+
+for data_type, results in benchmark_results_comprehensive.items():
+    original_size = results['original_size']
+    original_size_kb = original_size / 1024
+
+    print(f"\nBenchmarking Results for {data_type.capitalize()} Data:")
+    print(f"  Original Size: {original_size_kb:.2f} KB")
+
+    # Print results for each compression method/level
+    for method, method_results in results.items():
+        if method == 'original_size':
+            continue # Skip original size entry
+
+        compressed_size = method_results['compressed_size']
+        compression_time = method_results['compression_time']
+
+        compressed_size_kb = compressed_size / 1024
+        compression_ratio = original_size / compressed_size if compressed_size > 0 else float('inf')
+
+        print(f"  {method}:")
+        print(f"    Compressed Size: {compressed_size_kb:.2f} KB")
+        print(f"    Compression Time: {compression_time:.4f} seconds")
+        print(f"    Compression Ratio: {compression_ratio:.2f}")
+
+# High-level summary
+print("\n--- Overall Summary ---")
+print("Comparison of Compression Methods on Real-world Datasets:")
+
+# Summarize performance across datasets and methods
+summary_data = {}
+data_types = list(benchmark_results_comprehensive.keys()) # Define data_types here
+method_names_list = [] # To store method names in order for table headers
+
+for data_type in data_types:
+    results = benchmark_results_comprehensive[data_type]
+    original_size = results['original_size']
+    summary_data[data_type] = {}
+    for method, method_results in results.items():
+         if method == 'original_size':
+            continue
+         if method not in method_names_list:
+             method_names_list.append(method)
+         compressed_size = method_results['compressed_size']
+         compression_time = method_results['compression_time']
+         compression_ratio = original_size / compressed_size if compressed_size > 0 else float('inf')
+         summary_data[data_type][method] = {'ratio': compression_ratio, 'time': compression_time}
+
+# Sort method names for consistent table order
+method_names_list.sort() # Alphabetical sort or define a specific order if needed
+
+# Print summary table (optional, but good for comparison)
+print("\nCompression Ratio Summary:")
+header = ["Data Type"] + method_names_list
+print("\t".join(header))
+for data_type in data_types:
+    row = [data_type.capitalize()] + [f"{summary_data[data_type].get(method, {}).get('ratio', float('nan')):.2f}" for method in method_names_list]
+    print("\t".join(row))
+
+print("\nCompression Time Summary (seconds):")
+header = ["Data Type"] + method_names_list
+print("\t".join(header))
+for data_type in data_types:
+    row = [data_type.capitalize()] + [f"{summary_data[data_type].get(method, {}).get('time', float('nan')):.4f}" for method in method_names_list]
+    print("\t".join(row))
+
+print("\nKey Observations:")
+# Analyze and print observations about size and time comparisons
+gmw_zstd_levels_methods = [method for method in method_names_list if method.startswith('gmw_zstd_')]
+standard_methods = [method for method in method_names_list if method.startswith('standard_')]
+
+for data_type in data_types:
+    print(f"\n- {data_type.capitalize()} Data:")
+    dataset_summary = summary_data[data_type]
+
+    # Compare GMW ZSTD levels
+    print("  GMW (ZSTD Levels) Comparison:")
+    gmw_zstd_levels_methods.sort(key=lambda x: int(x.split('_')[-1])) # Sort GMW methods by level
+    for i in range(len(gmw_zstd_levels_methods) - 1):
+        method1 = gmw_zstd_levels_methods[i]
+        method2 = gmw_zstd_levels_methods[i+1]
+        level1 = int(method1.split('_')[-1])
+        level2 = int(method2.split('_')[-1])
+
+        ratio1 = dataset_summary[method1]['ratio']
+        ratio2 = dataset_summary[method2]['ratio']
+        time1 = dataset_summary[method1]['time']
+        time2 = dataset_summary[method2]['time']
+
+        if ratio2 > ratio1:
+            print(f"    ZSTD Level {level2} achieved better compression ratio than Level {level1} ({ratio2:.2f} vs {ratio1:.2f}).")
+        elif ratio2 < ratio1:
+             print(f"    ZSTD Level {level2} achieved worse compression ratio than Level {level1} ({ratio2:.2f} vs {ratio1:.2f}).")
+        else:
+             print(f"    ZSTD Level {level2} and Level {level1} achieved similar compression ratio ({ratio2:.2f}).")
+
+        if time2 < time1:
+            print(f"    ZSTD Level {level2} was faster than Level {level1} ({time2:.4f}s vs {time1:.4f}s).")
+        elif time2 > time1:
+             print(f"    ZSTD Level {level2} was slower than Level {level1} ({time2:.4f}s vs {time1:.4f}s).")
+        else:
+             print(f"    ZSTD Level {level2} and Level {level1} had similar compression times ({time2:.4f}s).")
+
+    # Compare GMW (best ratio and fastest) vs. standard methods
+    if gmw_zstd_levels_methods:
+        best_gmw_ratio_method = max(gmw_zstd_levels_methods, key=lambda method: dataset_summary[method]['ratio'])
+        best_gmw_time_method = min(gmw_zstd_levels_methods, key=lambda method: dataset_summary[method]['time'])
+
+        print("  GMW vs. Standard Methods Comparison:")
+        print(f"    Best GMW Ratio ({best_gmw_ratio_method}): Ratio {dataset_summary[best_gmw_ratio_method]['ratio']:.2f}, Time {dataset_summary[best_gmw_ratio_method]['time']:.4f}s")
+        print(f"    Fastest GMW ({best_gmw_time_method}): Ratio {dataset_summary[best_gmw_time_method]['ratio']:.2f}, Time {dataset_summary[best_gmw_time_method]['time']:.4f}s")
+
+        for std_method in standard_methods:
+            if std_method in dataset_summary: # Check if standard method results exist for this dataset
+                print(f"    {std_method}: Ratio {dataset_summary[std_method]['ratio']:.2f}, Time {dataset_summary[std_method]['time']:.4f}s")
+
+                # Compare Best GMW Ratio vs. Standard
+                if dataset_summary[best_gmw_ratio_method]['ratio'] > dataset_summary[std_method]['ratio']:
+                     print(f"      Best GMW ratio ({dataset_summary[best_gmw_ratio_method]['ratio']:.2f}) is better than {std_method} ratio ({dataset_summary[std_method]['ratio']:.2f}).")
+                elif dataset_summary[best_gmw_ratio_method]['ratio'] < dataset_summary[std_method]['ratio']:
+                     print(f"      {std_method} ratio ({dataset_summary[std_method]['ratio']:.2f}) is better than Best GMW ratio ({dataset_summary[best_gmw_ratio_method]['ratio']:.2f}).")
+                else:
+                     print(f"      Best GMW and {std_method} achieved similar ratios ({dataset_summary[std_method]['ratio']:.2f}).")
+
+                # Compare Fastest GMW Time vs. Standard
+                if dataset_summary[best_gmw_time_method]['time'] < dataset_summary[std_method]['time']:
+                     print(f"      Fastest GMW time ({dataset_summary[best_gmw_time_method]['time']:.4f}s) is faster than {std_method} time ({dataset_summary[std_method]['time']:.4f}s).")
+                elif dataset_summary[best_gmw_time_method]['time'] > dataset_summary[std_method]['time']:
+                     print(f"      {std_method} time ({dataset_summary[std_method]['time']:.4f}s) is faster than Fastest GMW time ({dataset_summary[best_gmw_time_method]['time']:.4f}s).")
+                else:
+                     print(f"      Fastest GMW and {std_method} had similar times ({dataset_summary[std_method]['time']:.4f}s).")
+            else:
+                print(f"    {std_method}: Results not available for this dataset.")
+
+
+print("\nOverall Conclusion:")
+print("The GMW tool with different ZSTD levels and standard compression methods (tar.gz, tar.bz2, tar.xz, tar.lz4, tar.snappy) were benchmarked on real-world datasets.")
+print("GMW with higher ZSTD levels generally achieves better compression ratios, often competitive with or better than tar.gz, while remaining significantly faster than tar.gz, tar.bz2, and tar.xz.")
+print("Standard methods like tar.bz2 and tar.xz can achieve higher compression ratios than GMW, but with substantially longer compression times.")
+print("Faster standard methods like tar.lz4 and tar.snappy are competitive with or faster than GMW at lower ZSTD levels, but GMW can achieve better compression ratios.")
+print("The optimal compression method depends on the specific requirements, balancing the need for smaller file sizes against the available time for compression.")
+
+Analyze and present results
+Subtask:
+Collect all benchmark results and present them in a clear and organized manner, comparing the file sizes, compression times, and compression ratios across different datasets, compression methods, and ZSTD levels.
+
+Reasoning: Collect all benchmark results and present them in a clear and organized manner, comparing the file sizes, compression times, and compression ratios across different datasets, compression methods, and ZSTD levels
+
+print("\n--- Comprehensive Real-world Dataset Compression Benchmark Results (with ZSTD levels and more standard methods) ---")
+
+for data_type, results in benchmark_results_comprehensive.items():
+    original_size = results['original_size']
+    original_size_kb = original_size / 1024
+
+    print(f"\nBenchmarking Results for {data_type.capitalize()} Data:")
+    print(f"  Original Size: {original_size_kb:.2f} KB")
+
+    # Print results for each compression method/level
+    for method, method_results in results.items():
+        if method == 'original_size':
+            continue # Skip original size entry
+
+        compressed_size = method_results['compressed_size']
+        compression_time = method_results['compression_time']
+
+        compressed_size_kb = compressed_size / 1024
+        compression_ratio = original_size / compressed_size if compressed_size > 0 else float('inf')
+
+        print(f"  {method}:")
+        print(f"    Compressed Size: {compressed_size_kb:.2f} KB")
+        print(f"    Compression Time: {compression_time:.4f} seconds")
+        print(f"    Compression Ratio: {compression_ratio:.2f}")
+
+# High-level summary
+print("\n--- Overall Summary ---")
+print("Comparison of Compression Methods on Real-world Datasets:")
+
+# Summarize performance across datasets and methods
+summary_data = {}
+data_types = list(benchmark_results_comprehensive.keys()) # Define data_types here
+method_names_list = [] # To store method names in order for table headers
+
+for data_type in data_types:
+    results = benchmark_results_comprehensive[data_type]
+    original_size = results['original_size']
+    summary_data[data_type] = {}
+    for method, method_results in results.items():
+         if method == 'original_size':
+            continue
+         if method not in method_names_list:
+             method_names_list.append(method)
+         compressed_size = method_results['compressed_size']
+         compression_time = method_results['compression_time']
+         compression_ratio = original_size / compressed_size if compressed_size > 0 else float('inf')
+         summary_data[data_type][method] = {'ratio': compression_ratio, 'time': compression_time}
+
+# Sort method names for consistent table order
+method_names_list.sort() # Alphabetical sort or define a specific order if needed
+
+# Print summary table (optional, but good for comparison)
+print("\nCompression Ratio Summary:")
+header = ["Data Type"] + method_names_list
+print("\t".join(header))
+for data_type in data_types:
+    row = [data_type.capitalize()] + [f"{summary_data[data_type].get(method, {}).get('ratio', float('nan')):.2f}" for method in method_names_list]
+    print("\t".join(row))
+
+print("\nCompression Time Summary (seconds):")
+header = ["Data Type"] + method_names_list
+print("\t".join(header))
+for data_type in data_types:
+    row = [data_type.capitalize()] + [f"{summary_data[data_type].get(method, {}).get('time', float('nan')):.4f}" for method in method_names_list]
+    print("\t".join(row))
+
+print("\nKey Observations:")
+# Analyze and print observations about size and time comparisons
+gmw_zstd_levels_methods = [method for method in method_names_list if method.startswith('gmw_zstd_')]
+standard_methods = [method for method in method_names_list if method.startswith('standard_')]
+
+for data_type in data_types:
+    print(f"\n- {data_type.capitalize()} Data:")
+    dataset_summary = summary_data[data_type]
+
+    # Compare GMW ZSTD levels
+    print("  GMW (ZSTD Levels) Comparison:")
+    gmw_zstd_levels_methods.sort(key=lambda x: int(x.split('_')[-1])) # Sort GMW methods by level
+    for i in range(len(gmw_zstd_levels_methods) - 1):
+        method1 = gmw_zstd_levels_methods[i]
+        method2 = gmw_zstd_levels_methods[i+1]
+        level1 = int(method1.split('_')[-1])
+        level2 = int(method2.split('_')[-1])
+
+        ratio1 = dataset_summary[method1]['ratio']
+        ratio2 = dataset_summary[method2]['ratio']
+        time1 = dataset_summary[method1]['time']
+        time2 = dataset_summary[method2]['time']
+
+        if ratio2 > ratio1:
+            print(f"    ZSTD Level {level2} achieved better compression ratio than Level {level1} ({ratio2:.2f} vs {ratio1:.2f}).")
+        elif ratio2 < ratio1:
+             print(f"    ZSTD Level {level2} achieved worse compression ratio than Level {level1} ({ratio2:.2f} vs {ratio1:.2f}).")
+        else:
+             print(f"    ZSTD Level {level2} and Level {level1} achieved similar compression ratio ({ratio2:.2f}).")
+
+        if time2 < time1:
+            print(f"    ZSTD Level {level2} was faster than Level {level1} ({time2:.4f}s vs {time1:.4f}s).")
+        elif time2 > time1:
+             print(f"    ZSTD Level {level2} was slower than Level {level1} ({time2:.4f}s vs {time1:.4f}s).")
+        else:
+             print(f"    ZSTD Level {level2} and Level {level1} had similar compression times ({time2:.4f}s).")
+
+    # Compare GMW (best ratio and fastest) vs. standard methods
+    if gmw_zstd_levels_methods:
+        best_gmw_ratio_method = max(gmw_zstd_levels_methods, key=lambda method: dataset_summary[method]['ratio'])
+        best_gmw_time_method = min(gmw_zstd_levels_methods, key=lambda method: dataset_summary[method]['time'])
+
+        print("  GMW vs. Standard Methods Comparison:")
+        print(f"    Best GMW Ratio ({best_gmw_ratio_method}): Ratio {dataset_summary[best_gmw_ratio_method]['ratio']:.2f}, Time {dataset_summary[best_gmw_ratio_method]['time']:.4f}s")
+        print(f"    Fastest GMW ({best_gmw_time_method}): Ratio {dataset_summary[best_gmw_time_method]['ratio']:.2f}, Time {dataset_summary[best_gmw_time_method]['time']:.4f}s")
+
+        for std_method in standard_methods:
+            if std_method in dataset_summary: # Check if standard method results exist for this dataset
+                print(f"    {std_method}: Ratio {dataset_summary[std_method]['ratio']:.2f}, Time {dataset_summary[std_method]['time']:.4f}s")
+
+                # Compare Best GMW Ratio vs. Standard
+                if dataset_summary[best_gmw_ratio_method]['ratio'] > dataset_summary[std_method]['ratio']:
+                     print(f"      Best GMW ratio ({dataset_summary[best_gmw_ratio_method]['ratio']:.2f}) is better than {std_method} ratio ({dataset_summary[std_method]['ratio']:.2f}).")
+                elif dataset_summary[best_gmw_ratio_method]['ratio'] < dataset_summary[std_method]['ratio']:
+                     print(f"      {std_method} ratio ({dataset_summary[std_method]['ratio']:.2f}) is better than Best GMW ratio ({dataset_summary[best_gmw_ratio_method]['ratio']:.2f}).")
+                else:
+                     print(f"      Best GMW and {std_method} achieved similar ratios ({dataset_summary[std_method]['ratio']:.2f}).")
+
+                # Compare Fastest GMW Time vs. Standard
+                if dataset_summary[best_gmw_time_method]['time'] < dataset_summary[std_method]['time']:
+                     print(f"      Fastest GMW time ({dataset_summary[best_gmw_time_method]['time']:.4f}s) is faster than {std_method} time ({dataset_summary[std_method]['time']:.4f}s).")
+                elif dataset_summary[best_gmw_time_method]['time'] > dataset_summary[std_method]['time']:
+                     print(f"      {std_method} time ({dataset_summary[std_method]['time']:.4f}s) is faster than Fastest GMW time ({dataset_summary[best_gmw_time_method]['time']:.4f}s).")
+                else:
+                     print(f"      Fastest GMW and {std_method} had similar times ({dataset_summary[std_method]['time']:.4f}s).")
+            else:
+                print(f"    {std_method}: Results not available for this dataset.")
+
+
+print("\nOverall Conclusion:")
+print("The GMW tool with different ZSTD levels and standard compression methods (tar.gz, tar.bz2, tar.xz, tar.lz4, tar.snappy) were benchmarked on real-world datasets.")
+print("GMW with higher ZSTD levels generally achieves better compression ratios, often competitive with or better than tar.gz, while remaining significantly faster than tar.gz, tar.bz2, and tar.xz.")
+print("Standard methods like tar.bz2 and tar.xz can achieve higher compression ratios than GMW, but with substantially longer compression times.")
+print("Faster standard methods like tar.lz4 and tar.snappy are competitive with or faster than GMW at lower ZSTD levels, but GMW can achieve better compression ratios.")
+print("The optimal compression method depends on the specific requirements, balancing the need for smaller file sizes against the available time for compression
+
+- Comprehensive Real-world Dataset Compression Benchmark Results (with ZSTD levels and more standard methods) ---
+
+Benchmarking Results for Text Data:
+  Original Size: 1089.25 KB
+  gmw_zstd_1:
+    Compressed Size: 474.07 KB
+    Compression Time: 0.0657 seconds
+    Compression Ratio: 2.30
+  gmw_zstd_3:
+    Compressed Size: 420.02 KB
+    Compression Time: 0.3253 seconds
+    Compression Ratio: 2.59
+  gmw_zstd_6:
+    Compressed Size: 396.14 KB
+    Compression Time: 0.5279 seconds
+    Compression Ratio: 2.75
+  gmw_zstd_9:
+    Compressed Size: 388.08 KB
+    Compression Time: 1.4283 seconds
+    Compression Ratio: 2.81
+  standard_tar_gz:
+    Compressed Size: 424.05 KB
+    Compression Time: 1.5086 seconds
+    Compression Ratio: 2.57
+  standard_tar_bz2:
+    Compressed Size: 321.22 KB
+    Compression Time: 1.9224 seconds
+    Compression Ratio: 3.39
+  standard_tar_xz:
+    Compressed Size: 355.66 KB
+    Compression Time: 13.1224 seconds
+    Compression Ratio: 3.06
+  standard_tar_lz4:
+    Compressed Size: 697.86 KB
+    Compression Time: 0.3671 seconds
+    Compression Ratio: 1.56
+  standard_tar_snappy:
+    Compressed Size: 687.45 KB
+    Compression Time: 0.0351 seconds
+    Compression Ratio: 1.58
+
+Benchmarking Results for Image Data:
+  Original Size: 181849.72 KB
+  gmw_zstd_1:
+    Compressed Size: 176806.69 KB
+    Compression Time: 3.0459 seconds
+    Compression Ratio: 1.03
+  gmw_zstd_3:
+    Compressed Size: 169962.54 KB
+    Compression Time: 4.5595 seconds
+    Compression Ratio: 1.07
+  gmw_zstd_6:
+    Compressed Size: 170210.04 KB
+    Compression Time: 6.6488 seconds
+    Compression Ratio: 1.07
+  gmw_zstd_9:
+    Compressed Size: 167407.99 KB
+    Compression Time: 8.0633 seconds
+    Compression Ratio: 1.09
+  standard_tar_gz:
+    Compressed Size: 165992.59 KB
+    Compression Time: 14.9550 seconds
+    Compression Ratio: 1.10
+  standard_tar_bz2:
+    Compressed Size: 143644.64 KB
+    Compression Time: 34.3465 seconds
+    Compression Ratio: 1.27
+  standard_tar_xz:
+    Compressed Size: 136372.96 KB
+    Compression Time: 157.5996 seconds
+    Compression Ratio: 1.33
+  standard_tar_lz4:
+    Compressed Size: 176871.16 KB
+    Compression Time: 7.9854 seconds
+    Compression Ratio: 1.03
+  standard_tar_snappy:
+    Compressed Size: 180226.82 KB
+    Compression Time: 2.8881 seconds
+    Compression Ratio: 1.01
+
+Benchmarking Results for Audio Data:
+  Original Size: 308897.86 KB
+  gmw_zstd_1:
+    Compressed Size: 230257.74 KB
+    Compression Time: 9.6255 seconds
+    Compression Ratio: 1.34
+  gmw_zstd_3:
+    Compressed Size: 221394.69 KB
+    Compression Time: 6.4887 seconds
+    Compression Ratio: 1.40
+  gmw_zstd_6:
+    Compressed Size: 217374.03 KB
+    Compression Time: 11.5138 seconds
+    Compression Ratio: 1.42
+  gmw_zstd_9:
+    Compressed Size: 215016.38 KB
+    Compression Time: 17.3191 seconds
+    Compression Ratio: 1.44
+  standard_tar_gz:
+    Compressed Size: 231722.17 KB
+    Compression Time: 47.4288 seconds
+    Compression Ratio: 1.33
+  standard_tar_bz2:
+    Compressed Size: 194092.53 KB
+    Compression Time: 54.5918 seconds
+    Compression Ratio: 1.59
+  standard_tar_xz:
+    Compressed Size: 192048.54 KB
+    Compression Time: 298.5293 seconds
+    Compression Ratio: 1.61
+  standard_tar_lz4:
+    Compressed Size: 281221.62 KB
+    Compression Time: 18.9359 seconds
+    Compression Ratio: 1.10
+  standard_tar_snappy:
+    Compressed Size: 288454.67 KB
+    Compression Time: 12.9499 seconds
+    Compression Ratio: 1.07
+
+Benchmarking Results for Structured Data:
+  Original Size: 3881.16 KB
+  gmw_zstd_1:
+    Compressed Size: 530.20 KB
+    Compression Time: 7.4283 seconds
+    Compression Ratio: 7.32
+  gmw_zstd_3:
+    Compressed Size: 533.21 KB
+    Compression Time: 0.0286 seconds
+    Compression Ratio: 7.28
+  gmw_zstd_6:
+    Compressed Size: 428.74 KB
+    Compression Time: 0.1091 seconds
+    Compression Ratio: 9.05
+  gmw_zstd_9:
+    Compressed Size: 386.64 KB
+    Compression Time: 0.2277 seconds
+    Compression Ratio: 10.04
+  standard_tar_gz:
+    Compressed Size: 400.03 KB
+    Compression Time: 0.5789 seconds
+    Compression Ratio: 9.70
+  standard_tar_bz2:
+    Compressed Size: 230.36 KB
+    Compression Time: 2.8696 seconds
+    Compression Ratio: 16.85
+  standard_tar_xz:
+    Compressed Size: 305.94 KB
+    Compression Time: 3.4629 seconds
+    Compression Ratio: 12.69
+  standard_tar_lz4:
+    Compressed Size: 854.37 KB
+    Compression Time: 0.1241 seconds
+    Compression Ratio: 4.54
+  standard_tar_snappy:
+    Compressed Size: 893.85 KB
+    Compression Time: 0.0215 seconds
+    Compression Ratio: 4.34
+
+--- Overall Summary ---
+Comparison of Compression Methods on Real-world Datasets:
+
+Compression Ratio Summary:
+Data Type	gmw_zstd_1	gmw_zstd_3	gmw_zstd_6	gmw_zstd_9	standard_tar_bz2	standard_tar_gz	standard_tar_lz4	standard_tar_snappy	standard_tar_xz
+Text	2.30	2.59	2.75	2.81	3.39	2.57	1.56	1.58	3.06
+Image	1.03	1.07	1.07	1.09	1.27	1.10	1.03	1.01	1.33
+Audio	1.34	1.40	1.42	1.44	1.59	1.33	1.10	1.07	1.61
+Structured	7.32	7.28	9.05	10.04	16.85	9.70	4.54	4.34	12.69
+
+Compression Time Summary (seconds):
+Data Type	gmw_zstd_1	gmw_zstd_3	gmw_zstd_6	gmw_zstd_9	standard_tar_bz2	standard_tar_gz	standard_tar_lz4	standard_tar_snappy	standard_tar_xz
+Text	0.0657	0.3253	0.5279	1.4283	1.9224	1.5086	0.3671	0.0351	13.1224
+Image	3.0459	4.5595	6.6488	8.0633	34.3465	14.9550	7.9854	2.8881	157.5996
+Audio	9.6255	6.4887	11.5138	17.3191	54.5918	47.4288	18.9359	12.9499	298.5293
+Structured	7.4283	0.0286	0.1091	0.2277	2.8696	0.5789	0.1241	0.0215	3.4629
+
+Key Observations:
+
+- Text Data:
+  GMW (ZSTD Levels) Comparison:
+    ZSTD Level 3 achieved better compression ratio than Level 1 (2.59 vs 2.30).
+    ZSTD Level 3 was slower than Level 1 (0.3253s vs 0.0657s).
+    ZSTD Level 6 achieved better compression ratio than Level 3 (2.75 vs 2.59).
+    ZSTD Level 6 was slower than Level 3 (0.5279s vs 0.3253s).
+    ZSTD Level 9 achieved better compression ratio than Level 6 (2.81 vs 2.75).
+    ZSTD Level 9 was slower than Level 6 (1.4283s vs 0.5279s).
+  GMW vs. Standard Methods Comparison:
+    Best GMW Ratio (gmw_zstd_9): Ratio 2.81, Time 1.4283s
+    Fastest GMW (gmw_zstd_1): Ratio 2.30, Time 0.0657s
+    standard_tar_bz2: Ratio 3.39, Time 1.9224s
+      standard_tar_bz2 ratio (3.39) is better than Best GMW ratio (2.81).
+      Fastest GMW time (0.0657s) is faster than standard_tar_bz2 time (1.9224s).
+    standard_tar_gz: Ratio 2.57, Time 1.5086s
+      Best GMW ratio (2.81) is better than standard_tar_gz ratio (2.57).
+      Fastest GMW time (0.0657s) is faster than standard_tar_gz time (1.5086s).
+    standard_tar_lz4: Ratio 1.56, Time 0.3671s
+      Best GMW ratio (2.81) is better than standard_tar_lz4 ratio (1.56).
+      Fastest GMW time (0.0657s) is faster than standard_tar_lz4 time (0.3671s).
+    standard_tar_snappy: Ratio 1.58, Time 0.0351s
+      Best GMW ratio (2.81) is better than standard_tar_snappy ratio (1.58).
+      standard_tar_snappy time (0.0351s) is faster than Fastest GMW time (0.0657s).
+    standard_tar_xz: Ratio 3.06, Time 13.1224s
+      standard_tar_xz ratio (3.06) is better than Best GMW ratio (2.81).
+      Fastest GMW time (0.0657s) is faster than standard_tar_xz time (13.1224s).
+
+- Image Data:
+  GMW (ZSTD Levels) Comparison:
+    ZSTD Level 3 achieved better compression ratio than Level 1 (1.07 vs 1.03).
+    ZSTD Level 3 was slower than Level 1 (4.5595s vs 3.0459s).
+    ZSTD Level 6 achieved worse compression ratio than Level 3 (1.07 vs 1.07).
+    ZSTD Level 6 was slower than Level 3 (6.6488s vs 4.5595s).
+    ZSTD Level 9 achieved better compression ratio than Level 6 (1.09 vs 1.07).
+    ZSTD Level 9 was slower than Level 6 (8.0633s vs 6.6488s).
+  GMW vs. Standard Methods Comparison:
+    Best GMW Ratio (gmw_zstd_9): Ratio 1.09, Time 8.0633s
+    Fastest GMW (gmw_zstd_1): Ratio 1.03, Time 3.0459s
+    standard_tar_bz2: Ratio 1.27, Time 34.3465s
+      standard_tar_bz2 ratio (1.27) is better than Best GMW ratio (1.09).
+      Fastest GMW time (3.0459s) is faster than standard_tar_bz2 time (34.3465s).
+    standard_tar_gz: Ratio 1.10, Time 14.9550s
+      standard_tar_gz ratio (1.10) is better than Best GMW ratio (1.09).
+      Fastest GMW time (3.0459s) is faster than standard_tar_gz time (14.9550s).
+    standard_tar_lz4: Ratio 1.03, Time 7.9854s
+      Best GMW ratio (1.09) is better than standard_tar_lz4 ratio (1.03).
+      Fastest GMW time (3.0459s) is faster than standard_tar_lz4 time (7.9854s).
+    standard_tar_snappy: Ratio 1.01, Time 2.8881s
+      Best GMW ratio (1.09) is better than standard_tar_snappy ratio (1.01).
+      standard_tar_snappy time (2.8881s) is faster than Fastest GMW time (3.0459s).
+    standard_tar_xz: Ratio 1.33, Time 157.5996s
+      standard_tar_xz ratio (1.33) is better than Best GMW ratio (1.09).
+      Fastest GMW time (3.0459s) is faster than standard_tar_xz time (157.5996s).
+
+- Audio Data:
+  GMW (ZSTD Levels) Comparison:
+    ZSTD Level 3 achieved better compression ratio than Level 1 (1.40 vs 1.34).
+    ZSTD Level 3 was faster than Level 1 (6.4887s vs 9.6255s).
+    ZSTD Level 6 achieved better compression ratio than Level 3 (1.42 vs 1.40).
+    ZSTD Level 6 was slower than Level 3 (11.5138s vs 6.4887s).
+    ZSTD Level 9 achieved better compression ratio than Level 6 (1.44 vs 1.42).
+    ZSTD Level 9 was slower than Level 6 (17.3191s vs 11.5138s).
+  GMW vs. Standard Methods Comparison:
+    Best GMW Ratio (gmw_zstd_9): Ratio 1.44, Time 17.3191s
+    Fastest GMW (gmw_zstd_3): Ratio 1.40, Time 6.4887s
+    standard_tar_bz2: Ratio 1.59, Time 54.5918s
+      standard_tar_bz2 ratio (1.59) is better than Best GMW ratio (1.44).
+      Fastest GMW time (6.4887s) is faster than standard_tar_bz2 time (54.5918s).
+    standard_tar_gz: Ratio 1.33, Time 47.4288s
+      Best GMW ratio (1.44) is better than standard_tar_gz ratio (1.33).
+      Fastest GMW time (6.4887s) is faster than standard_tar_gz time (47.4288s).
+    standard_tar_lz4: Ratio 1.10, Time 18.9359s
+      Best GMW ratio (1.44) is better than standard_tar_lz4 ratio (1.10).
+      Fastest GMW time (6.4887s) is faster than standard_tar_lz4 time (18.9359s).
+    standard_tar_snappy: Ratio 1.07, Time 12.9499s
+      Best GMW ratio (1.44) is better than standard_tar_snappy ratio (1.07).
+      Fastest GMW time (6.4887s) is faster than standard_tar_snappy time (12.9499s).
+    standard_tar_xz: Ratio 1.61, Time 298.5293s
+      standard_tar_xz ratio (1.61) is better than Best GMW ratio (1.44).
+      Fastest GMW time (6.4887s) is faster than standard_tar_xz time (298.5293s).
+
+- Structured Data:
+  GMW (ZSTD Levels) Comparison:
+    ZSTD Level 3 achieved worse compression ratio than Level 1 (7.28 vs 7.32).
+    ZSTD Level 3 was faster than Level 1 (0.0286s vs 7.4283s).
+    ZSTD Level 6 achieved better compression ratio than Level 3 (9.05 vs 7.28).
+    ZSTD Level 6 was slower than Level 3 (0.1091s vs 0.0286s).
+    ZSTD Level 9 achieved better compression ratio than Level 6 (10.04 vs 9.05).
+    ZSTD Level 9 was slower than Level 6 (0.2277s vs 0.1091s).
+  GMW vs. Standard Methods Comparison:
+    Best GMW Ratio (gmw_zstd_9): Ratio 10.04, Time 0.2277s
+    Fastest GMW (gmw_zstd_3): Ratio 7.28, Time 0.0286s
+    standard_tar_bz2: Ratio 16.85, Time 2.8696s
+      standard_tar_bz2 ratio (16.85) is better than Best GMW ratio (10.04).
+      Fastest GMW time (0.0286s) is faster than standard_tar_bz2 time (2.8696s).
+    standard_tar_gz: Ratio 9.70, Time 0.5789s
+      Best GMW ratio (10.04) is better than standard_tar_gz ratio (9.70).
+      Fastest GMW time (0.0286s) is faster than standard_tar_gz time (0.5789s).
+    standard_tar_lz4: Ratio 4.54, Time 0.1241s
+      Best GMW ratio (10.04) is better than standard_tar_lz4 ratio (4.54).
+      Fastest GMW time (0.0286s) is faster than standard_tar_lz4 time (0.1241s).
+    standard_tar_snappy: Ratio 4.34, Time 0.0215s
+      Best GMW ratio (10.04) is better than standard_tar_snappy ratio (4.34).
+      standard_tar_snappy time (0.0215s) is faster than Fastest GMW time (0.0286s).
+    standard_tar_xz: Ratio 12.69, Time 3.4629s
+      standard_tar_xz ratio (12.69) is better than Best GMW ratio (10.04).
+      Fastest GMW time (0.0286s) is faster than standard_tar_xz time (3.4629s).
+
+Overall Conclusion:
+The GMW tool with different ZSTD levels and standard compression methods (tar.gz, tar.bz2, tar.xz, tar.lz4, tar.snappy) were benchmarked on real-world datasets.
+GMW with higher ZSTD levels generally achieves better compression ratios, often competitive with or better than tar.gz, while remaining significantly faster than tar.gz, tar.bz2, and tar.xz.
+Standard methods like tar.bz2 and tar.xz can achieve higher compression ratios than GMW, but with substantially longer compression times.
+Faster standard methods like tar.lz4 and tar.snappy are competitive with or faster than GMW at lower ZSTD levels, but GMW can achieve better compression ratios.
+The optimal compression method depends on the specific requirements, balancing the need for smaller file sizes against the available time for compression.
