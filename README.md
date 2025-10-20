@@ -2,7 +2,7 @@
 
 **"Time is money. Space is motion. Rat-Trap is both."**
 
-Rat-Trap is a **high-performance, GMW-powered data compression system** built by Glyn Evans and inspired by the **Motion-TimeSpace (MTS) physics framework**. It’s engineered to **trap chaotic data**—text, images, audio, structured records—and reorganize it into the smallest, fastest, most efficient form possible.
+Rat-Trap is a **high-performance, GMW-powered data compression system** built by Glyn Evans and Martin ollett and inspired by the **Motion-TimeSpace (MTS) physics framework**. It’s engineered to **trap chaotic data**—text, images, audio, structured records—and reorganize it into the smallest, fastest, most efficient form possible.
 
 Where conventional compression tools trade speed for size, **Rat-Trap defines the new speed-to-ratio standard.** By leveraging MTS principles of motion, resistance, and curvature memory, it captures entropy more efficiently and delivers **up to $93\times$ speedups** while maintaining competitive or superior compression ratios.
 
