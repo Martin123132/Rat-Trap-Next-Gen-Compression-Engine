@@ -44,7 +44,7 @@ Key Innovations:
 Rat-Trap is a single-file tool. Clone the repo or download `gmw_tool.py` directly:
 
 ```bash
-git clone <your-repo-link>
+git clone 
 ```
 
 Install the required performance dependencies:
