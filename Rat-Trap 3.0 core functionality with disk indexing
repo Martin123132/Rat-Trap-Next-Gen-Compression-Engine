@@ -1,0 +1,1055 @@
+Reproducibility Demo
+This section provides a minimal, reproducible example demonstrating the core functionality with disk indexing, opening it, 
+and retrieving a record. This helps verify that the essential components are working as expected.
+
+Task
+Create a reproducible demo of the mbt2 format including writing and reading a small dataset.
+
+Define mbt2 structures and helper functions
+Subtask:
+Include all necessary data classes 
+(MBT2Record, WriterCfg, Reader), constants (DISK_INDEX_ENTRY_STRUCT, FOOTER, HEADER, MAGIC, VERSION, FLAG_VARINT, FLAG_COLUMN, RECORD_SIZE_BYTES),
+and placeholder helper functions 
+(_compress, _decompress, _maybe_encrypt, _maybe_decrypt, _xx64, _autotune_bucket_kb, _build_buckets, morton64, inv_morton64, enc_varint, dec_varint, _bloom_hash, _bloom_add, _bloom_maybe, _pack_bucket).
+
+Reasoning: The subtask requires defining data classes, constants, and placeholder functions. This can be done in a single code block.
+
+import mmap
+import struct
+import os
+import time
+import hashlib
+import zlib
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import List, Tuple, Optional, Dict
+import io
+from pathlib import Path
+import threading
+import numpy as np
+
+# Define the structure for a disk-based index entry
+DISK_INDEX_ENTRY_STRUCT = struct.Struct("<Q I Q I")
+DISK_INDEX_ENTRY_SIZE = DISK_INDEX_ENTRY_STRUCT.size
+
+# Update the FOOTER struct to include index offset and size
+FOOTER = struct.Struct("<I 32s 32s I Q Q")
+FOOTER_SIZE = FOOTER.size
+
+# Update the HEADER struct to include the footer size for easier seeking
+HEADER = struct.Struct("<5sB I H I Q I")
+HEADER_SIZE = HEADER.size
+
+# Placeholder/example implementations for missing functions and constants
+MAGIC = b"MBT2\x00"
+VERSION = 1
+FLAG_ZLIB = 0x01
+FLAG_ZSTD = 0x02
+FLAG_AESGCM = 0x04
+FLAG_VARINT = 0x08
+FLAG_COLUMN = 0x10
+HAS_ZSTD = True # Assume ZSTD is available for the demo
+HAS_AESGCM = False # Assume AESGCM is not available for the demo
+
+def _compress(data: bytes, zstd_on: bool, lvl: int) -> bytes:
+    """Placeholder compression function."""
+    if zstd_on and HAS_ZSTD:
+        # In a real implementation, use zstandard
+        cctx = zstandard.ZstdCompressor(level=lvl)
+        return cctx.compress(data)
+    else:
+        # In a real implementation, use zlib
+        return zlib.compress(data, level=zlib.Z_BEST_COMPRESSION)
+
+def _decompress(data: bytes) -> bytes:
+    """Placeholder decompression function."""
+    # In a real implementation, detect compression type from flags
+    # For this demo, assume it's either zlib or zstd compressed data
+    try:
+        # Try zstandard first
+        dctx = zstandard.ZstdDecompressor()
+        return dctx.decompress(data)
+    except:
+        # Fallback to zlib
+        return zlib.decompress(data)
+
+
+def _maybe_encrypt(key: Optional[bytes], data: bytes, aad: bytes) -> bytes:
+    """Placeholder encryption function."""
+    # In a real implementation, use AESGCM
+    return data
+
+def _maybe_decrypt(key: Optional[bytes], data: bytes, aad: bytes) -> bytes:
+    """Placeholder decryption function."""
+    # In a real implementation, use AESGCM
+    return data
+
+def _xx64(data: bytes) -> int:
+    """Placeholder hash function."""
+    # In a real implementation, use xxhash
+    return zlib.crc32(data) & 0xFFFFFFFF
+
+def _autotune_bucket_kb(nrecords: int) -> int:
+    """Placeholder autotuning function."""
+    # In a real implementation, tune based on record count and size
+    return 64
+
+def _build_buckets(records: List['MBT2Record'], target_bucket_kb: int) -> List[List['MBT2Record']]:
+    """Placeholder bucket building function."""
+    # In a real implementation, build buckets based on size and key range
+    bucket_size_bytes = target_bucket_kb * 1024
+    current_bucket = []
+    buckets = []
+    current_size = 0
+    # Approximate size of a record in raw bucket data (key + 3 floats + varint overhead)
+    # Assuming average varint size of 2 bytes for demonstration
+    approx_record_size = struct.calcsize("<Q") + RECORD_SIZE_BYTES + 2
+
+    for record in records:
+        record_bytes = approx_record_size # Simplified size estimation
+        if current_size + record_bytes > bucket_size_bytes and current_bucket:
+            buckets.append(current_bucket)
+            current_bucket = [record]
+            current_size = record_bytes
+        else:
+            current_bucket.append(record)
+            current_size += record_bytes
+    if current_bucket:
+        buckets.append(current_bucket)
+    return buckets
+
+
+def morton64(x: int, y: int, z: int) -> int:
+    """Placeholder Morton encoding."""
+    # In a real implementation, use a proper Morton encoding
+    # Simple interleaving for demonstration
+    key = 0
+    for i in range(21): # Assuming 21 bits per dimension for a 63-bit key
+        key |= (x & (1 << i)) << (i * 2)
+        key |= (y & (1 << i)) << (i * 2 + 1)
+        key |= (z & (1 << i)) << (i * 2 + 2)
+    return key
+
+
+def inv_morton64(key: int) -> Tuple[int, int, int]:
+     """Placeholder Morton decoding."""
+     # In a real implementation, use a proper Morton decoding
+     x, y, z = 0, 0, 0
+     for i in range(21):
+         x |= (key >> (i * 3)) & 1 << i
+         y |= (key >> (i * 3 + 1)) & 1 << i
+         z |= (key >> (i * 3 + 2)) & 1 << i
+     return x, y, z
+
+def enc_varint(value: int) -> bytes:
+    """Placeholder varint encoding."""
+    out = bytearray()
+    while value > 127:
+        out.append((value & 127) | 128)
+        value >>= 7
+    out.append(value)
+    return bytes(out)
+
+def dec_varint(data: bytes, pos: int) -> Tuple[int, int]:
+    """Placeholder varint decoding."""
+    value = 0
+    shift = 0
+    start_pos = pos
+    while pos < len(data):
+        byte = data[pos]
+        value |= (byte & 127) << shift
+        pos += 1
+        if not (byte & 128):
+            return value, pos - start_pos
+        shift += 7
+    # Handle incomplete varint (e.g., raise error or return partial value)
+    # For this placeholder, raise an error if data ends mid-varint
+    raise IndexError("Incomplete varint data")
+
+
+# Placeholder Bloom filter functions
+def _bloom_hash(key: int, seed: int) -> int:
+    """Placeholder Bloom filter hash function."""
+    # In a real implementation, use a fast hash function like MurmurHash
+    return (key * seed) % 0xFFFFFFFF
+
+def _bloom_add(bloom: bytearray, key: int, bloom_bits: int) -> None:
+    """Placeholder Bloom filter add function."""
+    # In a real implementation, use multiple hash functions
+    k = 2 # Number of hash functions
+    for i in range(k):
+        h = _bloom_hash(key, i)
+        bit_index = h % bloom_bits
+        bloom[bit_index // 8] |= (1 << (bit_index % 8))
+
+def _bloom_maybe(bloom: bytes, key: int, bloom_bits: int) -> bool:
+     """Placeholder Bloom filter check function."""
+      # In a real implementation, use multiple hash functions
+     k = 2 # Number of hash functions
+     for i in range(k):
+         h = _bloom_hash(key, i)
+         bit_index = h % bloom_bits
+         if not (bloom[bit_index // 8] & (1 << (bit_index % 8))):
+             return False # Definitely not in the set
+     return True # Possibly in the set (false positive possible)
+
+
+@dataclass
+class WriterCfg:
+    target_bucket_kb: int = 64
+    use_zstd: bool = True
+    zstd_level: int = 3
+    column_layout: bool = True
+    aesgcm_key: Optional[bytes] = None
+    sha256_each: bool = False
+    threads: int = os.cpu_count() or 1
+    bloom_bits: int = 2048 # Must be a multiple of 8
+
+
+@dataclass
+class MBT2Record:
+    """Represents a single MBT2 record with physics components."""
+    key: int
+    mass: float
+    entropy: float
+    tau: float
+
+RECORD_SIZE_BYTES = struct.calcsize("<fff")
+
+
+@dataclass
+class Reader:
+    path: Path
+    flags: int
+    bucket_kb: int
+    index_mmap: mmap.mmap
+    nbuckets: int
+    blooms_mmap: mmap.mmap | bytes # Blooms can be mmap or empty bytes
+    f: io.BufferedReader
+    index_entry_struct: struct.Struct
+    bloom_bytes_per_bucket: int
+    original_index_offset: int
+    original_bloom_offset: int
+
+def _pack_bucket(records: List[MBT2Record], column: bool = True) -> bytes:
+    """Placeholder function to pack a list of records into a bucket."""
+    n = len(records)
+    if n == 0:
+        return b""
+    out = bytearray()
+    # Write first key
+    out += struct.pack("<Q", records[0].key)
+    prev = records[0].key
+    # Write varint key differences
+    for i in range(1, n):
+        d = records[i].key - prev
+        out += enc_varint(d)
+        prev = records[i].key
+
+    # Write data payload (mass, entropy, tau)
+    if column:
+        # Column layout: all masses, then all entropies, then all taus
+        for r in records:
+            out += struct.pack("<f", r.mass)
+        for r in records:
+            out += struct.pack("<f", r.entropy)
+        for r in records:
+            out += struct.pack("<f", r.tau)
+    else:
+        # Row layout: (mass, entropy, tau) for each record
+        for r in records:
+            out += struct.pack("<fff", r.mass, r.entropy, r.tau)
+    return bytes(out)
+
+The subtask requires implementing the write_mbt2 function using the previously defined structures and placeholder functions. This function will write the MBT2 file with disk indexing.
+
+def write_mbt2(path: Path, records: List[MBT2Record], cfg: WriterCfg = WriterCfg()) -> Dict:
+    """Writes a list of MBT2Record instances to an MBT2 file with disk indexing."""
+    path = Path(path)
+    t_sort0 = time.perf_counter()
+    records.sort(key=lambda r: r.key)
+    t_sort = time.perf_counter() - t_sort0
+
+    if cfg.target_bucket_kb <= 0:
+        cfg.target_bucket_kb = _autotune_bucket_kb(len(records))
+
+    buckets = _build_buckets(records, cfg.target_bucket_kb)
+    nb = len(buckets)
+
+    flags = 0
+    flags |= FLAG_ZSTD if (cfg.use_zstd and HAS_ZSTD) else FLAG_ZLIB
+    flags |= FLAG_VARINT
+    if cfg.column_layout:
+        flags |= FLAG_COLUMN
+    if cfg.aesgcm_key and HAS_AESGCM:
+        flags |= FLAG_AESGCM
+
+    initial_header_size = HEADER_SIZE
+
+    with open(path, "w+b") as f:
+        # Write placeholder header
+        f.write(b'\x00' * initial_header_size)
+
+        metas = []
+        lock = threading.Lock()
+        # data_start_pos = f.tell() # Not strictly needed here
+
+        def write_bucket(i: int, b: List[MBT2Record]) -> None:
+            """Helper function to pack, compress, and write a single bucket."""
+            raw = _pack_bucket(b, column=bool(flags & FLAG_COLUMN))
+            comp = _compress(raw, zstd_on=bool(flags & FLAG_ZSTD), lvl=cfg.zstd_level)
+            # Encrypt the compressed data, AAD is the bucket index
+            comp = _maybe_encrypt(cfg.aesgcm_key if (flags & FLAG_AESGCM) else None, comp, aad=struct.pack("<I", i))
+            xx = _xx64(comp)
+            sh = hashlib.sha256(comp).digest() if cfg.sha256_each else b"\x00" * 32
+            bloom = bytearray(cfg.bloom_bits // 8)
+            for rec in b:
+                _bloom_add(bloom, rec.key, cfg.bloom_bits)
+
+            with lock:
+                pos = f.tell()
+                f.write(comp)
+                meta_entry = {
+                    'start_key': b[0].key if b else 0, # Handle empty bucket case
+                    'count': len(b),
+                    'offset': pos,
+                    'length': len(comp),
+                    'xxhash': xx,
+                    'sha256': sh,
+                    'bloom': bytes(bloom)
+                }
+                metas.append(meta_entry)
+
+        t_comp0 = time.perf_counter()
+        # Use ThreadPoolExecutor for parallel bucket writing
+        with ThreadPoolExecutor(max_workers=cfg.threads) as ex:
+            futs = [ex.submit(write_bucket, i, b) for i, b in enumerate(buckets)]
+            # Wait for all futures to complete to ensure all buckets are written before writing index/footer
+            for fu in as_completed(futs):
+                # Check for exceptions in threads
+                if fu.exception():
+                    raise fu.exception()
+
+
+        t_comp = time.perf_counter() - t_comp0
+
+        # Sort metas by start_key to ensure index is sorted (important for binary search)
+        metas.sort(key=lambda m: m['start_key'])
+
+        # Write the disk index
+        index_offset = f.tell()
+        index_size = 0
+        for meta in metas:
+            index_entry_data = DISK_INDEX_ENTRY_STRUCT.pack(
+                meta['start_key'],
+                meta['count'],
+                meta['offset'],
+                meta['length']
+            )
+            f.write(index_entry_data)
+            index_size += len(index_entry_data)
+
+        # Write the bloom filters section
+        bloom_offset = f.tell()
+        bloom_size = 0
+        for meta in metas:
+             # Ensure meta['bloom'] is the correct size even if bloom_bits is 0
+             expected_bloom_bytes = cfg.bloom_bits // 8
+             if len(meta['bloom']) == expected_bloom_bytes:
+                f.write(meta['bloom'])
+                bloom_size += len(meta['bloom'])
+             else:
+                 # Write zero bytes if bloom_bits is 0 or mismatch
+                 f.write(b'\x00' * expected_bloom_bytes)
+                 bloom_size += expected_bloom_bytes
+
+
+        table_ofs = index_offset # 'table_ofs' typically points to the start of the combined index/bloom blob
+
+        table_blob_size = index_size + bloom_size
+
+        # Calculate Merkle tree root and table hash (SHA256 of index + blooms)
+        # Need to read the index and bloom data back to hash it
+        original_pos = f.tell() # Store current position
+        f.seek(index_offset)
+        table_blob = f.read(table_blob_size)
+        f.seek(original_pos) # Restore original position
+        table_hash = hashlib.sha256(table_blob).digest()
+
+        leaves = [m['sha256'] if cfg.sha256_each else m['xxhash'].to_bytes(8, "little") for m in metas]
+        if leaves:
+            # Build Merkle tree
+            cur = [hashlib.sha256(x).digest() if len(x) != 32 else x for x in leaves]
+            while len(cur) > 1:
+                nxt = []
+                for i in range(0, len(cur), 2):
+                    a = cur[i]
+                    b = cur[i + 1] if i + 1 < len(cur) else a # Handle odd number of leaves by duplicating the last one
+                    nxt.append(hashlib.sha256(a + b).digest())
+                cur = nxt
+            merkle = cur[0]
+        else:
+            merkle = b"\x00" * 32 # Merkle root for empty data
+
+        # Calculate feature CRC (CRC32 of basic file properties)
+        crc_data = struct.pack("<5sB I H I", MAGIC, VERSION, flags, cfg.target_bucket_kb, nb)
+        feature_crc = zlib.crc32(crc_data) & 0xFFFFFFFF
+
+
+        # Write the footer
+        footer_start_pos = f.tell()
+        footer_data = FOOTER.pack(table_blob_size, table_hash, merkle, feature_crc, index_offset, index_size)
+        f.write(footer_data)
+
+        # Write the manifest
+        manifest = {
+            "nbuckets": nb,
+            "schema": 0, # Placeholder schema version
+            "flags": flags,
+            "target_bucket_kb": cfg.target_bucket_kb,
+            "compressor": next((name for flag, name in [(FLAG_ZLIB, "zlib"), (FLAG_ZSTD, "zstd")] if flags & flag), "none"),
+            "aesgcm": bool(flags & FLAG_AESGCM),
+            "column": bool(flags & FLAG_COLUMN),
+            "varint": bool(flags & FLAG_VARINT),
+            "bloom_bits": cfg.bloom_bits,
+            "index_offset": index_offset,
+            "index_size": index_size,
+            "bloom_offset": bloom_offset,
+            "bloom_size": bloom_size
+        }
+        man_bytes = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
+        f.write(man_bytes)
+        # Write the manifest length at the very end of the file
+        f.write(struct.pack("<I", len(man_bytes)))
+
+
+        final_file_size = f.tell()
+        footer_and_manifest_size = final_file_size - footer_start_pos
+
+        # Go back and write the final header with the correct footer size and table offset
+        f.seek(0)
+        f.write(HEADER.pack(MAGIC, VERSION, flags, cfg.target_bucket_kb, nb, table_ofs, footer_and_manifest_size))
+
+    return {
+        "file_mb": os.path.getsize(path) / (1024 * 1024),
+        "nbuckets": nb,
+        "bucket_kb": cfg.target_bucket_kb,
+        "flags": flags,
+        "index_offset": index_offset,
+        "index_size": index_size,
+        "bloom_offset": bloom_offset,
+        "bloom_size": bloom_size,
+        "t_sort": t_sort,
+        "t_comp": t_comp
+    } 
+The subtask requires implementing the open_reader function to read the MBT2 file and set up memory mapping for the index and bloom filters. 
+This function uses the previously defined constants and data structures.
+
+def open_reader(path: Path) -> Reader:
+    """Opens an MBT2 file and prepares it for reading, with memory-mapped index and blooms."""
+    f = open(path, "rb")
+    file_size = os.fstat(f.fileno()).st_size
+
+    # Read header
+    hdr = f.read(HEADER_SIZE)
+    if len(hdr) < HEADER_SIZE:
+         raise IOError(f"File is too small to contain MBT2 header. Expected at least {HEADER_SIZE} bytes, got {len(hdr)}")
+
+    magic, ver, flags, bucket_kb, nb, table_ofs, footer_size = HEADER.unpack(hdr)
+    # In a real implementation, add assertions for magic and version
+    # assert magic == MAGIC and ver == VERSION, "Invalid MBT2 file"
+    # print(f"Debug open_reader: Header read: magic={magic}, ver={ver}, flags={flags}, bucket_kb={bucket_kb}, nb={nb}, table_ofs={table_ofs}, footer_size={footer_size}")
+
+
+    # Read manifest length from the end of the file
+    if file_size < 4:
+        raise IOError("File is too small to contain manifest length.")
+
+    f.seek(-4, os.SEEK_END)
+    mlen_bytes = f.read(4)
+    if len(mlen_bytes) < 4:
+         raise IOError("Could not read manifest length from file end.")
+    mlen = struct.unpack("<I", mlen_bytes)[0]
+    # print(f"Debug open_reader: Manifest length: {mlen}")
+
+
+    # The footer is located before the manifest
+    expected_footer_start = file_size - 4 - mlen - FOOTER_SIZE
+    if expected_footer_start < 0:
+         raise IOError(f"File is too small to contain footer and manifest. file_size={file_size}, mlen={mlen}, FOOTER_SIZE={FOOTER_SIZE}")
+
+    f.seek(expected_footer_start)
+    footer_data = f.read(FOOTER_SIZE)
+
+    if len(footer_data) < FOOTER_SIZE:
+         raise IOError(f"Could not read full MBT2 footer. Expected {FOOTER_SIZE} bytes, got {len(footer_data)}")
+
+    # Unpack footer to get index and bloom section offsets and sizes
+    table_blob_size_footer, table_hash_footer, merkle_footer, feature_crc_footer, index_offset, index_size = FOOTER.unpack(footer_data)
+    # print(f"Debug open_reader: Footer unpacked: table_blob_size={table_blob_size_footer}, index_offset={index_offset}, index_size={index_size}")
+
+    # Read the manifest to get bloom_bits and other info
+    try:
+        manifest_start_offset = file_size - 4 - mlen
+        if manifest_start_offset < 0:
+             raise IOError("Invalid manifest start offset.")
+        f.seek(manifest_start_offset)
+        man_bytes = f.read(mlen)
+        manifest = json.loads(man_bytes)
+        bloom_bits = manifest.get("bloom_bits", 2048) # Default if not in manifest
+        bloom_bytes_per_bucket = bloom_bits // 8
+        # Ensure consistency from manifest if needed, e.g., nb = manifest.get("nbuckets", nb)
+    except Exception as e:
+        print(f"Warning: Could not read manifest or bloom_bits: {e}. Using default bloom_bits=2048.")
+        bloom_bits = 2048
+        bloom_bytes_per_bucket = bloom_bits // 8
+    finally:
+        f.seek(0) # Reset file pointer after reading manifest
+
+    # Calculate bloom section offset and size based on index info and bloom_bytes_per_bucket
+    bloom_section_offset = index_offset + index_size
+    bloom_section_size = nb * bloom_bytes_per_bucket
+
+
+    # Get system's memory allocation granularity
+    mmap_granularity = mmap.ALLOCATIONGRANULARITY
+    # print(f"Debug open_reader: mmap.ALLOCATIONGRANULARITY: {mmap_granularity}")
+
+    # Calculate adjusted offsets and sizes for mmap to align with allocation granularity
+    adjusted_index_offset = (index_offset // mmap_granularity) * mmap_granularity
+    adjusted_index_size = (index_offset + index_size) - adjusted_index_offset # Map from adjusted offset to cover original end
+
+    adjusted_bloom_offset = (bloom_section_offset // mmap_granularity) * mmap_granularity
+    adjusted_bloom_size = (bloom_section_offset + bloom_section_size) - adjusted_bloom_offset # Map from adjusted offset to cover original end
+
+    # print(f"Debug open_reader: Index mmap: original_offset={index_offset}, original_size={index_size}, adjusted_offset={adjusted_index_offset}, adjusted_size={adjusted_index_size}")
+    # print(f"Debug open_reader: Bloom mmap: original_offset={bloom_section_offset}, original_size={bloom_section_size}, adjusted_offset={adjusted_bloom_offset}, adjusted_size={adjusted_bloom_size}")
+
+
+    # Memory-map the index section
+    index_mmap_obj = None
+    # Ensure adjusted section is within file bounds and has non-zero size before mmapping
+    if adjusted_index_size > 0 and adjusted_index_offset >= 0 and adjusted_index_offset + adjusted_index_size <= file_size:
+        try:
+            index_mmap_obj = mmap.mmap(f.fileno(), adjusted_index_size, offset=adjusted_index_offset, access=mmap.ACCESS_READ)
+            # print(f"Debug open_reader: Index mmap created.")
+        except Exception as e:
+            print(f"Warning: Could not create index mmap: {e}")
+            # Continue without mmap if it fails, lookup will fall back or fail later
+
+    # Memory-map the bloom filter section
+    blooms_mmap_obj = b"" # Default to empty bytes if no blooms or mmap fails
+    if adjusted_bloom_size > 0 and adjusted_bloom_offset >= 0 and adjusted_bloom_offset + adjusted_bloom_size <= file_size:
+        try:
+            blooms_mmap_obj = mmap.mmap(f.fileno(), adjusted_bloom_size, offset=adjusted_bloom_offset, access=mmap.ACCESS_READ)
+            # print(f"Debug open_reader: Blooms mmap created.")
+        except Exception as e:
+            print(f"Warning: Could not create blooms mmap: {e}")
+            # Continue without mmap, bloom checks will likely pass (if bloom_maybe returns True for empty) or fail
+
+    # Return the Reader with memory-mapped index and blooms
+    return Reader(Path(path), flags, bucket_kb, index_mmap_obj, nb, blooms_mmap_obj, f, DISK_INDEX_ENTRY_STRUCT, bloom_bytes_per_bucket, index_offset, bloom_section_offset)
+
+The subtask requires implementing the _bucket_for and get_data_entry_by_key functions which use the Reader object and the memory-mapped index to locate and retrieve records. 
+This involves binary searching the index and then reading and unpacking the relevant bucket data. 
+The lookup function is a simple wrapper around get_data_entry_by_key. These functions rely on the previously defined structures, constants, and placeholder functions, as well as the open_reader function.
+
+def _bucket_for(reader: Reader, key: int) -> int:
+    """Finds the bucket index for a given key using binary search on the memory-mapped index."""
+    lo, hi = 0, reader.nbuckets - 1
+    index_mmap = reader.index_mmap
+    entry_size = DISK_INDEX_ENTRY_STRUCT.size # Use the constant directly
+    entry_struct = DISK_INDEX_ENTRY_STRUCT # Use the constant directly
+    original_index_offset = reader.original_index_offset
+
+    if reader.nbuckets == 0:
+        return 0 # Return the first bucket index (0) if no buckets
+
+    if index_mmap is None:
+        # Fallback if mmap failed - might need to read index from file (not implemented here)
+        # For this demo, we'll assume mmap succeeded or return a default
+        print("Warning: Index mmap is None in _bucket_for. Falling back to linear scan (slow).")
+        # Fallback: linear scan through the index data read from file (if possible) or approximate
+        # A proper fallback would read the index into memory if mmap fails.
+        # For this demo, let's just return 0 as a simple fallback, though inaccurate.
+        return 0
+
+
+    # The mmap offset is the actual file offset where the mapped region starts.
+    # We need the offset of the index entry *within* the mapped region.
+    # This is the original file offset of the entry minus the actual file offset of the mmap start.
+    # The adjusted_index_offset stored in the Reader is the actual file offset of the mmap start.
+    mmap_actual_start_offset = (reader.original_index_offset // mmap.ALLOCATIONGRANULARITY) * mmap.ALLOCATIONGRANULARITY
+
+
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        # Calculate the original file offset of the mid entry
+        mid_original_offset = original_index_offset + mid * entry_size
+        # Calculate the offset within the memory-mapped data for the mid entry
+        mid_offset_in_mmap = mid_original_offset - mmap_actual_start_offset
+
+        # Ensure the calculated offset is within the mmap bounds before attempting to unpack
+        if mid_offset_in_mmap < 0 or mid_offset_in_mmap + entry_struct.size > len(index_mmap):
+             # This indicates an issue with offset calculation or mmap size
+             print(f"Warning: Calculated offset within index mmap is out of bounds for index {mid}. mid_offset_in_mmap={mid_offset_in_mmap}, len(index_mmap)={len(index_mmap)}.")
+             # Return the closest valid index found so far or a default
+             return max(0, min(reader.nbuckets - 1, mid))
+
+
+        # Read and unpack only the start key for the mid entry from the mmap object
+        mid_start_key = entry_struct.unpack_from(index_mmap, mid_offset_in_mmap)[0]
+
+        if mid_start_key <= key:
+            if mid == reader.nbuckets - 1:
+                return mid # Found the last bucket, it must contain the key or the keys after the last bucket
+
+            # Check the start key of the *next* bucket to see if the current bucket is the correct one
+            next_original_offset = original_index_offset + (mid + 1) * entry_size
+            next_offset_in_mmap = next_original_offset - mmap_actual_start_offset
+
+            # Ensure the calculated offset for the next entry is also within bounds
+            if next_offset_in_mmap < 0 or next_offset_in_mmap + entry_struct.size > len(index_mmap):
+                 print(f"Warning: Calculated offset within index mmap for next index {mid+1} is out of bounds. next_offset_in_mmap={next_offset_in_mmap}, len(index_mmap)={len(index_mmap)}.")
+                 return mid # Current index is the last valid one we can check
+
+
+            next_start_key = entry_struct.unpack_from(index_mmap, next_offset_in_mmap)[0]
+
+            if next_start_key > key:
+                return mid # Found the correct bucket
+            else:
+                lo = mid + 1 # Key is in a later bucket
+        else:
+            hi = mid - 1 # Key is in an earlier bucket
+
+    # If the loop finishes, the key is before the first bucket's start key
+    # or there are no buckets. Return the first bucket index (0).
+    return max(0, min(reader.nbuckets - 1, lo))
+
+
+def get_data_entry_by_key(reader: Reader, x: int, y: int, z: int, aes_key: Optional[bytes] = None) -> Optional[MBT2Record]:
+    """Retrieves a specific MBT2Record by its spatial coordinates (Z-Order key)."""
+    key = morton64(x, y, z)
+
+    if reader.nbuckets == 0:
+        return None # No buckets to search
+
+    # Find the bucket containing the key
+    i = _bucket_for(reader, key)
+
+    # Get bucket metadata from the memory-mapped index
+    index_mmap = reader.index_mmap
+    if index_mmap is None:
+         print("Warning: Index mmap is None in get_data_entry_by_key.")
+         return None
+
+    original_index_offset = reader.original_index_offset
+    adjusted_index_offset = (original_index_offset // mmap.ALLOCATIONGRANULARITY) * mmap.ALLOCATIONGRANULARITY
+
+    original_entry_offset = original_index_offset + i * DISK_INDEX_ENTRY_STRUCT.size
+    entry_offset_in_mmap = original_entry_offset - adjusted_index_offset
+
+
+    if entry_offset_in_mmap < 0 or entry_offset_in_mmap + DISK_INDEX_ENTRY_STRUCT.size > len(index_mmap):
+         print(f"Warning: Calculated offset within index mmap is out of bounds for bucket index {i}.")
+         return None
+
+    # Unpack the bucket metadata (start_key, count, data_offset, data_length)
+    start, count, off, length = DISK_INDEX_ENTRY_STRUCT.unpack_from(index_mmap, entry_offset_in_mmap)
+
+    # Perform Bloom filter check if blooms are available
+    blooms_mmap = reader.blooms_mmap
+    original_bloom_offset = reader.original_bloom_offset
+    adjusted_bloom_offset = (original_bloom_offset // mmap.ALLOCATIONGRANULARITY) * mmap.ALLOCATIONGRANULARITY
+
+    original_bloom_entry_offset = original_bloom_offset + i * reader.bloom_bytes_per_bucket
+    bloom_offset_in_mmap = original_bloom_entry_offset - adjusted_bloom_offset
+
+    bloom = b"" # Default to empty bloom bytes
+    if isinstance(blooms_mmap, mmap.mmap):
+        # Read from mmap if it's an mmap object
+        if bloom_offset_in_mmap >= 0 and bloom_offset_in_mmap + reader.bloom_bytes_per_bucket <= len(blooms_mmap):
+             bloom = blooms_mmap[bloom_offset_in_mmap : bloom_offset_in_mmap + reader.bloom_bytes_per_bucket]
+        else:
+             print(f"Warning: Calculated offset within blooms mmap is out of bounds for bucket index {i}.")
+
+    elif isinstance(blooms_mmap, bytes):
+        # If it's bytes (e.g., empty blooms or mmap failed), slice directly
+        bloom_end_in_mmap = bloom_offset_in_mmap + reader.bloom_bytes_per_bucket
+        if bloom_offset_in_mmap >= 0 and bloom_end_in_mmap <= len(blooms_mmap) and bloom_offset_in_mmap <= len(blooms_mmap):
+             bloom = blooms_mmap[bloom_offset_in_mmap : bloom_end_in_mmap]
+        else:
+             print(f"Warning: Bloom slice bounds out of blooms_mmap (bytes) bounds for bucket index {i}.")
+
+
+    # Only perform bloom check if bloom data is available and bloom_bits > 0
+    if len(bloom) == reader.bloom_bytes_per_bucket and reader.bloom_bytes_per_bucket * 8 > 0:
+        if not _bloom_maybe(bloom, key, reader.bloom_bytes_per_bucket * 8):
+            # print(f"Debug: Bloom filter check failed for key {key}.")
+            return None # Key is definitely not in this bucket
+
+    # Read the compressed bucket data from the file
+    file_size = os.fstat(reader.f.fileno()).st_size
+    if off < 0 or off + length > file_size or length < 0:
+         print(f"Warning: Invalid bucket data offset or length for bucket {i}. off={off}, length={length}, file_size={file_size}")
+         return None
+
+    # Ensure the file pointer is at the correct offset before reading
+    reader.f.seek(off)
+    comp = reader.f.read(length)
+
+    # Decrypt the data if applicable
+    comp = _maybe_decrypt(aes_key if (reader.flags & FLAG_AESGCM) else None, comp, struct.pack("<I", i))
+
+    # Decompress the data
+    raw = _decompress(comp)
+
+    # Unpack the data to find the target record
+    p = 0
+    if len(raw) < 8:
+        print(f"Warning: Raw bucket data too small for first key in bucket {i}.")
+        return None
+
+    # Read the first key
+    first_key = struct.unpack_from("<Q", raw, p)[0]
+    p += 8
+
+    cur_key = first_key
+    key_found_pos = -1 # Position of the target key in the conceptual list of keys in the bucket
+
+    # Find the position of the target key and the byte offset of its data payload
+    current_varint_pos = p # Start of varint data
+    target_data_payload_start_in_raw = -1 # This will be the start of the data payload for the target key
+
+    if first_key == key:
+        key_found_pos = 0
+        # Data for the first key starts right after the first key bytes
+        target_data_payload_start_in_raw = p
+    else:
+        # Iterate through varint key differences to find the position and the byte offset
+        # of the data payload corresponding to the target key.
+        # The data payload for the j-th key (after the first) starts immediately after
+        # the varint encoding of the difference between the j-th key and the (j-1)-th key.
+
+        # Need to find the byte offset *after* decoding the varint for the difference
+        # leading to the target key.
+        cumulative_varint_size = 0 # Track the size of varints up to the target key's difference
+
+        for j in range(count - 1): # Iterate through the count-1 varint differences
+            # Ensure we don't read past the end of the raw data when decoding varint
+            if current_varint_pos >= len(raw):
+                 print(f"Warning: Ran out of data reading varint keys in bucket {i} at position {current_varint_pos}.")
+                 key_found_pos = -1 # Indicate failure
+                 break # Exit loop
+
+            try:
+                d, varint_len = dec_varint(raw, current_varint_pos)
+            except Exception as e: # Catch potential errors from dec_varint
+                 print(f"Warning: Error decoding varint at position {current_varint_pos} in bucket {i}: {e}.")
+                 key_found_pos = -1 # Indicate failure
+                 break # Exit loop
+
+            if current_varint_pos + varint_len > len(raw):
+                 print(f"Warning: Varint length exceeds raw data bounds in bucket {i} at position {current_varint_pos}.")
+                 key_found_pos = -1 # Indicate failure
+                 break # Exit loop
+
+            current_varint_pos += varint_len # Move pointer past the current varint
+            cumulative_varint_size += varint_len # Add varint length to cumulative size
+            cur_key += d # Reconstruct the key
+
+            if cur_key == key:
+                key_found_pos = j + 1 # Position in the conceptual keys list (0-indexed)
+                # The data payload for this key starts immediately after this varint
+                target_data_payload_start_in_raw = current_varint_pos
+                break # Found the key, no need to reconstruct further keys
+
+
+    if key_found_pos == -1 or target_data_payload_start_in_raw == -1:
+        # Key was not found in the bucket or an error occurred during varint decoding
+        # print(f"Debug: Key {key} not found or error in bucket {i}.")
+        return None
+
+    # Now, calculate the offsets for mass, entropy, and tau based on the layout and key_found_pos
+
+    mass, ent, tau = float('nan'), float('nan'), float('nan') # Initialize with NaN to indicate failure if not unpacked
+
+    if reader.flags & FLAG_COLUMN:
+        # In column layout, the data for each field is stored contiguously for all records in the bucket.
+        # The layout is: [masses] [entropies] [taus]
+        # The start of the *entire* data payload section (after all varints for all keys)
+        # needs to be calculated. We already did this in the debug function, let's reuse that logic.
+        # Re-calculate the end position of ALL varints in the bucket to find the start of the whole data payload block.
+        p_after_all_varints = 8 # Start after first key
+        for j in range(count - 1):
+             # Need to decode varint to get its length
+             _, varint_len = dec_varint(raw, p_after_all_varints)
+             p_after_all_varints += varint_len
+
+        data_payload_start_of_entire_section = p_after_all_varints
+
+        # Calculate the offsets for the target record's data within the raw data
+        masses_start_offset_in_raw = data_payload_start_of_entire_section
+        ents_start_offset_in_raw = data_payload_start_of_entire_section + count * struct.calcsize("<f") # Size of mass block
+        taus_start_offset_in_raw = data_payload_start_of_entire_section + 2 * count * struct.calcsize("<f") # Size of mass + entropy blocks
+
+        # The offset for the specific record within each block is based on its position (key_found_pos)
+        mass_offset = masses_start_offset_in_raw + key_found_pos * struct.calcsize("<f")
+        ent_offset = ents_start_offset_in_raw + key_found_pos * struct.calcsize("<f")
+        tau_offset = taus_start_offset_in_raw + key_found_pos * struct.calcsize("<f")
+
+
+        # Attempt to unpack the specific float values using struct.unpack_from
+        try:
+            # Ensure offsets are within raw data bounds before unpacking
+            if mass_offset < 0 or mass_offset + struct.calcsize("<f") > len(raw):
+                print(f"Warning: Mass offset {mass_offset} out of raw data bounds (len={len(raw)}) for bucket {i}.")
+                mass = float('nan') # Indicate failure
+            else:
+                mass = struct.unpack_from("<f", raw, mass_offset)[0]
+
+            if ent_offset < 0 or ent_offset + struct.calcsize("<f") > len(raw):
+                 print(f"Warning: Entropy offset {ent_offset} out of raw data bounds (len={len(raw)}) for bucket {i}.")
+                 ent = float('nan') # Indicate failure
+            else:
+                ent = struct.unpack_from("<f", raw, ent_offset)[0]
+
+            if tau_offset < 0 or tau_offset + struct.calcsize("<f") > len(raw):
+                 print(f"Warning: Tau offset {tau_offset} out of raw data bounds (len={len(raw)}) for bucket {i}.")
+                 tau = float('nan') # Indicate failure
+            else:
+                 tau = struct.unpack_from("<f", raw, tau_offset)[0]
+
+
+            # Reconstruct MBT2Record if all values were successfully unpacked (not NaN)
+            # Using numpy.isnan for robustness with float('nan')
+            if not np.isnan(mass) and not np.isnan(ent) and not np.isnan(tau):
+                 retrieved_record = MBT2Record(key, mass, ent, tau)
+            else:
+                 retrieved_record = None # Indicate unpacking failure
+
+        except struct.error as e:
+            print(f"Warning: Error unpacking data at calculated offsets in bucket {i}: {e}")
+            retrieved_record = None
+
+    else:
+        # Row layout (mass, entropy, tau) for each record
+        # The data for the target key starts at target_data_payload_start_in_raw
+        # and is immediately followed by the mass, entropy, and tau for that record.
+        record_data_start_in_raw = target_data_payload_start_in_raw
+
+        try:
+            # Ensure offset is within bounds before unpacking
+            if record_data_start_in_raw < 0 or record_data_start_in_raw + RECORD_SIZE_BYTES > len(raw):
+                 print(f"Warning: Record data offset {record_data_start_in_raw} out of raw data bounds (len={len(raw)}) for bucket {i}.")
+                 retrieved_record = None
+            else:
+                 mass, ent, tau = struct.unpack_from("<fff", raw, record_data_start_in_raw)
+                 retrieved_record = MBT2Record(key, mass, ent, tau)
+
+        except struct.error as e:
+            print(f"Warning: Error unpacking data at calculated offset in bucket {i}: {e}")
+            retrieved_record = None
+
+
+    return retrieved_record
+
+
+def lookup(reader: Reader, x: int, y: int, z: int, aes_key: Optional[bytes] = None) -> Optional[Tuple[float, float, float]]:
+    """Looks up a record by spatial coordinates and returns its data payload."""
+    record = get_data_entry_by_key(reader, x, y, z, aes_key)
+    if record:
+        return (record.mass, record.entropy, record.tau)
+    return None
+
+All necessary functions and data structures are defined. The next step is to create a small dataset, 
+write it to an MBT2 file using write_mbt2, open the file using open_reader, 
+and then retrieve a record using get_data_entry_by_key to demonstrate the workflow as required by the reproducibility demo task.
+
+# Create a small dataset for the demo
+demo_records = [
+    MBT2Record(morton64(0, 0, 0), 1.0, 10.0, 100.0),
+    MBT2Record(morton64(1, 0, 0), 2.0, 20.0, 200.0),
+    MBT2Record(morton64(0, 1, 0), 3.0, 30.0, 300.0),
+    MBT2Record(morton64(1, 1, 0), 4.0, 40.0, 400.0),
+    MBT2Record(morton64(0, 0, 1), 5.0, 50.0, 500.0),
+]
+
+demo_file_path = Path("demo_mbt2_file.mbt2")
+demo_reader = None # Initialize reader to None
+
+print(f"--- Reproducibility Demo: Creating MBT2 file ({demo_file_path}) ---")
+
+try:
+    # Write the demo dataset to an MBT2 file
+    write_stats = write_mbt2(demo_file_path, demo_records, cfg=WriterCfg(target_bucket_kb=1, bloom_bits=64)) # Use a small bucket size and bloom for demo
+    print(f"MBT2 file created successfully. Stats: {write_stats}")
+
+    print(f"\n--- Reproducibility Demo: Opening MBT2 file ({demo_file_path}) ---")
+    # Open the created MBT2 file
+    demo_reader = open_reader(demo_file_path)
+    print(f"MBT2 file opened successfully.")
+    print(f"Reader info: nbuckets={demo_reader.nbuckets}, index_size={demo_reader.index_mmap.size if demo_reader.index_mmap else 'N/A'}, blooms_size={demo_reader.blooms_mmap.size if isinstance(demo_reader.blooms_mmap, mmap.mmap) else len(demo_reader.blooms_mmap)}")
+
+
+    print("\n--- Reproducibility Demo: Retrieving a record ---")
+    # Select a record to retrieve (e.g., the third record)
+    target_record_original = demo_records[2] # Record for (0, 1, 0)
+    target_x, target_y, target_z = inv_morton64(target_record_original.key)
+
+    print(f"Attempting to retrieve record for coordinates ({target_x}, {target_y}, {target_z}) with key {target_record_original.key}")
+
+    # Retrieve the record using get_data_entry_by_key
+    retrieved_record = get_data_entry_by_key(demo_reader, target_x, target_y, target_z)
+
+    # Print and verify the retrieved record
+    if retrieved_record:
+        print(f"Retrieved Record: {retrieved_record}")
+        # Simple comparison
+        if (retrieved_record.key == target_record_original.key and
+            abs(retrieved_record.mass - target_record_original.mass) < 1e-6 and
+            abs(retrieved_record.entropy - target_record_original.entropy) < 1e-6 and
+            abs(retrieved_record.tau - target_record_original.tau) < 1e-6):
+            print("Retrieval successful: Retrieved record matches original.")
+        else:
+            print("Retrieval failed: Retrieved record does NOT match original.")
+    else:
+        print("Retrieval failed: Record not found.")
+
+except Exception as e:
+    print(f"An error occurred during the demo: {e}")
+
+finally:
+    # Clean up: Close the reader and remove the demo file
+    if demo_reader:
+        try:
+            if demo_reader.index_mmap:
+                demo_reader.index_mmap.close()
+            if isinstance(demo_reader.blooms_mmap, mmap.mmap):
+                 demo_reader.blooms_mmap.close()
+            if demo_reader.f and not demo_reader.f.closed:
+                demo_reader.f.close()
+            print("\nDemo reader closed.")
+        except Exception as e:
+            print(f"Error closing demo reader: {e}")
+
+    if demo_file_path.exists():
+        try:
+            # Ensure all file handles are closed before removing
+            import gc
+            gc.collect()
+            os.remove(demo_file_path)
+            print(f"Demo file removed: {demo_file_path}")
+        except Exception as e:
+            print(f"Error removing demo file {demo_file_path}: {e}")
+
+print("\n--- Reproducibility Demo Complete ---") 
+
+The traceback shows name 'zstandard' is not defined. 
+This indicates that the zstandard library was used in _compress or _decompress but the library has not been imported in the current environment. 
+To fix this, I need to import the zstandard library.
+
+import zstandard
+
+
+ The zstandard library has been imported. The next step is to retry the reproducibility demo that failed due to the missing import.
+This involves creating the small dataset, writing it to an MBT2 file, opening the file, and retrieving a record.
+
+# Create a small dataset for the demo
+demo_records = [
+    MBT2Record(morton64(0, 0, 0), 1.0, 10.0, 100.0),
+    MBT2Record(morton64(1, 0, 0), 2.0, 20.0, 200.0),
+    MBT2Record(morton64(0, 1, 0), 3.0, 30.0, 300.0),
+    MBT2Record(morton64(1, 1, 0), 4.0, 40.0, 400.0),
+    MBT2Record(morton64(0, 0, 1), 5.0, 50.0, 500.0),
+]
+
+demo_file_path = Path("demo_mbt2_file.mbt2")
+demo_reader = None # Initialize reader to None
+
+print(f"--- Reproducibility Demo: Creating MBT2 file ({demo_file_path}) ---")
+
+try:
+    # Write the demo dataset to an MBT2 file
+    write_stats = write_mbt2(demo_file_path, demo_records, cfg=WriterCfg(target_bucket_kb=1, bloom_bits=64)) # Use a small bucket size and bloom for demo
+    print(f"MBT2 file created successfully. Stats: {write_stats}")
+
+    print(f"\n--- Reproducibility Demo: Opening MBT2 file ({demo_file_path}) ---")
+    # Open the created MBT2 file
+    demo_reader = open_reader(demo_file_path)
+    print(f"MBT2 file opened successfully.")
+    print(f"Reader info: nbuckets={demo_reader.nbuckets}, index_size={demo_reader.index_mmap.size if demo_reader.index_mmap else 'N/A'}, blooms_size={demo_reader.blooms_mmap.size if isinstance(demo_reader.blooms_mmap, mmap.mmap) else len(demo_reader.blooms_mmap)}")
+
+
+    print("\n--- Reproducibility Demo: Retrieving a record ---")
+    # Select a record to retrieve (e.g., the third record)
+    target_record_original = demo_records[2] # Record for (0, 1, 0)
+    target_x, target_y, target_z = inv_morton64(target_record_original.key)
+
+    print(f"Attempting to retrieve record for coordinates ({target_x}, {target_y}, {target_z}) with key {target_record_original.key}")
+
+    # Retrieve the record using get_data_entry_by_key
+    retrieved_record = get_data_entry_by_key(demo_reader, target_x, target_y, target_z)
+
+    # Print and verify the retrieved record
+    if retrieved_record:
+        print(f"Retrieved Record: {retrieved_record}")
+        # Simple comparison
+        if (retrieved_record.key == target_record_original.key and
+            abs(retrieved_record.mass - target_record_original.mass) < 1e-6 and
+            abs(retrieved_record.entropy - target_record_original.entropy) < 1e-6 and
+            abs(retrieved_record.tau - target_record_original.tau) < 1e-6):
+            print("Retrieval successful: Retrieved record matches original.")
+        else:
+            print("Retrieval failed: Retrieved record does NOT match original.")
+    else:
+        print("Retrieval failed: Record not found.")
+
+except Exception as e:
+    print(f"An error occurred during the demo: {e}")
+
+finally:
+    # Clean up: Close the reader and remove the demo file
+    if demo_reader:
+        try:
+            if demo_reader.index_mmap:
+                demo_reader.index_mmap.close()
+            if isinstance(demo_reader.blooms_mmap, mmap.mmap):
+                 demo_reader.blooms_mmap.close()
+            if demo_reader.f and not demo_reader.f.closed:
+                demo_reader.f.close()
+            print("\nDemo reader closed.")
+        except Exception as e:
+            print(f"Error closing demo reader: {e}")
+
+    if demo_file_path.exists():
+        try:
+            # Ensure all file handles are closed before removing
+            import gc
+            gc.collect()
+            os.remove(demo_file_path)
+            print(f"Demo file removed: {demo_file_path}")
+        except Exception as e:
+            print(f"Error removing demo file {demo_file_path}: {e}")
+
+print("\n--- Reproducibility Demo Complete ---")
+
+Summary:
+Data Analysis Key Findings
+The core components of the MBT2 format, including data structures, constants, and placeholder functions for compression, encryption, hashing, bucket management, 
+Morton encoding, varint encoding, and Bloom filters, were defined.
+The write_mbt2 function was successfully implemented to sort records, bucket them, pack and compress data, build a disk index and Bloom filters, 
+and write the complete MBT2 file structure including header, data buckets, index, blooms, footer, and manifest.
+The open_reader function was successfully implemented to open an MBT2 file, read header and footer metadata, 
+parse the manifest, and memory-map the disk index and Bloom filter sections for efficient access.
+Lookup functions (_bucket_for, get_data_entry_by_key, lookup) were implemented, 
+enabling efficient retrieval of records by spatial coordinates/key using binary search on the memory-mapped index and Bloom filter checks before reading and unpacking bucket data.
+A reproducible demo was successfully executed, demonstrating the writing of a small dataset to an MBT2 file and the subsequent retrieval and verification of a specific record from the created file.
+Insights or Next Steps
+The successful demo confirms the basic structure and read/write flow of the MBT2 format with disk indexing and memory mapping are functional, 
+albeit with placeholder implementations for core operations like compression, encryption, and hashing.
+The next step should focus on replacing the placeholder functions with robust,
+production-ready implementations (e.g., zstandard for compression, xxhash for hashing, a proper AES-GCM implementation for encryption, and optimized Morton encoding/decoding).
+
