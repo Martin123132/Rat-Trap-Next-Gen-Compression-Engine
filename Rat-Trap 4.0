@@ -1,0 +1,330 @@
+diff --git a/gmw_tool_v3.py b/gmw_tool_v3.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2386f8f5ff3124a30c54d1845d392e35b8502043
+--- /dev/null
++++ b/gmw_tool_v3.py
+@@ -0,0 +1,324 @@
++"""GMW Tool v3: content-defined chunk deduplicating archive.
++
++This tool focuses on eliminating duplicate payloads across datasets.
++Instead of wrapping the tarball wholesale, every file is sliced into
++fixed-size blocks (default 1 MiB).  Each block is hashed and stored
++once, producing dramatic savings when corpora contain repeated assets,
++checkpoints or instructions.  File reconstruction is described through
++a manifest embedded in the footer metadata.
++
++The format layout is intentionally simple:
++
++* Payload region: concatenated compressed chunk blobs.
++* Metadata footer: JSON manifest + 4 byte little-endian length (same
++  as previous generations).
++
++The manifest keeps per-file chunk sequences so that benchmarks can
++attribute savings to deduplication.  During extraction chunks are read
++lazily; no temporary tarball is materialised, making the tool suited to
++streaming shards directly into model training jobs.
++"""
++
++from __future__ import annotations
++
++import argparse
++import dataclasses
++import hashlib
++import json
++import os
++import stat
++import struct
++import time
++from dataclasses import dataclass
++from pathlib import Path
++from typing import Dict, Iterator, List
++
++try:
++    import zstandard as zstd
++
++    HAS_ZSTD = True
++except Exception:  # pragma: no cover - optional dependency
++    zstd = None  # type: ignore
++    HAS_ZSTD = False
++
++import zlib
++
++_CHUNK_SIZE = 1024 * 1024
++_FOOTER = struct.Struct("<I")
++
++
++@dataclass
++class ChunkInfo:
++    offset: int
++    length: int
++    raw_size: int
++    compressor: str
++
++
++@dataclass
++class FileChunk:
++    chunk_id: str
++    size: int
++
++
++@dataclass
++class FileEntry:
++    path: str
++    size: int
++    mode: int
++    mtime: float
++    chunks: List[FileChunk]
++
++
++@dataclass
++class ArchiveManifest:
++    format: str
++    chunk_size: int
++    checksum: Optional[str]
++    checksum_algorithm: str
++    created_at: float
++    elapsed_seconds: float
++    compressor: str
++    chunk_map: Dict[str, ChunkInfo]
++    files: List[FileEntry]
++
++    def to_bytes(self) -> bytes:
++        payload = dataclasses.asdict(self)
++        payload["chunk_map"] = {k: dataclasses.asdict(v) for k, v in self.chunk_map.items()}
++        payload["files"] = [
++            {
++                **dataclasses.asdict(f),
++                "chunks": [dataclasses.asdict(c) for c in f.chunks],
++            }
++            for f in self.files
++        ]
++        return json.dumps(payload, separators=(",", ":")).encode("utf-8")
++
++    @staticmethod
++    def from_bytes(blob: bytes) -> "ArchiveManifest":
++        payload = json.loads(blob.decode("utf-8"))
++        chunk_map = {k: ChunkInfo(**v) for k, v in payload["chunk_map"].items()}
++        files = [
++            FileEntry(
++                path=f["path"],
++                size=f["size"],
++                mode=f["mode"],
++                mtime=f["mtime"],
++                chunks=[FileChunk(**c) for c in f["chunks"]],
++            )
++            for f in payload["files"]
++        ]
++        return ArchiveManifest(
++            format=payload["format"],
++            chunk_size=payload["chunk_size"],
++            checksum=payload["checksum"],
++            checksum_algorithm=payload["checksum_algorithm"],
++            created_at=payload["created_at"],
++            elapsed_seconds=payload["elapsed_seconds"],
++            compressor=payload["compressor"],
++            chunk_map=chunk_map,
++            files=files,
++        )
++
++
++class HashingWriter:
++    def __init__(self, fp, algorithm: str = "sha256") -> None:
++        self._fp = fp
++        self.algorithm = algorithm
++        if algorithm == "sha256":
++            self._hasher = hashlib.sha256()
++        else:
++            self._hasher = None
++
++    def write(self, data: bytes) -> int:
++        written = self._fp.write(data)
++        if self._hasher is not None:
++            self._hasher.update(data)
++        return written
++
++    def tell(self) -> int:
++        return self._fp.tell()
++
++    @property
++    def checksum(self) -> Optional[str]:
++        if self._hasher is None:
++            return None
++        return self._hasher.hexdigest()
++
++
++def _iter_files(folder: Path) -> Iterator[Path]:
++    for root, dirs, files in os.walk(folder):
++        root_path = Path(root)
++        for name in sorted(files):
++            yield root_path / name
++
++
++def _compress_chunk(data: bytes, compressor: str, zstd_level: int) -> bytes:
++    if compressor == "zstd" and HAS_ZSTD:
++        return zstd.ZstdCompressor(level=zstd_level).compress(data)
++    if compressor == "zlib":
++        return zlib.compress(data, 6)
++    raise ValueError(f"Unsupported compressor '{compressor}'")
++
++
++def compress_folder(
++    folder: Path,
++    output: Path,
++    *,
++    chunk_size: int = _CHUNK_SIZE,
++    compressor: str = "zstd",
++    zstd_level: int = 3,
++    checksum_algorithm: str = "sha256",
++) -> ArchiveManifest:
++    if not folder.is_dir():
++        raise ValueError(f"Input folder '{folder}' not found")
++
++    chunk_map: Dict[str, ChunkInfo] = {}
++    files: List[FileEntry] = []
++
++    start = time.time()
++    with open(output, "wb") as fp:
++        writer = HashingWriter(fp, checksum_algorithm)
++        offset = 0
++        for path in _iter_files(folder):
++            rel = path.relative_to(folder)
++            st = path.stat()
++            chunks: List[FileChunk] = []
++            with open(path, "rb") as data_fp:
++                while True:
++                    block = data_fp.read(chunk_size)
++                    if not block:
++                        break
++                    chunk_id = hashlib.blake2b(block, digest_size=16).hexdigest()
++                    if chunk_id not in chunk_map:
++                        comp = _compress_chunk(block, compressor, zstd_level)
++                        chunk_map[chunk_id] = ChunkInfo(
++                            offset=offset,
++                            length=len(comp),
++                            raw_size=len(block),
++                            compressor=compressor,
++                        )
++                        writer.write(comp)
++                        offset += len(comp)
++                    chunks.append(FileChunk(chunk_id=chunk_id, size=len(block)))
++            files.append(
++                FileEntry(
++                    path=str(rel),
++                    size=st.st_size,
++                    mode=stat.S_IMODE(st.st_mode),
++                    mtime=st.st_mtime,
++                    chunks=chunks,
++                )
++            )
++
++        manifest = ArchiveManifest(
++            format="GMW-DEDUP-1",
++            chunk_size=chunk_size,
++            checksum=writer.checksum,
++            checksum_algorithm=checksum_algorithm,
++            created_at=start,
++            elapsed_seconds=time.time() - start,
++            compressor=compressor,
++            chunk_map=chunk_map,
++            files=files,
++        )
++        blob = manifest.to_bytes()
++        fp.write(blob)
++        fp.write(_FOOTER.pack(len(blob)))
++
++    return manifest
++
++
++def _read_manifest(archive: Path) -> ArchiveManifest:
++    with open(archive, "rb") as fp:
++        fp.seek(-_FOOTER.size, os.SEEK_END)
++        meta_len = _FOOTER.unpack(fp.read(_FOOTER.size))[0]
++        fp.seek(-_FOOTER.size - meta_len, os.SEEK_END)
++        blob = fp.read(meta_len)
++    return ArchiveManifest.from_bytes(blob)
++
++
++def extract_archive(archive: Path, output_dir: Path) -> ArchiveManifest:
++    manifest = _read_manifest(archive)
++    output_dir.mkdir(parents=True, exist_ok=True)
++
++    with open(archive, "rb") as fp:
++        for entry in manifest.files:
++            dest = output_dir / entry.path
++            dest.parent.mkdir(parents=True, exist_ok=True)
++            with open(dest, "wb") as out_fp:
++                for chunk in entry.chunks:
++                    info = manifest.chunk_map[chunk.chunk_id]
++                    fp.seek(info.offset)
++                    payload = fp.read(info.length)
++                    if info.compressor == "zstd" and HAS_ZSTD:
++                        block = zstd.ZstdDecompressor().decompress(payload)
++                    elif info.compressor == "zlib":
++                        block = zlib.decompress(payload)
++                    else:
++                        raise ValueError(f"Unsupported compressor '{info.compressor}'")
++                    out_fp.write(block[: chunk.size])
++            try:
++                os.utime(dest, (entry.mtime, entry.mtime))
++                os.chmod(dest, entry.mode)
++            except OSError:
++                pass
++
++    return manifest
++
++
++def _cmd_compress(args: argparse.Namespace) -> None:
++    manifest = compress_folder(
++        Path(args.folder),
++        Path(args.output),
++        chunk_size=args.chunk_size,
++        compressor="zstd" if not args.no_zstd else "zlib",
++        zstd_level=args.zstd_level,
++        checksum_algorithm=args.checksum,
++    )
++    print(json.dumps(dataclasses.asdict(manifest), indent=2, default=str))
++
++
++def _cmd_extract(args: argparse.Namespace) -> None:
++    manifest = extract_archive(Path(args.archive), Path(args.output))
++    print(json.dumps(dataclasses.asdict(manifest), indent=2, default=str))
++
++
++def _cmd_info(args: argparse.Namespace) -> None:
++    manifest = _read_manifest(Path(args.archive))
++    print(json.dumps(dataclasses.asdict(manifest), indent=2, default=str))
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description="GMW Tool v3 – deduplicating archiver")
++    sub = parser.add_subparsers(dest="command", required=True)
++
++    p_comp = sub.add_parser("compress", help="Create a deduplicated archive")
++    p_comp.add_argument("folder", help="Folder to compress")
++    p_comp.add_argument("output", help="Output archive path")
++    p_comp.add_argument("--chunk-size", type=int, default=_CHUNK_SIZE, help="Chunk size in bytes (default: 1MiB)")
++    p_comp.add_argument("--no-zstd", action="store_true", help="Disable Zstandard compression")
++    p_comp.add_argument("--zstd-level", type=int, default=3, help="Zstandard compression level")
++    p_comp.add_argument("--checksum", default="sha256", choices=["sha256"], help="Checksum algorithm")
++    p_comp.set_defaults(func=_cmd_compress)
++
++    p_ext = sub.add_parser("extract", help="Extract a deduplicated archive")
++    p_ext.add_argument("archive", help="Archive to extract")
++    p_ext.add_argument("output", help="Output directory")
++    p_ext.set_defaults(func=_cmd_extract)
++
++    p_info = sub.add_parser("info", help="Show archive manifest")
++    p_info.add_argument("archive", help="Archive to inspect")
++    p_info.set_defaults(func=_cmd_info)
++
++    return parser
++
++
++def main(argv: Optional[List[str]] = None) -> None:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++    args.func(args)
++
++
++if __name__ == "__main__":  # pragma: no cover
++    main()
