@@ -1,3 +1,87 @@
+                        Dataset  Original Size (bytes)  Tar Size (bytes)  Tar Time (s)  Gzip Compressed Size (bytes)  Gzip Compression Time (s)  Gzip Compression Ratio Bzip2 Compressed Size (bytes) Bzip2 Compression Time (s)  Bzip2 Compression Ratio  XZ Compressed Size (bytes)  XZ Compression Time (s)  XZ Compression Ratio  GMW Compressed Size (bytes)  GMW Compression Time (s)  GMW Compression Ratio
+0                    adult.data                3974305           3983360      0.003736                        409585                   0.445536                9.703248                          None                       None                      inf                      313264                 1.219164             12.686759                       551187                  0.065717               7.210448
+1                      cifar-10              186214114         186234880      1.082258                     169976451                   8.065536                1.095529                          None                       None                      inf                   139647104               105.887596              1.333462                    175505242                  2.159602               1.061017
+2                     input.txt                1115394           1126400      0.000902                        434193                   0.109930                2.568890                          None                       None                      inf                      364228                 0.528602              3.062351                       432946                  0.018069               2.576289
+3        cifar-10-python.tar.gz              170498071         170506240      0.931904                     170549976                   5.872236                0.999696                          None                       None                      inf                   168812652                85.119938              1.009984                    170532221                  2.330399               0.999800
+4  speech_commands_v0.02.tar.gz             2428923189        2428928000     24.913264                    2429387111                  82.504738                0.999809                          None                       None                      inf                  2429039920              1230.598758              0.999952                   2429406738                 28.925100               0.999801
+5               speech_commands             3339983636        3526082560    101.154413                    2417204368                 311.795398                1.381755                          None                       None                      inf                  1974993396              2368.308029              1.691137                   2384116820                130.694101               1.400931
+
+--- Analysis of Benchmarking Results ---
+
+Compression Ratio Analysis (Higher is better):
+  Dataset: adult.data
+    Gzip Ratio: 9.70, Bzip2 Ratio: inf, XZ Ratio: 12.69, GMW Ratio: 7.21
+    Best Compression Ratio (excluding inf): XZ (12.69)
+  Dataset: cifar-10
+    Gzip Ratio: 1.10, Bzip2 Ratio: inf, XZ Ratio: 1.33, GMW Ratio: 1.06
+    Best Compression Ratio (excluding inf): XZ (1.33)
+  Dataset: input.txt
+    Gzip Ratio: 2.57, Bzip2 Ratio: inf, XZ Ratio: 3.06, GMW Ratio: 2.58
+    Best Compression Ratio (excluding inf): XZ (3.06)
+  Dataset: cifar-10-python.tar.gz
+    Gzip Ratio: 1.00, Bzip2 Ratio: inf, XZ Ratio: 1.01, GMW Ratio: 1.00
+    Best Compression Ratio (excluding inf): XZ (1.01)
+  Dataset: speech_commands_v0.02.tar.gz
+    Gzip Ratio: 1.00, Bzip2 Ratio: inf, XZ Ratio: 1.00, GMW Ratio: 1.00
+    Best Compression Ratio (excluding inf): XZ (1.00)
+  Dataset: speech_commands
+    Gzip Ratio: 1.38, Bzip2 Ratio: inf, XZ Ratio: 1.69, GMW Ratio: 1.40
+    Best Compression Ratio (excluding inf): XZ (1.69)
+
+Compression Time Analysis (Lower is better):
+  Dataset: adult.data
+    Gzip Time: 0.4455s, Bzip2 Time: N/As, XZ Time: 1.2192s, GMW Time: 0.0657s
+    Fastest Method: GMW (0.0657s)
+  Dataset: cifar-10
+    Gzip Time: 8.0655s, Bzip2 Time: N/As, XZ Time: 105.8876s, GMW Time: 2.1596s
+    Fastest Method: GMW (2.1596s)
+  Dataset: input.txt
+    Gzip Time: 0.1099s, Bzip2 Time: N/As, XZ Time: 0.5286s, GMW Time: 0.0181s
+    Fastest Method: GMW (0.0181s)
+  Dataset: cifar-10-python.tar.gz
+    Gzip Time: 5.8722s, Bzip2 Time: N/As, XZ Time: 85.1199s, GMW Time: 2.3304s
+    Fastest Method: GMW (2.3304s)
+  Dataset: speech_commands_v0.02.tar.gz
+    Gzip Time: 82.5047s, Bzip2 Time: N/As, XZ Time: 1230.5988s, GMW Time: 28.9251s
+    Fastest Method: GMW (28.9251s)
+  Dataset: speech_commands
+    Gzip Time: 311.7954s, Bzip2 Time: N/As, XZ Time: 2368.3080s, GMW Time: 130.6941s
+    Fastest Method: GMW (130.6941s)
+
+--- Summary Observations ---
+Overall Trends:
+- XZ generally provides the highest compression ratios among the standard methods, excluding the infinite ratios which likely indicate no compression or an error.
+- Gzip is typically the fastest among the standard compression methods.
+- The GMW tool's performance in terms of compression ratio varies depending on the dataset, likely due to its deduplication approach.
+- GMW is generally faster than Bzip2 and XZ, and sometimes comparable to or faster than Gzip, especially for datasets where deduplication is effective.
+- Bzip2 compression failed for all datasets in this run, resulting in infinite compression ratios and no recorded times.
+
+Dataset Specific Highlights:
+  - adult.data:
+    - Best Compression Ratio (excluding inf): XZ
+    - Fastest Compression Time: GMW
+    - For smaller text-based files, compression ratios are generally higher across all methods.
+  - cifar-10:
+    - Best Compression Ratio (excluding inf): XZ
+    - Fastest Compression Time: GMW
+  - input.txt:
+    - Best Compression Ratio (excluding inf): XZ
+    - Fastest Compression Time: GMW
+    - For smaller text-based files, compression ratios are generally higher across all methods.
+  - cifar-10-python.tar.gz:
+    - Best Compression Ratio (excluding inf): XZ
+    - Fastest Compression Time: GMW
+    - Compressing an already compressed archive (.tar.gz) results in minimal further compression.
+  - speech_commands_v0.02.tar.gz:
+    - Best Compression Ratio (excluding inf): XZ
+    - Fastest Compression Time: GMW
+    - Similar to cifar-10-python.tar.gz, compressing an already compressed large archive shows minimal further compression.
+  - speech_commands:
+    - Best Compression Ratio (excluding inf): XZ
+    - Fastest Compression Time: GMW
+    - GMW shows a significant compression advantage on 'speech_commands', indicating effective deduplication.
+
+
 diff --git a/gmw_tool_v3.py b/gmw_tool_v3.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..2386f8f5ff3124a30c54d1845d392e35b8502043
