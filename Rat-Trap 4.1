@@ -1,0 +1,357 @@
+diff --git a/gmw_tool_v2.py b/gmw_tool_v2.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..5341068133684c57ea60d9599e0906d45777ec05
+--- /dev/null
++++ b/gmw_tool_v2.py
+@@ -0,0 +1,351 @@
++"""GMW Tool v2: streaming, low-memory archiver.
++
++This version focuses on turning the original single-file GMW utility
++into a true streaming pipeline.  It avoids staging entire tar archives
++in memory by piping the tar writer straight into the compressor.  The
++compressed byte stream is hashed while being emitted so the checksum is
++still available for integrity verification.
++
++Key improvements compared with the legacy script:
++
++* Streaming tar + compression to keep peak memory usage tiny even for
++  multi-terabyte corpora.
++* Limited reader during extraction so only the compressed portion of
++  the archive is touched when unpacking.
++* Structured metadata that records timing information and file counts
++  for benchmarking and reproducibility.
++* A small command-line interface with ``compress``, ``extract`` and
++  ``info`` sub-commands so new pipelines can be benchmarked via
++  automation.
++
++The resulting ``.gmw`` container keeps the same footer layout as the
++legacy tool (metadata JSON + 4 byte length) so it remains compatible
++with existing environments that expect this structure.
++"""
++
++from __future__ import annotations
++
++import argparse
++import dataclasses
++import hashlib
++import io
++import json
++import os
++import struct
++import tarfile
++import tempfile
++import time
++from pathlib import Path
++from typing import Iterator, List, Optional
++
++try:
++    import zstandard as zstd
++
++    HAS_ZSTD = True
++except Exception:  # pragma: no cover - optional dependency
++    zstd = None  # type: ignore
++    HAS_ZSTD = False
++
++try:
++    import xxhash
++
++    HAS_XX = True
++except Exception:  # pragma: no cover - optional dependency
++    xxhash = None  # type: ignore
++    HAS_XX = False
++
++import zlib
++
++_METADATA_FOOTER = struct.Struct("<I")
++_DEFAULT_CHUNK = 1024 * 1024
++
++
++@dataclasses.dataclass
++class ArchiveMetadata:
++    """Metadata stored inside the ``.gmw`` footer."""
++
++    compressor: str
++    checksum: Optional[str]
++    checksum_algorithm: str
++    zstd_level: Optional[int]
++    file_count: int
++    total_bytes: int
++    created_at: float
++    elapsed_seconds: float
++
++    def to_bytes(self) -> bytes:
++        payload = dataclasses.asdict(self)
++        return json.dumps(payload, separators=(",", ":")).encode("utf-8")
++
++    @staticmethod
++    def from_bytes(blob: bytes) -> "ArchiveMetadata":
++        payload = json.loads(blob.decode("utf-8"))
++        return ArchiveMetadata(**payload)
++
++
++class HashingSink:
++    """File-like sink that updates a checksum while writing."""
++
++    def __init__(self, fp, algorithm: str = "sha256") -> None:
++        self._fp = fp
++        self.algorithm = algorithm
++        if algorithm == "sha256":
++            self._hasher = hashlib.sha256()
++        elif algorithm == "xxhash64" and HAS_XX:
++            self._hasher = xxhash.xxh64()
++        else:
++            self._hasher = None
++
++    def write(self, data: bytes) -> int:  # pragma: no cover - thin wrapper
++        if self._hasher is not None:
++            self._hasher.update(data)
++        self._fp.write(data)
++        return len(data)
++
++    def flush(self) -> None:  # pragma: no cover - passthrough
++        self._fp.flush()
++
++    @property
++    def checksum(self) -> Optional[str]:
++        if self._hasher is None:
++            return None
++        return self._hasher.hexdigest()
++
++
++class ZlibCompressionStream:
++    """Streaming wrapper around :func:`zlib.compressobj`."""
++
++    def __init__(self, sink: HashingSink, level: int = 6, chunk: int = _DEFAULT_CHUNK) -> None:
++        self._sink = sink
++        self._level = level
++        self._chunk = chunk
++        self._compressor = zlib.compressobj(level)
++        self._closed = False
++
++    def __enter__(self) -> "ZlibCompressionStream":
++        return self
++
++    def __exit__(self, exc_type, exc, tb) -> None:
++        self.close()
++
++    def write(self, data: bytes) -> int:
++        if self._closed:
++            raise ValueError("write() after close()")
++        if not data:
++            return 0
++        chunk = self._compressor.compress(data)
++        if chunk:
++            self._sink.write(chunk)
++        return len(data)
++
++    def close(self) -> None:
++        if not self._closed:
++            tail = self._compressor.flush(zlib.Z_FINISH)
++            if tail:
++                self._sink.write(tail)
++            self._sink.flush()
++            self._closed = True
++
++
++class LimitedReader:
++    """Restricts reads to a fixed number of bytes."""
++
++    def __init__(self, fp, limit: int) -> None:
++        self._fp = fp
++        self._remaining = limit
++
++    def read(self, size: int = -1) -> bytes:
++        if self._remaining <= 0:
++            return b""
++        if size < 0 or size > self._remaining:
++            size = self._remaining
++        data = self._fp.read(size)
++        self._remaining -= len(data)
++        return data
++
++
++def _iter_files(folder: Path) -> Iterator[Path]:
++    for root, _, files in os.walk(folder):
++        root_path = Path(root)
++        for name in files:
++            yield root_path / name
++
++
++def _stage_for_tar(folder: Path) -> Tuple[List[Path], int]:
++    files = list(_iter_files(folder))
++    total_size = 0
++    for path in files:
++        try:
++            total_size += path.stat().st_size
++        except OSError:
++            continue
++    return files, total_size
++
++
++def compress_folder(
++    folder_path: Path,
++    output_path: Path,
++    *,
++    use_zstd: bool = True,
++    zstd_level: int = 3,
++    checksum_algorithm: str = "sha256",
++) -> ArchiveMetadata:
++    folder = Path(folder_path)
++    if not folder.is_dir():
++        raise ValueError(f"Input folder '{folder}' does not exist")
++
++    files, total_bytes = _stage_for_tar(folder)
++
++    start = time.time()
++    with open(output_path, "wb") as raw_out:
++        sink = HashingSink(raw_out, checksum_algorithm)
++        if use_zstd and HAS_ZSTD:
++            compressor_name = "zstd"
++            stream_ctx = zstd.ZstdCompressor(level=zstd_level).stream_writer(sink)
++        else:
++            compressor_name = "zlib"
++            stream_ctx = ZlibCompressionStream(sink, level=6)
++
++        with stream_ctx as stream:
++            with tarfile.open(fileobj=stream, mode="w|") as tf:
++                for path in files:
++                    arcname = path.relative_to(folder)
++                    tf.add(path, arcname=str(arcname))
++
++        checksum = sink.checksum
++        metadata = ArchiveMetadata(
++            compressor=compressor_name,
++            checksum=checksum,
++            checksum_algorithm=checksum_algorithm,
++            zstd_level=zstd_level if compressor_name == "zstd" else None,
++            file_count=len(files),
++            total_bytes=total_bytes,
++            created_at=start,
++            elapsed_seconds=time.time() - start,
++        )
++        blob = metadata.to_bytes()
++        raw_out.write(blob)
++        raw_out.write(_METADATA_FOOTER.pack(len(blob)))
++        sink.flush()
++
++    return metadata
++
++
++def _decompress_to_temp(
++    compressor: str,
++    reader: LimitedReader,
++    zstd_level: Optional[int] = None,
++) -> io.BufferedRandom:
++    temp = tempfile.TemporaryFile()
++    if compressor == "zstd" and HAS_ZSTD:
++        dctx = zstd.ZstdDecompressor()
++        with dctx.stream_writer(temp) as writer:
++            while True:
++                chunk = reader.read(_DEFAULT_CHUNK)
++                if not chunk:
++                    break
++                writer.write(chunk)
++    elif compressor == "zlib":
++        dctx = zlib.decompressobj()
++        while True:
++            chunk = reader.read(_DEFAULT_CHUNK)
++            if not chunk:
++                break
++            data = dctx.decompress(chunk)
++            if data:
++                temp.write(data)
++        tail = dctx.flush()
++        if tail:
++            temp.write(tail)
++    else:
++        raise ValueError(f"Unsupported compressor '{compressor}'")
++    temp.seek(0)
++    return temp
++
++
++def extract_archive(archive_path: Path, output_dir: Path) -> ArchiveMetadata:
++    output_dir.mkdir(parents=True, exist_ok=True)
++    with open(archive_path, "rb") as fp:
++        fp.seek(-_METADATA_FOOTER.size, os.SEEK_END)
++        meta_len = _METADATA_FOOTER.unpack(fp.read(_METADATA_FOOTER.size))[0]
++        fp.seek(-_METADATA_FOOTER.size - meta_len, os.SEEK_END)
++        metadata = ArchiveMetadata.from_bytes(fp.read(meta_len))
++
++        data_size = fp.tell()
++        fp.seek(0)
++        limited = LimitedReader(fp, data_size)
++        temp = _decompress_to_temp(metadata.compressor, limited, metadata.zstd_level)
++
++        with tarfile.open(fileobj=temp, mode="r:") as tf:
++            tf.extractall(path=output_dir)
++
++    return metadata
++
++
++def read_metadata(archive_path: Path) -> ArchiveMetadata:
++    with open(archive_path, "rb") as fp:
++        fp.seek(-_METADATA_FOOTER.size, os.SEEK_END)
++        meta_len = _METADATA_FOOTER.unpack(fp.read(_METADATA_FOOTER.size))[0]
++        fp.seek(-_METADATA_FOOTER.size - meta_len, os.SEEK_END)
++        blob = fp.read(meta_len)
++    return ArchiveMetadata.from_bytes(blob)
++
++
++def _cmd_compress(args: argparse.Namespace) -> None:
++    metadata = compress_folder(
++        Path(args.folder),
++        Path(args.output),
++        use_zstd=not args.no_zstd,
++        zstd_level=args.zstd_level,
++        checksum_algorithm=args.checksum,
++    )
++    print(json.dumps(dataclasses.asdict(metadata), indent=2))
++
++
++def _cmd_extract(args: argparse.Namespace) -> None:
++    metadata = extract_archive(Path(args.archive), Path(args.output))
++    print(json.dumps(dataclasses.asdict(metadata), indent=2))
++
++
++def _cmd_info(args: argparse.Namespace) -> None:
++    metadata = read_metadata(Path(args.archive))
++    print(json.dumps(dataclasses.asdict(metadata), indent=2))
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description="GMW Tool v2 – streaming archiver")
++    sub = parser.add_subparsers(dest="command", required=True)
++
++    p_comp = sub.add_parser("compress", help="Compress a folder into a .gmw archive")
++    p_comp.add_argument("folder", help="Folder to compress")
++    p_comp.add_argument("output", help="Path to the output .gmw archive")
++    p_comp.add_argument("--no-zstd", action="store_true", help="Disable Zstandard even if available")
++    p_comp.add_argument("--zstd-level", type=int, default=3, help="Zstandard level (default: 3)")
++    p_comp.add_argument(
++        "--checksum",
++        choices=["sha256", "xxhash64"],
++        default="sha256",
++        help="Checksum algorithm for the compressed payload",
++    )
++    p_comp.set_defaults(func=_cmd_compress)
++
++    p_ext = sub.add_parser("extract", help="Extract a .gmw archive")
++    p_ext.add_argument("archive", help="Archive to extract")
++    p_ext.add_argument("output", help="Target directory")
++    p_ext.set_defaults(func=_cmd_extract)
++
++    p_info = sub.add_parser("info", help="Display archive metadata")
++    p_info.add_argument("archive", help="Archive to inspect")
++    p_info.set_defaults(func=_cmd_info)
++
++    return parser
++
++
++def main(argv: Optional[List[str]] = None) -> None:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++    args.func(args)
++
++
++if __name__ == "__main__":  # pragma: no cover
++    main()
