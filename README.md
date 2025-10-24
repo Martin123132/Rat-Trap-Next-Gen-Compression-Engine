@@ -88,7 +88,24 @@ Enter the path of the .gmw file to extract: data_archive.gmw
 Enter the output folder: ./restored
 ```
 
+## 🔁 New Experimental Toolchain
+
+To explore new data-transfer frontiers we now ship three experimental
+spin-offs of the original `gmw_tool.py`. Each script keeps the familiar
+CLI structure (`compress`, `extract`, `info`) so they can be benchmarked
+side-by-side.
+
+| Tool | Focus | Why it Matters |
+| :--- | :--- | :--- |
+| ` | Streaming pipelines | Pipes the tar writer straight into the compressor so multi-terabyte datasets can be archived with constant memory usage. Metadata retains timing and integrity stats for benchmarking. |
+| `| Global deduplication | Splits files into hashed blocks, stores each block once, and replays them via a manifest. Great for corpora with repeated checkpoints or dataset shards. |
+|  | SQLite content lake | Persists chunks in a queryable SQLite database and exposes an HTTP API for chunk streaming—ideal for orchestrating LLM training clusters. |
+
+All three scripts live at the repository root and can be executed
+directly, e.g. `python gmw_tool_v3.py compress dataset dedup.gmw`.
+
 -----
+
 
 ## 📊 Performance Highlights
 
