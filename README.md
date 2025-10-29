@@ -41,17 +41,21 @@ Key Innovations:
 
 ## 🛠 Installation
 
-Rat-Trap is a single-file tool. Clone the repo or download `gmw_tool.py` directly:
+Rat-Trap is now published as a standard Python package. Install it into your
+environment (and pull in the optional extras if you want the original
+cryptography/xxhash helpers):
 
 ```bash
-git clone 
+pip install .
+# or build a wheel: python -m build
+
+# optional extras
+pip install .[crypto]
 ```
 
-Install the required performance dependencies:
-
-```bash
-pip install zstandard cryptography xxhash
-```
+> **Note:** The default compression engine uses [Zstandard]. The package declares
+> it as a dependency, but if you install manually without dependencies the CLI
+> will automatically fall back to zlib and warn you.
 
 -----
 
@@ -60,13 +64,17 @@ pip install zstandard cryptography xxhash
 Run Rat-Trap directly:
 
 ```bash
-python gmw_tool.py
-```
+rat-trap --help
+ ```
 
-You’ll be prompted to:
+ The CLI exposes sub-commands instead of interactive prompts:
 
-1.  **Compress** a folder into a `.gmw` archive.
-2.  **Extract** a `.gmw` archive into a folder.
+1.  `rat-trap compress <folder> <archive>` – ingest a folder into a `.gmw` archive.
+2.  `rat-trap extract <archive> <destination>` – extract an archive back to disk.
+3.  `rat-trap info <archive>` – show stored metadata without extracting.
+4.  `rat-trap serve <archive>` – expose the archive via HTTP chunk streaming.
+
+[Zstandard]: https://facebook.github.io/zstd/
 
 ### 📦 Compress a folder
 
