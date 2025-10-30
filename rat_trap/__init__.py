@@ -1,6 +1,6 @@
 """Rat-Trap compression toolkit."""
-
-from .gmw_tool_v4 import (
+try:
+    from .gmw_tool import (
     Metadata,
     build_parser,
     compress_folder,
@@ -9,7 +9,16 @@ from .gmw_tool_v4 import (
     read_metadata,
     serve_archive,
 )
-
+except ImportError:
+    from gmw_tool import (
+    Metadata, 
+    build_parser,
+    compress_folder,
+    extract_archive,
+    main,
+    read_metadata,
+    serve_archive,
+)
 __all__ = [
     "Metadata",
     "build_parser",
