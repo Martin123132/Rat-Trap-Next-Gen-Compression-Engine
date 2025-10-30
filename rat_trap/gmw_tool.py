@@ -1,0 +1,404 @@
+"""GMW Tool v4: SQLite-backed content lake for LLM ingestion.
+
+This generation converts the archive into a miniature content lake
+backed by SQLite.  Every chunk is stored as a row so downstream systems
+can fetch just the shards they need; metadata lives alongside the
+payload, enabling zero-copy streaming or HTTP serving without first
+materialising tarballs.
+
+Why SQLite?
+    * Embedding metadata queries (`SELECT * FROM files WHERE path LIKE`) directly
+      into the container makes integration trivial.
+    * Fine-grained chunk access lets retrieval pipelines pull samples in
+      parallel or resume interrupted transfers without replaying the entire
+      archive.
+    * SQLite ships with Python which keeps the distribution self-contained.
+
+In addition to ``compress`` / ``extract`` / ``info`` the tool exposes a
+``serve`` command that spins up a very small HTTP API for remote chunk
+streaming.  This makes benchmarking over the network straightforward and
+is a stepping stone toward new data-transfer topologies for model
+training clusters.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import hashlib
+import http.server
+import json
+import os
+import socketserver
+import sqlite3
+import stat
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Iterator, List, Optional
+
+try:
+    import zstandard as zstd
+
+    HAS_ZSTD = True
+except Exception:  # pragma: no cover - optional dependency
+    zstd = None  # type: ignore
+    HAS_ZSTD = False
+
+import sys
+import zlib
+
+_CHUNK_SIZE = 512 * 1024
+_DEFAULT_COMPRESSOR = "zstd" if HAS_ZSTD else "zlib"
+
+
+@dataclass
+class Metadata:
+    format: str
+    chunk_size: int
+    compressor: str
+    checksum: Optional[str]
+    checksum_algorithm: str
+    created_at: float
+    elapsed_seconds: float
+    file_count: int
+    total_bytes: int
+
+    def as_dict(self) -> Dict[str, object]:
+        return dataclasses.asdict(self)
+
+
+def _iter_files(folder: Path) -> Iterator[Path]:
+    for root, _, files in os.walk(folder):
+        root_path = Path(root)
+        for name in sorted(files):
+            yield root_path / name
+
+
+def _compress_block(data: bytes, compressor: str, level: int) -> bytes:
+    if compressor == "zstd" and HAS_ZSTD:
+        assert zstd is not None
+        return zstd.ZstdCompressor(level=level).compress(data)
+    if compressor == "zlib":
+        return zlib.compress(data, 6)
+    raise ValueError(f"Unsupported compressor '{compressor}'")
+
+
+def _ensure_db(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA journal_mode = OFF")
+    conn.execute("PRAGMA synchronous = OFF")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chunks (
+            id TEXT PRIMARY KEY,
+            compressor TEXT NOT NULL,
+            raw_size INTEGER NOT NULL,
+            data BLOB NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS files (
+            path TEXT PRIMARY KEY,
+            size INTEGER,
+            mtime REAL,
+            mode INTEGER,
+            ordering INTEGER,
+            chunk_ids TEXT,
+            chunk_sizes TEXT
+        )
+        """
+    )
+
+
+def compress_folder(
+    folder: Path,
+    output: Path,
+    *,
+    chunk_size: int = _CHUNK_SIZE,
+    compressor: str = _DEFAULT_COMPRESSOR,
+    zstd_level: int = 3,
+    checksum_algorithm: str = "sha256",
+) -> Metadata:
+    if not folder.is_dir():
+        raise ValueError(f"Input folder '{folder}' not found")
+    if output.exists():
+        output.unlink()
+
+    start = time.time()
+    checksum = hashlib.sha256() if checksum_algorithm == "sha256" else None
+    with sqlite3.connect(output) as conn:
+        _ensure_db(conn)
+        cache: Dict[str, None] = {}
+        total_bytes = 0
+        file_count = 0
+        ordering = 0
+        for path in _iter_files(folder):
+            rel = path.relative_to(folder)
+            st = path.stat()
+            chunk_ids: List[str] = []
+            chunk_sizes: List[int] = []
+            with open(path, "rb") as fp:
+                while True:
+                    block = fp.read(chunk_size)
+                    if not block:
+                        break
+                    digest = hashlib.blake2b(block, digest_size=16).hexdigest()
+                    if digest not in cache:
+                        comp = _compress_block(block, compressor, zstd_level)
+                        conn.execute(
+                            "INSERT OR IGNORE INTO chunks(id, compressor, raw_size, data) VALUES (?, ?, ?, ?)",
+                            (digest, compressor, len(block), sqlite3.Binary(comp)),
+                        )
+                        cache[digest] = None
+                        if checksum is not None:
+                            checksum.update(comp)
+                    chunk_ids.append(digest)
+                    chunk_sizes.append(len(block))
+            conn.execute(
+                "INSERT INTO files(path, size, mtime, mode, ordering, chunk_ids, chunk_sizes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    str(rel),
+                    st.st_size,
+                    st.st_mtime,
+                    stat.S_IMODE(st.st_mode),
+                    ordering,
+                    json.dumps(chunk_ids),
+                    json.dumps(chunk_sizes),
+                ),
+            )
+            ordering += 1
+            total_bytes += st.st_size
+            file_count += 1
+        meta = Metadata(
+            format="GMW-SQLITE-1",
+            chunk_size=chunk_size,
+            compressor=compressor,
+            checksum=checksum.hexdigest() if checksum is not None else None,
+            checksum_algorithm=checksum_algorithm,
+            created_at=start,
+            elapsed_seconds=time.time() - start,
+            file_count=file_count,
+            total_bytes=total_bytes,
+        )
+        for key, value in meta.as_dict().items():
+            conn.execute(
+                "INSERT INTO metadata(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, json.dumps(value)),
+            )
+        conn.commit()
+    return meta
+
+
+def _open_db(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _load_metadata(conn: sqlite3.Connection) -> Metadata:
+    rows = {row["key"]: json.loads(row["value"]) for row in conn.execute("SELECT key, value FROM metadata")}
+    return Metadata(**rows)  # type: ignore[arg-type]
+
+
+def extract_archive(archive: Path, output_dir: Path) -> Metadata:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with _open_db(archive) as conn:
+        meta = _load_metadata(conn)
+        cur = conn.execute("SELECT * FROM files ORDER BY ordering")
+        for row in cur:
+            dest = output_dir / row["path"]
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            chunk_ids = json.loads(row["chunk_ids"])
+            chunk_sizes = json.loads(row["chunk_sizes"])
+            with open(dest, "wb") as out_fp:
+                for chunk_id, size in zip(chunk_ids, chunk_sizes):
+                    c_row = conn.execute(
+                        "SELECT compressor, data FROM chunks WHERE id = ?",
+                        (chunk_id,),
+                    ).fetchone()
+                    if c_row is None:
+                        raise ValueError(f"Missing chunk '{chunk_id}' in archive")
+                    comp = c_row["data"]
+                    if c_row["compressor"] == "zstd" and HAS_ZSTD:
+                        assert zstd is not None
+                        block = zstd.ZstdDecompressor().decompress(comp)
+                    elif c_row["compressor"] == "zstd":
+                        raise RuntimeError(
+                            "Archive requires Zstandard support. Install the 'zstandard' package "
+                            "or decompress on a system with it available."
+                        )
+                    elif c_row["compressor"] == "zlib":
+                        block = zlib.decompress(comp)
+                    else:
+                        raise ValueError(f"Unsupported compressor '{c_row['compressor']}'")
+                    out_fp.write(block[:size])
+            try:
+                os.utime(dest, (row["mtime"], row["mtime"]))
+                os.chmod(dest, row["mode"])
+            except OSError:
+                pass
+    return meta
+
+
+def read_metadata(archive: Path) -> Metadata:
+    with _open_db(archive) as conn:
+        return _load_metadata(conn)
+
+
+def _cmd_compress(args: argparse.Namespace) -> None:
+    compressor = _DEFAULT_COMPRESSOR if not args.no_zstd else "zlib"
+    if compressor == "zstd" and not HAS_ZSTD:
+        print(
+            "Zstandard support is unavailable; falling back to zlib compression.",
+            file=sys.stderr,
+        )
+        compressor = "zlib"
+    meta = compress_folder(
+        Path(args.folder),
+        Path(args.output),
+        chunk_size=args.chunk_size,
+        compressor=compressor,
+        zstd_level=args.zstd_level,
+        checksum_algorithm=args.checksum,
+    )
+    print(json.dumps(meta.as_dict(), indent=2))
+
+
+def _cmd_extract(args: argparse.Namespace) -> None:
+    meta = extract_archive(Path(args.archive), Path(args.output))
+    print(json.dumps(meta.as_dict(), indent=2))
+
+
+def _cmd_info(args: argparse.Namespace) -> None:
+    meta = read_metadata(Path(args.archive))
+    print(json.dumps(meta.as_dict(), indent=2))
+
+
+class _ChunkHandler(http.server.BaseHTTPRequestHandler):
+    def _chunk_server(self) -> "_ChunkServer":
+        from typing import cast
+        return cast("_ChunkServer", super().server)
+
+    def do_GET(self) -> None:  # pragma: no cover - networking
+        if self.path == "/manifest":
+            srv = self._chunk_server()
+            manifest = {
+                "metadata": srv.metadata.as_dict(),
+                "files": [
+                    {
+                        "path": row["path"],
+                        "size": row["size"],
+                        "mtime": row["mtime"],
+                        "mode": row["mode"],
+                        "chunk_ids": json.loads(row["chunk_ids"]),
+                        "chunk_sizes": json.loads(row["chunk_sizes"]),
+                    }
+                    for row in srv.conn.execute("SELECT * FROM files ORDER BY ordering")
+                ],
+            }
+            payload = json.dumps(manifest).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        if self.path.startswith("/chunks/"):
+            chunk_id = self.path.split("/", 2)[2]
+            row = self._chunk_server().conn.execute(
+                "SELECT compressor, data FROM chunks WHERE id = ?",
+                (chunk_id,),
+            ).fetchone()
+            if row is None:
+                self.send_error(404, "Chunk not found")
+                return
+            data = row["data"]
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("X-Chunk-Compressor", row["compressor"])
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        self.send_error(404, "Unknown endpoint")
+
+    def log_message(self, format: str, *args) -> None:  # pragma: no cover - quiet server
+        return
+
+
+class _ChunkServer(socketserver.TCPServer):  # pragma: no cover - networking
+    allow_reuse_address = True
+
+    def __init__(self, server_address, RequestHandlerClass, conn, metadata):
+        super().__init__(server_address, RequestHandlerClass)
+        self.conn = conn
+        self.metadata = metadata
+
+
+def serve_archive(archive: Path, host: str, port: int) -> None:
+    conn = _open_db(archive)
+    metadata = _load_metadata(conn)
+    server = _ChunkServer((host, port), _ChunkHandler, conn, metadata)
+    print(f"Serving {archive} on http://{host}:{port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+        conn.close()
+
+
+def _cmd_serve(args: argparse.Namespace) -> None:
+    serve_archive(Path(args.archive), args.host, args.port)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="GMW Tool v4 – SQLite content lake")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_comp = sub.add_parser("compress", help="Ingest a folder into the SQLite archive")
+    p_comp.add_argument("folder", help="Folder to ingest")
+    p_comp.add_argument("output", help="SQLite archive file")
+    p_comp.add_argument("--chunk-size", type=int, default=_CHUNK_SIZE, help="Chunk size in bytes (default: 512KiB)")
+    p_comp.add_argument("--no-zstd", action="store_true", help="Disable Zstandard compression")
+    p_comp.add_argument("--zstd-level", type=int, default=3, help="Zstandard compression level")
+    p_comp.add_argument("--checksum", choices=["sha256", "none"], default="sha256", help="Checksum algorithm")
+    p_comp.set_defaults(func=_cmd_compress)
+
+    p_ext = sub.add_parser("extract", help="Extract archive contents")
+    p_ext.add_argument("archive", help="SQLite archive")
+    p_ext.add_argument("output", help="Destination directory")
+    p_ext.set_defaults(func=_cmd_extract)
+
+    p_info = sub.add_parser("info", help="Show archive metadata")
+    p_info.add_argument("archive", help="SQLite archive")
+    p_info.set_defaults(func=_cmd_info)
+
+    p_srv = sub.add_parser("serve", help="Expose archive over HTTP for remote streaming")
+    p_srv.add_argument("archive", help="SQLite archive")
+    p_srv.add_argument("--host", default="127.0.0.1", help="Host to bind")
+    p_srv.add_argument("--port", type=int, default=8000, help="Port to bind")
+    p_srv.set_defaults(func=_cmd_serve)
+
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    args.func(args)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

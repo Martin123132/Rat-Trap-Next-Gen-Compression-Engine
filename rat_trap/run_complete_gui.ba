@@ -1,0 +1,4 @@
+@echo off
+REM Launch GMW Complete GUI Tool
+python "%~dp0gmw_gui_complete.py"
+pause
