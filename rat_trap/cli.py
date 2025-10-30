@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from .gmw_tool_v4 import main as _main
+try:
+    from .gmw_tool import main as _main
+except ImportError:
+    from gmw_tool import main as _main
 
 
 def main(argv: list[str] | None = None) -> None:
