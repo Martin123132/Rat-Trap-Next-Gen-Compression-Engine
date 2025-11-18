@@ -1,4 +1,4 @@
-# 🪤 Rat-Trap — Next-Gen Compression Engine
+# 🪤 Rat-Trap — Next-Gen Compression Engine  
 
 **"Time is money. Space is motion. Rat-Trap is both."**
 
