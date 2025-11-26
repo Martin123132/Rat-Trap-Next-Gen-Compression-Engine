@@ -157,8 +157,3 @@ Rat-Trap is free for personal and academic use. For commercial use or integratio
 
 -----
 
-## 🧪 Tagline Ideas
-
-  * **"🪤 Trap entropy. Free motion."**
-  * **"The new standard for I/O efficiency."**
-  * **"Faster than tar. Smarter than gzip. Essential for AI."**
