@@ -361,18 +361,3 @@ CLIENT FLOW:
 
 ⸻
 
-10. Optional: Full Suite Index Block (for README)
-
-# Diagram Suite
-1. High-Level Architecture
-2. End-to-End Ingest Pipeline
-3. Z-Order (ΦΓ) Geometric Encoder
-4. Chunk Map Schema (SQLite)
-5. File Reconstruction Map
-6. Parallel Bucket Compression Layout
-7. Extraction Pipeline
-8. HTTP Chunk Server Routing
-9. GMW vs tar.gz Architecture Comparison
-
-
-⸻
