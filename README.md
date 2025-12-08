@@ -155,5 +155,224 @@ Rat-Trap is built on the **Motion-TimeSpace physics framework**, which treats **
 
 Rat-Trap is free for personal and academic use. For commercial use or integration into proprietary platforms, please [contact us] ollett123123@outlook.com.
 
------
 
+⸻
+
+1. High-Level Architecture Overview
+
+                   ┌──────────────────────────────────────┐
+                   │    GMW: GEOMETRIC MOTION WRAPPER     │
+                   │        (SQLite Archive Engine)       │
+                   └──────────────────────────────────────┘
+
+   ┌──────────┐       ┌───────────┐      ┌────────────┐       ┌──────────────┐
+   │  Folder  │──────▶│ Chunking  │─────▶│ Compression │──────▶│ SQLite Store │
+   └──────────┘       └───────────┘      └────────────┘       └──────────────┘
+                             │                   │                    │
+                             │                   │                    ▼
+                             │                   │         ┌─────────────────────┐
+                             ▼                   │         │   Metadata Tables   │
+                     ┌────────────────┐          │         │ (files, chunks, meta)│
+                     │  Z-Order (ΦΓ)  │◀─────────┘         └─────────────────────┘
+                     └────────────────┘
+
+
+⸻
+
+2. Data Flow: Folder → Chunking → Compression → SQLite
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                               INGEST PIPELINE                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+[FOLDER]
+   |
+   ├─ Read file paths
+   ▼
+[CHUNK BUILDER]
+   - Read 512KB / 1MB blocks
+   - Compute BLAKE2b(16) digest
+   - Dedup check (exist? skip storage)
+   |
+   ▼
+[MTS GEOMETRIC ORDERING]
+   Apply Z-Order Curve (Morton Index)
+   Reorder chunks for maximal locality
+   |
+   ▼
+[COMPRESSOR]
+   - zstd (default)
+   - zlib fallback
+   |
+   ▼
+[SQLITE ARCHIVE]
+   - chunks table
+   - files table
+   - metadata table
+
+
+⸻
+
+3. Z-Order (Morton) Encoding Pipeline Diagram
+
+┌─────────────────────┐
+│   File Metadata      │
+│ (path, mtime, size)  │
+└──────────┬───────────┘
+           |
+           ▼
+    ┌───────────────┐
+    │ Key Generator │
+    │  Φ = motion   │
+    └──────┬────────┘
+           |
+           ▼
+   ┌────────────────┐
+   │ Morton Encoder │  <--- Interleave bits into Z-curve
+   │ (Z-Order map)  │
+   └────────────────┘
+           |
+           ▼
+  [GEOMETRIC SORTED ORDER]
+
+
+⸻
+
+4. Chunk Map Visualization (SQLite)
+
+┌────────────────────────────── SQLite: chunks table ───────────────────────────────┐
+│ id (TEXT)         compressor   raw_size   data(BLOB)                              │
+├────────────────────────────────────────────────────────────────────────────────────┤
+│ 9fa21...          "zstd"       524288     <compressed blob>                       │
+│ 01bb3...          "zstd"       524288     <compressed blob>                       │
+│ a91f0...          "zstd"       183920     <compressed blob>                       │
+│ ...                                                                            ...│
+└────────────────────────────────────────────────────────────────────────────────────┘
+
+Representation:
+
+[Chunk ID] → [Block of compressed bytes]
+      │
+      └── referenced by files.chunk_ids[]
+
+
+⸻
+
+5. File Entry Reconstruction Diagram
+
+┌─────────────────────────────────────────────┐
+│                 files table                 │
+├─────────────────────────────────────────────┤
+│ path: "images/cat001.png"                   │
+│ size: 1,048,576                             │
+│ chunk_ids: ["9fa21...", "01bb3..."]         │
+│ chunk_sizes: [524288, 524288]               │
+└─────────────────────────────────────────────┘
+
+     RECONSTRUCTION:
+
+   chunk_ids[0] → decompress → write first 524288 bytes
+   chunk_ids[1] → decompress → write next 524288 bytes
+
+
+⸻
+
+6. Parallel Bucket Compression Layout
+
+      BEFORE ORDERING                          AFTER Z-ORDERING
+┌──────┬───────┬────────┬──────┬─────┐     ┌──────┬──────┬──────┬──────┬──────┐
+│ A001 │ Z019  │ G3004  │ B002 │ C1F │ --> │ A001 │ A002 │ A003 │ A004 │ A005 │
+└──────┴───────┴────────┴──────┴─────┘     └──────┴──────┴──────┴──────┴──────┘
+                                                 │      │      │      │
+                                                 ▼      ▼      ▼      ▼
+                                       ┌───────────── Parallel Buckets ────────────┐
+                                       │   B1   │   B2   │   B3   │      B4         │
+                                       └────────┴────────┴────────┴─────────────────┘
+
+Each bucket compressed independently → TRUE parallel compression.
+
+⸻
+
+7. Extract Pipeline Diagram
+
+┌──────────────────────────────────────────────┐
+│              EXTRACTION PIPELINE             │
+└──────────────────────────────────────────────┘
+
+[SQLite Archive]
+   |
+   ├─ SELECT * FROM files ORDER BY ordering
+   |
+   ▼
+[File Entry]
+   |
+   ├─ for each chunk_id:
+   |      SELECT data FROM chunks
+   |      decompress()
+   |      write bytes
+   |
+   ▼
+[Reconstructed File]
+
+
+⸻
+
+8. HTTP Chunk Server Routing Diagram
+
+                GMW HTTP SERVER
+    ┌──────────────────────────────────┐
+    │ GET /manifest                   │
+    │   → returns metadata + file map │
+    ├──────────────────────────────────┤
+    │ GET /chunks/<chunk_id>          │
+    │   → returns compressed blob      │
+    └──────────────────────────────────┘
+
+CLIENT FLOW:
+
+    /manifest
+       ▼
+   get chunk_ids[]
+       ▼
+  fetch /chunks/<id>
+       ▼
+ decompress + assemble
+
+
+⸻
+
+9. GMW vs tar.gz Pipeline Comparison
+
+                    TRADITIONAL PIPELINE
+┌────────────┐      ┌──────────────┐      ┌──────────────┐
+│   Folder   │ ---> │   tarball    │ ---> │ gzip / xz     │
+└────────────┘      └──────────────┘      └──────────────┘
+      1 core used        SEQUENTIAL            SEQUENTIAL
+
+                   GMW GEOMETRIC PIPELINE
+┌────────────┐     ┌─────────────┬─────────────┬─────────────┐
+│   Folder   │ --> │ Chunking    │ Z-Ordering  │ Parallel     │
+└────────────┘     └─────────────┴─────────────┴─────────────┘
+                                       │
+                                       ▼
+                                 [SQLite Lake]
+             MULTI-CORE PARALLELISM, NO TARBALL, FAST I/O
+
+
+⸻
+
+10. Optional: Full Suite Index Block (for README)
+
+# Diagram Suite
+1. High-Level Architecture
+2. End-to-End Ingest Pipeline
+3. Z-Order (ΦΓ) Geometric Encoder
+4. Chunk Map Schema (SQLite)
+5. File Reconstruction Map
+6. Parallel Bucket Compression Layout
+7. Extraction Pipeline
+8. HTTP Chunk Server Routing
+9. GMW vs tar.gz Architecture Comparison
+
+
+⸻
