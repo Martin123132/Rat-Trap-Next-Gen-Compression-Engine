@@ -72,7 +72,8 @@ rat-trap --help
 1.  `rat-trap compress <folder> <archive>` – ingest a folder into a `.gmw` archive.
 2.  `rat-trap extract <archive> <destination>` – extract an archive back to disk.
 3.  `rat-trap info <archive>` – show stored metadata without extracting.
-4.  `rat-trap serve <archive>` – expose the archive via HTTP chunk streaming.
+4.  `rat-trap export-zip <archive.gmw> <output.zip>` – export a `.gmw` archive to a standard ZIP for Windows/WinZip compatibility.
+5.  `rat-trap serve <archive>` – expose the archive via HTTP chunk streaming.
 
 [Zstandard]: https://facebook.github.io/zstd/
 

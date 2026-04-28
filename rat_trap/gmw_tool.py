@@ -47,6 +47,7 @@ except Exception:  # pragma: no cover - optional dependency
 
 import sys
 import zlib
+import zipfile
 
 _CHUNK_SIZE = 512 * 1024
 _DEFAULT_COMPRESSOR = "zstd" if HAS_ZSTD else "zlib"
@@ -250,6 +251,46 @@ def extract_archive(archive: Path, output_dir: Path) -> Metadata:
     return meta
 
 
+
+
+def export_zip(archive: Path, output_zip: Path) -> Metadata:
+    if output_zip.exists():
+        output_zip.unlink()
+    with _open_db(archive) as conn:
+        meta = _load_metadata(conn)
+        with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED) as out_zip:
+            cur = conn.execute("SELECT * FROM files ORDER BY ordering")
+            for row in cur:
+                chunk_ids = json.loads(row["chunk_ids"])
+                chunk_sizes = json.loads(row["chunk_sizes"])
+                payload = bytearray()
+                for chunk_id, size in zip(chunk_ids, chunk_sizes):
+                    c_row = conn.execute(
+                        "SELECT compressor, data FROM chunks WHERE id = ?",
+                        (chunk_id,),
+                    ).fetchone()
+                    if c_row is None:
+                        raise ValueError(f"Missing chunk '{chunk_id}' in archive")
+                    comp = c_row["data"]
+                    if c_row["compressor"] == "zstd" and HAS_ZSTD:
+                        assert zstd is not None
+                        block = zstd.ZstdDecompressor().decompress(comp)
+                    elif c_row["compressor"] == "zstd":
+                        raise RuntimeError(
+                            "Archive requires Zstandard support. Install the 'zstandard' package "
+                            "or decompress on a system with it available."
+                        )
+                    elif c_row["compressor"] == "zlib":
+                        block = zlib.decompress(comp)
+                    else:
+                        raise ValueError(f"Unsupported compressor '{c_row['compressor']}'")
+                    payload.extend(block[:size])
+                zi = zipfile.ZipInfo(row["path"])
+                zi.external_attr = (int(row["mode"]) & 0xFFFF) << 16
+                zi.date_time = time.localtime(float(row["mtime"]))[:6]
+                out_zip.writestr(zi, bytes(payload), compress_type=zipfile.ZIP_DEFLATED)
+    return meta
+
 def read_metadata(archive: Path) -> Metadata:
     with _open_db(archive) as conn:
         return _load_metadata(conn)
@@ -281,6 +322,11 @@ def _cmd_extract(args: argparse.Namespace) -> None:
 
 def _cmd_info(args: argparse.Namespace) -> None:
     meta = read_metadata(Path(args.archive))
+    print(json.dumps(meta.as_dict(), indent=2))
+
+
+def _cmd_export_zip(args: argparse.Namespace) -> None:
+    meta = export_zip(Path(args.archive), Path(args.output_zip))
     print(json.dumps(meta.as_dict(), indent=2))
 
 
@@ -384,6 +430,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_info = sub.add_parser("info", help="Show archive metadata")
     p_info.add_argument("archive", help="SQLite archive")
     p_info.set_defaults(func=_cmd_info)
+
+    p_zip = sub.add_parser("export-zip", help="Export a .gmw archive to a standard .zip file")
+    p_zip.add_argument("archive", help="SQLite archive")
+    p_zip.add_argument("output_zip", help="Destination .zip file")
+    p_zip.set_defaults(func=_cmd_export_zip)
 
     p_srv = sub.add_parser("serve", help="Expose archive over HTTP for remote streaming")
     p_srv.add_argument("archive", help="SQLite archive")
