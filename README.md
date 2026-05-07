@@ -1,3 +1,7 @@
+
+
+<img width="1491" height="1055" alt="ec579140-507e-451a-9b3e-9cb2ca2f2a1b" src="https://github.com/user-attachments/assets/b701016e-35a7-4612-aaa6-fbdc017b581a" />
+
 # 🪤 Rat-Trap — Next-Gen Compression Engine  
 
 **"Time is money. Space is motion. Rat-Trap is both."**
@@ -9,6 +13,9 @@ Where conventional compression tools trade speed for size, **Rat-Trap defines th
 ## 🚀 Why Rat-Trap? (The New Standard)
 
 Rat-Trap's GMW format is not just a faster compressor; it's the **undisputed speed leader** for the largest, most critical AI and data science workloads. It renders the long-time standard `tar.gz` obsolete.
+
+<img width="1491" height="1055" alt="853953d8-95b3-40db-b605-93b22c090166" src="https://github.com/user-attachments/assets/6af4be24-94a8-473b-828f-97ded7eecc80" />
+
 
 | Metric | GMW (ZSTD-3) | Tar/Gzip (Legacy Standard) | Tar/XZ (Slowest/Best Ratio) | Pure ZSTD (Modern Baseline) |
 | :--- | :--- | :--- | :--- | :--- |
@@ -26,6 +33,8 @@ Rat-Trap's GMW format is not just a faster compressor; it's the **undisputed spe
 -----
 
 ## 🧠 How It Works
+
+<img width="1491" height="1055" alt="7b79e0fb-9f84-4cba-9972-ea564432f778" src="https://github.com/user-attachments/assets/f5b015f7-abb8-41f5-9a3c-7c5575cabc3d" />
 
 Rat-Trap’s core compression engine is built around **GMW (Geometric Motion Wrapper)**—a custom archival format derived from MBT2 physics simulations. It optimizes for file aggregation and parallel processing, solving the I/O bottlenecks that choke traditional compression tools.
 
@@ -114,6 +123,9 @@ All three scripts live at the repository root and can be executed
 directly, e.g. `python gmw_tool_v3.py compress dataset dedup.gmw`.
 
 -----
+
+
+<img width="1491" height="1055" alt="0c3751e7-0c71-4302-97db-0bb2f0afab06" src="https://github.com/user-attachments/assets/071182c6-b20f-4fe1-b57b-9e060b8efc33" />
 
 
 ## 📊 Performance Highlights
