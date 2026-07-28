@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rat-trap"
-version = "4.2.0"
-description = "SQLite-backed content lake compression engine"
+version = "5.1.0"
+description = "Hybrid GMW compression engine with searchable, relational SQLite Vaults"
 readme = "README.md"
 license = { file = "Rat-Trap License" }
 authors = [
     { name = "Glyn Evans" },
     { name = "Martin Ollett" }
 ]
-keywords = ["compression", "sqlite", "zstandard", "cli"]
+keywords = ["compression", "search", "sqlite", "vault", "csv", "json", "zstandard", "cli"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: Other/Proprietary License",

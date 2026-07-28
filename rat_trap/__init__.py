@@ -1,30 +1,49 @@
-"""Rat-Trap compression toolkit."""
-try:
-    from .gmw_tool import (
+"""Rat-Trap compression and queryable Vault toolkit."""
+
+from .gmw_tool import (
     Metadata,
     build_parser,
     compress_folder,
+    export_zip,
     extract_archive,
+    extract_vault_files,
+    execute_structured_sql,
+    export_structured_result,
+    is_vault_archive,
+    list_structured_columns,
+    list_structured_sources,
     main,
+    preview_vault_file,
+    query_structured_source,
     read_metadata,
+    search_vault,
     serve_archive,
+    verify_vault,
 )
-except ImportError:
-    from gmw_tool import (
-    Metadata, 
-    build_parser,
-    compress_folder,
-    extract_archive,
-    main,
-    read_metadata,
-    serve_archive,
-)
+from .vault_engine import VaultFile
+from .structured_data import StructuredColumn, StructuredQueryResult, StructuredSource
+
 __all__ = [
     "Metadata",
+    "VaultFile",
+    "StructuredColumn",
+    "StructuredQueryResult",
+    "StructuredSource",
     "build_parser",
     "compress_folder",
+    "export_zip",
     "extract_archive",
+    "extract_vault_files",
+    "execute_structured_sql",
+    "export_structured_result",
+    "is_vault_archive",
+    "list_structured_columns",
+    "list_structured_sources",
     "main",
+    "preview_vault_file",
+    "query_structured_source",
     "read_metadata",
+    "search_vault",
     "serve_archive",
+    "verify_vault",
 ]

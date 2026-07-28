@@ -1,0 +1,125 @@
+{
+  "schema": "rat-trap-release-manifest/v1",
+  "product": "Rat-Trap",
+  "version": "5.1.0",
+  "release_date": "2026-07-18",
+  "source": {
+    "repository": "Martin123132/Rat-Trap-Next-Gen-Compression-Engine",
+    "ref": "v5.1.0",
+    "baseline_parent_commit": "c9cae34e0eebdcfc16b9530efe3dccb9aa92c474",
+    "note": "The annotated tag identifies the commit containing this manifest and the tested 5.1 source."
+  },
+  "build_environment": {
+    "os_family": "Windows",
+    "architecture": "x86_64",
+    "python": "3.13.13",
+    "pip": "26.0.1",
+    "pyinstaller": "6.21.0",
+    "zstandard": "0.25.0",
+    "dependency_file": "requirements-build-5.1.0.txt",
+    "byte_reproducible_build_claimed": false
+  },
+  "artifacts": [
+    {
+      "name": "Rat-Trap.exe",
+      "role": "portable Windows executable",
+      "bytes": 13170175,
+      "sha256": "35FB3B557415FB6D6284D5FC91CB8F862BB5590ED950C9D369B5056516DBB5BE",
+      "authenticode": "NotSigned"
+    },
+    {
+      "name": "Rat-Trap-Windows-5.1.0.zip",
+      "role": "13-file portable Windows release",
+      "bytes": 12964249,
+      "sha256": "6108F98D8A61D442FC90D68F33981ED8D46B9463910020D3B62D5CE2CAECF1FC"
+    },
+    {
+      "name": "Rat-Trap-Beta-Test-Data.zip",
+      "role": "corrected beta corpus",
+      "bytes": 29325417,
+      "sha256": "8FD745B2E9969DC49A34685D7FE62241B9E49F1D6729BC197D9935959C20A16A"
+    },
+    {
+      "name": "Rat-Trap-Beta-Structured-Vault-5.1.gmw",
+      "role": "schema-2 structured Vault evidence",
+      "bytes": 21803008,
+      "sha256": "762753311679FFDCD2A692EE1162BB65FBE0A9D567C59394E6BD5B2161B0E3C9"
+    },
+    {
+      "name": "Rat-Trap-Beta-Categories-baseline.json",
+      "role": "controlled category baseline matrix",
+      "bytes": 85483,
+      "sha256": "21B1BE3E2725FEAB0878B9CB7A7DEC40E04EEEB2429DCE1D99110AAC7E288695"
+    },
+    {
+      "name": "Rat-Trap-Beta-Categories-hybrid.json",
+      "role": "controlled hybrid profile matrix",
+      "bytes": 45590,
+      "sha256": "8D17B0AAA877EEABCBC71E95FD74B97F43D650652992B7AEAC32C65715A26F08"
+    },
+    {
+      "name": "Rat-Trap-Beta-4.4-final.json",
+      "role": "final application profile selection",
+      "bytes": 2537,
+      "sha256": "D6439B284058FBA23AEDEE5FD3B30A87E03043236BFA154F9DB4266C3142FBB6"
+    },
+    {
+      "name": "Rat-Trap-Vault-Beta-benchmark.json",
+      "role": "schema-1 Queryable Vault validation",
+      "bytes": 4638,
+      "sha256": "D8736A72CABC0FEF06818E5DD79B1DD757AF5B50ED8FC7A0EDFD61A265AC4B76"
+    },
+    {
+      "name": "Rat-Trap-Structured-Beta-benchmark.json",
+      "role": "schema-2 structured Vault validation",
+      "bytes": 3199,
+      "sha256": "46940C3F3B1D50D581921BBDF2780F0D35D55D9FF4E4D5D28A2BAEA5B2807F19"
+    }
+  ],
+  "release_zip_inventory": [
+    "BENCHMARK-AUDIT.md",
+    "COMMERCIAL-LICENSE.md",
+    "LICENSE.md",
+    "NOTICE.md",
+    "Rat-Trap-Beta-4.4-final.json",
+    "Rat-Trap-Beta-Categories-baseline.json",
+    "Rat-Trap-Beta-Categories-hybrid.json",
+    "Rat-Trap-Structured-Beta-benchmark.json",
+    "Rat-Trap-Vault-Beta-benchmark.json",
+    "Rat-Trap.exe",
+    "README-WINDOWS.txt",
+    "SHA256.txt",
+    "VAULT-README.md"
+  ],
+  "verification": {
+    "python_unit_tests": {
+      "command": ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -v",
+      "passed": 16
+    },
+    "packaged_self_test": {
+      "command": "Rat-Trap.exe --self-test",
+      "passed": true
+    },
+    "packaged_folder_test": {
+      "command": "Rat-Trap.exe --self-test-folder <Rat-Trap-Beta-Test-Data>",
+      "fixture": {
+        "source_archive": "Rat-Trap-Beta-Test-Data.zip",
+        "file_count": 464,
+        "total_bytes": 36991791,
+        "tree_sha256": "4FA04A491B9BF50C0FC3DFECB40FB685F5BA5CBA4145C32B555AE298525A3F9A"
+      },
+      "profiles": [
+        "fast",
+        "balanced",
+        "smallest",
+        "vault"
+      ],
+      "round_trip_verified": true
+    }
+  },
+  "security": {
+    "archive_encryption": false,
+    "archive_authentication": false,
+    "release_signature": false
+  }
+}

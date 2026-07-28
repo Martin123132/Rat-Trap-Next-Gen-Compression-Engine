@@ -1,6 +1,43 @@
+# Rat-Trap 5.1 - structured Queryable Vault
 
+The current Windows application uses the benchmark-selected hybrid solid
+engine: exact duplicate files are stored once, then the remaining folder is
+streamed through Zstandard. Balanced (Zstd-6) is recommended, Fast uses
+ordinary Zstd-3 without the duplicate hash pass, and Smallest uses hybrid
+Zstd-19. Version 5.0 also adds a separate SQLite Queryable Vault for indexed
+filename/content search, preview and selective extraction. Version 5.1 adds
+typed relational import for CSV, TSV, JSON, JSONL, NDJSON, and UCI data files,
+with point-and-click filters, read-only SQL, provenance, and result export.
+
+See [BENCHMARK-AUDIT.md](BENCHMARK-AUDIT.md) for the category-isolated,
+round-trip-verified evidence. The historical project material below is kept
+for provenance; its older headline performance claims were not used to select
+the current engines because the committed historical benchmarks are not fully
+reproducible or equivalent.
+
+See [VAULT-README.md](VAULT-README.md) for the searchable format, Windows
+workflow, CLI commands, schema and current limitations.
+
+The preserved release baseline and technical publishing rules are in:
+
+- [Rat-Trap 5.1.0 baseline](docs/BASELINE-5.1.0.md)
+- [GMW format registry](docs/GMW-FORMAT-REGISTRY.md)
+- [Benchmark history and evidence status](docs/BENCHMARK-HISTORY.md)
+- [Product and evidence lanes](docs/PRODUCT-EVIDENCE-LANES.md)
+
+For Windows, extract the release ZIP and double-click `Rat-Trap.exe`. No Python
+installation is required.
+
+---
 
 <img width="1491" height="1055" alt="ec579140-507e-451a-9b3e-9cb2ca2f2a1b" src="https://github.com/user-attachments/assets/b701016e-35a7-4612-aaa6-fbdc017b581a" />
+
+## Historical project narrative
+
+The material below records the project's original positioning and 2025
+campaign. Treat its benchmark numbers as historical scoped results, not a
+current cross-market certification; the complete status and limitations are
+linked above.
 
 # 🪤 Rat-Trap — Next-Gen Compression Engine  
 
@@ -8,11 +45,13 @@
 
 Rat-Trap is a **high-performance, GMW-powered data compression system** built by Glyn Evans and Martin ollett, inspired by the **Motion-TimeSpace (MTS) physics framework**. It’s engineered to **trap chaotic data**—text, images, audio, structured records—and reorganize it into the smallest, fastest, most efficient form possible.
 
-Where conventional compression tools trade speed for size, **Rat-Trap defines the new speed-to-ratio standard.** By leveraging MTS principles of motion, resistance, and curvature memory, it captures entropy more efficiently and delivers **up to $93\times$ speedups** while maintaining competitive or superior compression ratios.
+Where conventional compression tools trade speed for size, **Rat-Trap targets a stronger speed-to-ratio balance.** In one recorded 2025 image test, GMW Zstd-1 created its folder archive **93.68 times faster than tar.xz**. That is a historical workload-specific result, not a promise for every folder.
 
 ## 🚀 Why Rat-Trap? (The New Standard)
 
-Rat-Trap's GMW format is not just a faster compressor; it's the **undisputed speed leader** for the largest, most critical AI and data science workloads. It renders the long-time standard `tar.gz` obsolete.
+In the recorded 2025 image and audio tests, GMW delivered the fastest
+folder-archive creation times among the archive methods in the matrix. It is
+built for workloads where waiting on older archive pipelines is costly.
 
 <img width="1491" height="1055" alt="853953d8-95b3-40db-b605-93b22c090166" src="https://github.com/user-attachments/assets/6af4be24-94a8-473b-828f-97ded7eecc80" />
 
@@ -24,9 +63,9 @@ Rat-Trap's GMW format is not just a faster compressor; it's the **undisputed spe
 | **Audio Compression Time** | **$\mathbf{8.82s}$** | $36.04s$ | $236.70s$ | $1253.34s$ |
 | **Speedup (vs. Tar/XZ)** | **$26.8\times$ faster** | $6.6\times$ faster | $1.0\times$ | $0.19\times$ faster |
 
-  * **🥇 The Speed Leader:** GMW-ZSTD-1 is the **fastest archiver tested** for folder-level Image data, beating even bare ZSTD and LZ4.
-  * **⏱ Up to $\mathbf{93\times}$ faster** than traditional methods like `tar.xz` (on Image data).
-  * **⚖️ The New Default:** GMW-ZSTD is consistently **$4\times$ to $8\times$ faster than `tar.gz`** while achieving better or comparable size.
+  * **🥇 Historical Image Win:** GMW-ZSTD-1 was the **fastest folder archive tested** for the recorded image dataset.
+  * **⏱ Up to $\mathbf{93.68\times}$ faster** than `tar.xz` in that 2025 image cell.
+  * **⚖️ Strong Recorded Range:** The fastest GMW profile was **$3.20\times$ to $8.73\times$ faster than `tar.gz`** across the four recorded historical folder datasets; archive size remained workload-dependent.
   * **🧠 Physics-Inspired Design** based on Motion-TimeSpace curvature dynamics.
   * **🌐 Fully self-contained Python script**—no external build system required.
 
@@ -44,7 +83,7 @@ Key Innovations:
   * **Parallelized Bucket Packing** – Optimized thread-based bucket construction for multi-core compression, which is the source of its massive speed advantage over single-stream `tar` pipes.
   * **Z-Order Encoding** – Efficient voxel key mapping using Morton encoding for enhanced spatial data compaction.
   * **Adaptive ZSTD Layers** – Configurable trade-offs between speed and compression depth (levels 1–9) to match specific latency requirements.
-  * **Optional AES-GCM Encryption** – Secure archives without losing performance.
+  * **Planned Authenticated Encryption** – Not included in Rat-Trap 5.1; the current `.gmw` formats are not encrypted.
 
 -----
 
@@ -61,6 +100,9 @@ pip install .
 # optional extras
 pip install .[crypto]
 ```
+
+The `crypto` extra retains dependencies used by historical helper code. It
+does not encrypt Rat-Trap 5.1 archives.
 
 > **Note:** The default compression engine uses [Zstandard]. The package declares
 > it as a dependency, but if you install manually without dependencies the CLI
@@ -128,7 +170,7 @@ directly, e.g. `python gmw_tool_v3.py compress dataset dedup.gmw`.
 <img width="1491" height="1055" alt="0c3751e7-0c71-4302-97db-0bb2f0afab06" src="https://github.com/user-attachments/assets/071182c6-b20f-4fe1-b57b-9e060b8efc33" />
 
 
-## 📊 Performance Highlights
+## 📊 Historical 2025 Performance Highlights
 
 The following benchmarks demonstrate Rat-Trap's ability to maximize speed while maintaining excellent compression. The GMW structure outperforms all tested alternatives for high-volume Image and Audio data.
 
@@ -136,10 +178,10 @@ The following benchmarks demonstrate Rat-Trap's ability to maximize speed while 
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Image** | **$\mathbf{1.31s}$ (ZSTD-1)** | Pure ZSTD ($3.31s$) | **$2.5\times$ faster** | $1.08$ (ZSTD-9) | $1.33$ (`tar.xz`) |
 | **Audio** | **$\mathbf{8.82s}$ (ZSTD-3)** | `tar.gz` ($36.04s$) | **$4.1\times$ faster** | $1.41$ (ZSTD-9) | $1.65$ (`Brotli`) |
-| **Text** | $0.047s$ (ZSTD-1) | **LZ4 ($\mathbf{0.0066s}$)** | Slower, but **$4\times$ smaller** file size. | $2.80$ (ZSTD-9) | $3.39$ (`tar.bz2`) |
+| **Text** | $0.047s$ (ZSTD-1) | **LZ4 ($\mathbf{0.0066s}$)** | Slower; the smallest GMW output was **$1.80\times$ smaller** than raw LZ4. | $2.80$ (ZSTD-9) | $3.39$ (`tar.bz2`) |
 | **Structured** | $0.035s$ (ZSTD-3) | **LZ4 ($\mathbf{0.0103s}$)** | Slower, but **$1.6\times$ smaller** file size. | $10.04$ (ZSTD-9) | $16.86$ (`tar.bz2`) |
 
-  * **The Crux:** For Image and Audio, Rat-Trap is the fastest archiver by leveraging parallel I/O and GMW structure. For Text and Structured data, it offers a superior trade-off: marginally slower than raw LZ4, but delivering a vastly better (smaller) file size.
+  * **The Crux:** In this historical matrix, Rat-Trap recorded the fastest folder-archive creation for Image and Audio. For Text and Structured data, raw LZ4 was faster but did not preserve equivalent archive semantics, while GMW produced smaller output.
 
 -----
 
@@ -147,7 +189,10 @@ The following benchmarks demonstrate Rat-Trap's ability to maximize speed while 
 
 Rat-Trap is an **economic advantage.**
 
-A $\mathbf{4\times \text{ to } 93\times}$ compression speedup on petabyte-scale data pipelines translates directly to **tens of millions in compute savings** for cloud-scale platforms like OpenAI, Google DeepMind, and Meta. By dramatically reducing I/O wait times, Rat-Trap enables **faster AI model iteration, quicker checkpointing, and lower operational costs.**
+Selected historical cells recorded archive-creation speedups as high as
+$\mathbf{93.68\times}$. At large scale, reducing compression and I/O time can
+lower operating costs and shorten data-handling workflows; actual savings
+depend on the workload, hardware, storage, and deployment.
 
 -----
 

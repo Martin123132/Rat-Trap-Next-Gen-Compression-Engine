@@ -1,0 +1,310 @@
+{
+  "schema_version": "rat-trap-historical-benchmark/v1",
+  "run_id": "2025-10-20-full-codecs-exact",
+  "evidence": {
+    "kind": "captured_stdout_json_exact",
+    "status": "historical_unvalidated",
+    "claim_ready": false
+  },
+  "source": {
+    "repository": "Martin123132/Rat-Trap-Next-Gen-Compression-Engine",
+    "commit_sha": "f3f0fd58f9642b924f5cc22366fdfebb41746735",
+    "git_blob_sha1": "9762e8c0db78d86f9dd16b3ebbdfce4a9f5b8fe9",
+    "git_blob_sha256": "1707AC57BF42C20E0FE7799B9F82C37748D3C335F93AEA3D46DC925F3BD9BBDA",
+    "windows_crlf_checkout_sha256": "104D41040F8347A063C62ED0E4BD9E2D8396FC87D5DC3998A3BAE0CA51A3E749",
+    "path": "benchmarking 2.0 full run",
+    "line_start": 6328,
+    "line_end": 6502
+  },
+  "engine": {
+    "family": "gmw_tar_zstd",
+    "implementation_version": "2.0",
+    "description": "In-memory tar stream compressed with Zstandard",
+    "archive_semantics": "folder_archive"
+  },
+  "environment": {
+    "captured": false,
+    "os": null,
+    "cpu": null,
+    "memory": null,
+    "python": null,
+    "dependencies": {}
+  },
+  "datasets": {
+    "text": {
+      "description": "Tiny Shakespeare",
+      "original_bytes": 1115394,
+      "content_hash": null
+    },
+    "image": {
+      "description": "Extracted CIFAR-10 Python directory",
+      "original_bytes": 186214114,
+      "content_hash": null
+    },
+    "audio": {
+      "description": "Speech Commands selection; exact selection underspecified",
+      "original_bytes": 316311406,
+      "content_hash": null
+    },
+    "structured": {
+      "description": "UCI Adult",
+      "original_bytes": 3974305,
+      "content_hash": null
+    }
+  },
+  "methods": {
+    "gmw_zstd_1": {
+      "kind": "folder_archive",
+      "zstd_level": 1,
+      "equivalent_archive_semantics": true
+    },
+    "gmw_zstd_3": {
+      "kind": "folder_archive",
+      "zstd_level": 3,
+      "equivalent_archive_semantics": true
+    },
+    "gmw_zstd_6": {
+      "kind": "folder_archive",
+      "zstd_level": 6,
+      "equivalent_archive_semantics": true
+    },
+    "gmw_zstd_9": {
+      "kind": "folder_archive",
+      "zstd_level": 9,
+      "equivalent_archive_semantics": true
+    },
+    "standard_tar_gz": {
+      "kind": "folder_archive",
+      "equivalent_archive_semantics": true
+    },
+    "standard_tar_bz2": {
+      "kind": "folder_archive",
+      "equivalent_archive_semantics": true
+    },
+    "standard_tar_xz": {
+      "kind": "folder_archive",
+      "equivalent_archive_semantics": true
+    },
+    "standard_zstd": {
+      "kind": "raw_codec",
+      "equivalent_archive_semantics": false
+    },
+    "standard_brotli": {
+      "kind": "raw_codec",
+      "equivalent_archive_semantics": false
+    },
+    "standard_lz4": {
+      "kind": "raw_codec",
+      "equivalent_archive_semantics": false
+    }
+  },
+  "results": {
+    "text": {
+      "original_size": 1115394,
+      "gmw_zstd_1": {
+        "compressed_size": 485543,
+        "compression_time": 0.04719424247741699
+      },
+      "gmw_zstd_3": {
+        "compressed_size": 430185,
+        "compression_time": 0.0666201114654541
+      },
+      "gmw_zstd_6": {
+        "compressed_size": 405739,
+        "compression_time": 0.06304693222045898
+      },
+      "gmw_zstd_9": {
+        "compressed_size": 397481,
+        "compression_time": 0.1176145076751709
+      },
+      "standard_tar_gz": {
+        "compressed_size": 434229,
+        "compression_time": 0.15095233917236328
+      },
+      "standard_tar_bz2": {
+        "compressed_size": 328907,
+        "compression_time": 0.23287439346313477
+      },
+      "standard_tar_xz": {
+        "compressed_size": 364280,
+        "compression_time": 0.796917200088501
+      },
+      "standard_zstd": {
+        "compressed_size": 429799,
+        "compression_time": 0.012143373489379883
+      },
+      "standard_brotli": {
+        "compressed_size": 361495,
+        "compression_time": 2.8938536643981934
+      },
+      "standard_lz4": {
+        "compressed_size": 714277,
+        "compression_time": 0.006594657897949219
+      }
+    },
+    "image": {
+      "original_size": 186214114,
+      "gmw_zstd_1": {
+        "compressed_size": 181052579,
+        "compression_time": 1.312384843826294
+      },
+      "gmw_zstd_3": {
+        "compressed_size": 174075230,
+        "compression_time": 2.5405356884002686
+      },
+      "gmw_zstd_6": {
+        "compressed_size": 174305834,
+        "compression_time": 5.225012540817261
+      },
+      "gmw_zstd_9": {
+        "compressed_size": 171427970,
+        "compression_time": 7.186672210693359
+      },
+      "standard_tar_gz": {
+        "compressed_size": 169976484,
+        "compression_time": 11.463526248931885
+      },
+      "standard_tar_bz2": {
+        "compressed_size": 147092173,
+        "compression_time": 23.553083181381226
+      },
+      "standard_tar_xz": {
+        "compressed_size": 139646600,
+        "compression_time": 122.94878911972046
+      },
+      "standard_zstd": {
+        "compressed_size": 174043734,
+        "compression_time": 3.308499336242676
+      },
+      "standard_brotli": {
+        "compressed_size": 145610881,
+        "compression_time": 1143.7074971199036
+      },
+      "standard_lz4": {
+        "compressed_size": 181115816,
+        "compression_time": 6.506759405136108
+      }
+    },
+    "audio": {
+      "original_size": 316311406,
+      "gmw_zstd_1": {
+        "compressed_size": 241117624,
+        "compression_time": 13.107954740524292
+      },
+      "gmw_zstd_3": {
+        "compressed_size": 231433649,
+        "compression_time": 8.82162356376648
+      },
+      "gmw_zstd_6": {
+        "compressed_size": 227055526,
+        "compression_time": 12.907638788223267
+      },
+      "gmw_zstd_9": {
+        "compressed_size": 224342410,
+        "compression_time": 17.920058250427246
+      },
+      "standard_tar_gz": {
+        "compressed_size": 237283514,
+        "compression_time": 36.03576183319092
+      },
+      "standard_tar_bz2": {
+        "compressed_size": 198749062,
+        "compression_time": 46.46579313278198
+      },
+      "standard_tar_xz": {
+        "compressed_size": 196660836,
+        "compression_time": 236.6967306137085
+      },
+      "standard_zstd": {
+        "compressed_size": 230962520,
+        "compression_time": 1253.3377611637115
+      },
+      "standard_brotli": {
+        "compressed_size": 192273316,
+        "compression_time": 2826.051729440689
+      },
+      "standard_lz4": {
+        "compressed_size": 289538963,
+        "compression_time": 1229.242975950241
+      }
+    },
+    "structured": {
+      "original_size": 3974305,
+      "gmw_zstd_1": {
+        "compressed_size": 543072,
+        "compression_time": 0.06046009063720703
+      },
+      "gmw_zstd_3": {
+        "compressed_size": 546133,
+        "compression_time": 0.03548264503479004
+      },
+      "gmw_zstd_6": {
+        "compressed_size": 438872,
+        "compression_time": 0.0665292739868164
+      },
+      "gmw_zstd_9": {
+        "compressed_size": 395906,
+        "compression_time": 0.10394024848937988
+      },
+      "standard_tar_gz": {
+        "compressed_size": 409636,
+        "compression_time": 0.25561022758483887
+      },
+      "standard_tar_bz2": {
+        "compressed_size": 235771,
+        "compression_time": 0.885455846786499
+      },
+      "standard_tar_xz": {
+        "compressed_size": 313292,
+        "compression_time": 1.6964168548583984
+      },
+      "standard_zstd": {
+        "compressed_size": 545807,
+        "compression_time": 0.052893638610839844
+      },
+      "standard_brotli": {
+        "compressed_size": 295048,
+        "compression_time": 12.434722423553467
+      },
+      "standard_lz4": {
+        "compressed_size": 874487,
+        "compression_time": 0.010259866714477539
+      }
+    }
+  },
+  "quality": {
+    "repeat_count": 1,
+    "warmups": null,
+    "randomized_order": false,
+    "roundtrip_verified": null,
+    "extraction_timed": false,
+    "known_issues": [
+      "Host and dependency versions were not recorded.",
+      "Dataset hashes and exact file manifests were not recorded.",
+      "Some tar competitors used intermediate disk I/O while GMW used an in-memory tar stream.",
+      "Raw codec methods do not preserve paths and file boundaries.",
+      "Raw codec input was repeatedly concatenated in Python, heavily distorting large audio timings.",
+      "The run did not record a restored-tree comparison."
+    ]
+  },
+  "derived_claims": [
+    {
+      "claim": "Up to 93x faster",
+      "status": "supported_with_historical_scope",
+      "calculation": "122.94878911972046 / 1.312384843826294 = 93.68",
+      "scope": "Image dataset, GMW Zstd-1 versus tar.xz, one historical trial"
+    },
+    {
+      "claim": "4.5x image speedup",
+      "status": "supported_with_historical_scope",
+      "calculation": "11.463526248931885 / 2.5405356884002686 = 4.51",
+      "scope": "Image dataset, GMW Zstd-3 versus tar.gz, one historical trial"
+    },
+    {
+      "claim": "26.8x audio speedup",
+      "status": "supported_with_historical_scope",
+      "calculation": "236.6967306137085 / 8.82162356376648 = 26.83",
+      "scope": "Audio dataset, GMW Zstd-3 versus tar.xz, one historical trial"
+    }
+  ]
+}

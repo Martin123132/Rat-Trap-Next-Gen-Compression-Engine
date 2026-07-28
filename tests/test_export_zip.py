@@ -17,7 +17,8 @@ class ExportZipTests(unittest.TestCase):
             nested.mkdir()
 
             originals = {
-                Path("alpha.txt"): b"alpha-bytes\n",
+                Path("alpha.txt"): b"alpha-bytes\n" * 1024,
+                Path("alpha-copy.txt"): b"alpha-bytes\n" * 1024,
                 Path("nested/beta.bin"): bytes(range(64)),
                 Path("nested/gamma.txt"): "hello-zip".encode("utf-8"),
             }
@@ -30,7 +31,16 @@ class ExportZipTests(unittest.TestCase):
             exported = root / "sample.zip"
 
             subprocess.run(
-                [sys.executable, "-m", "rat_trap.cli", "compress", str(src), str(archive)],
+                [
+                    sys.executable,
+                    "-m",
+                    "rat_trap.cli",
+                    "compress",
+                    str(src),
+                    str(archive),
+                    "--profile",
+                    "balanced",
+                ],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -44,9 +54,9 @@ class ExportZipTests(unittest.TestCase):
 
             with zipfile.ZipFile(exported, "r") as zf:
                 names = sorted(zf.namelist())
-                self.assertEqual(names, sorted(str(p).replace('\\\\', '/') for p in originals))
+                self.assertEqual(names, sorted(p.as_posix() for p in originals))
                 for rel, data in originals.items():
-                    with zf.open(str(rel).replace('\\\\', '/')) as fp:
+                    with zf.open(rel.as_posix()) as fp:
                         self.assertEqual(fp.read(), data)
 
 
