@@ -1,0 +1,182 @@
+{
+  "schema": "rat-trap-format-fixtures/v1",
+  "created_on": "2026-07-28",
+  "classification": "deterministic_compatibility_reconstruction",
+  "original_writer_executables_used": false,
+  "generator": {
+    "path": "tests/fixtures/formats/generate_fixtures.py",
+    "source_baseline": "v5.1.0",
+    "python": "3.13.13",
+    "sqlite": "3.50.4",
+    "zstandard": "0.25.0",
+    "fixed_timestamp": 1700000000.0,
+    "byte_determinism_verified": true
+  },
+  "source_tree": {
+    "file_count": 6,
+    "total_bytes": 18506,
+    "tree_sha256": "92865873a719c9be1c58b2b6962be2f4f202a0a54314681da3791b6f94825f01",
+    "files": [
+      {
+        "path": "duplicate-a.bin",
+        "bytes": 8192,
+        "sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46"
+      },
+      {
+        "path": "duplicate-b.bin",
+        "bytes": 8192,
+        "sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46"
+      },
+      {
+        "path": "hello.txt",
+        "bytes": 31,
+        "sha256": "c4479f7ab30231c1e22337dbbc1fd14799136de97fb5ae8a69f44a0e2bf4d6bb"
+      },
+      {
+        "path": "nested/data.bin",
+        "bytes": 2048,
+        "sha256": "c1c32a736ea00fa3e9d3ac28846367bf12e4ad970ffe3c71fa2fa5da0a245f57"
+      },
+      {
+        "path": "nested/empty.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "people.csv",
+        "bytes": 43,
+        "sha256": "9ab5065bbacd93a28f4ba1203fc429fa688ada450434be354391adc38ddd13ab"
+      }
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "gmw-sqlite-1-4.2.gmw",
+      "family": "GMW-SQLITE-1",
+      "release_shape": "4.2",
+      "bytes": 28672,
+      "sha256": "3d1f2f8d2c1ddc35a9918cbd77087c5e8a5973c6868bcd3a7c7afa7d59cc94ab",
+      "expected": {
+        "schema_version": 0,
+        "profile": "deduplicate",
+        "compressor": "zlib",
+        "compression_level": null,
+        "whole_file_dedup": false,
+        "duplicate_file_count": 0,
+        "structured_source_count": 0,
+        "structured_row_count": 0
+      },
+      "construction": "Reconstructed with the maintained GMW-SQLITE-1 compatibility writer, then reduced to the original nine 4.2 metadata keys."
+    },
+    {
+      "name": "gmw-solid-2-4.3.gmw",
+      "family": "GMW-SOLID-2",
+      "release_shape": "4.3",
+      "bytes": 1324,
+      "sha256": "458ad4b765f45df79537f3695c26ed1bfc6a45015e6dece3463b36a5030e1e78",
+      "expected": {
+        "schema_version": 0,
+        "profile": "fast",
+        "compressor": "zstd",
+        "compression_level": 3,
+        "whole_file_dedup": false,
+        "duplicate_file_count": 0,
+        "structured_source_count": 0,
+        "structured_row_count": 0
+      },
+      "construction": "Reconstructed as GMW-SOLID-2 with the optional 4.4 dedup metadata fields omitted, matching the 4.3 metadata shape."
+    },
+    {
+      "name": "gmw-solid-2-4.4-dedup.gmw",
+      "family": "GMW-SOLID-2",
+      "release_shape": "4.4",
+      "bytes": 1454,
+      "sha256": "d4c5cee824c448accb5830df719cbceccb439820f2c1136dfbc8e28fe45047f8",
+      "expected": {
+        "schema_version": 0,
+        "profile": "balanced",
+        "compressor": "zstd",
+        "compression_level": 6,
+        "whole_file_dedup": true,
+        "duplicate_file_count": 1,
+        "structured_source_count": 0,
+        "structured_row_count": 0
+      },
+      "construction": "Reconstructed with the maintained GMW-SOLID-2 exact whole-file dedup writer and the 4.4 metadata shape."
+    },
+    {
+      "name": "gmw-vault-1-schema-1.gmw",
+      "family": "GMW-VAULT-1",
+      "release_shape": "5.0-schema-1",
+      "bytes": 73728,
+      "sha256": "6dae7e9af6090490ef27e4d5677fa07aac0ec525e303c8b27bfb9eb741626fef",
+      "expected": {
+        "schema_version": 1,
+        "profile": "vault",
+        "compressor": "zstd",
+        "compression_level": 6,
+        "whole_file_dedup": false,
+        "duplicate_file_count": 1,
+        "structured_source_count": 0,
+        "structured_row_count": 0
+      },
+      "construction": "Reconstructed from the maintained base Vault layout with schema-2-only structured tables and metadata absent."
+    },
+    {
+      "name": "gmw-vault-1-schema-2.gmw",
+      "family": "GMW-VAULT-1",
+      "release_shape": "5.1-schema-2",
+      "bytes": 118784,
+      "sha256": "1a5e8df476642d5d42ea5b30451c5f6a17df5522eec93b5aebb6457d75151a4a",
+      "expected": {
+        "schema_version": 2,
+        "profile": "vault",
+        "compressor": "zstd",
+        "compression_level": 6,
+        "whole_file_dedup": false,
+        "duplicate_file_count": 1,
+        "structured_source_count": 1,
+        "structured_row_count": 2
+      },
+      "construction": "Reconstructed with the maintained schema-2 writer; only volatile timing metadata was normalized."
+    }
+  ],
+  "original_writer_references": [
+    {
+      "version": "4.2.0",
+      "executable_sha256": "ac4042e894f4d5a4ff092e2ab2ff32f735cd288ba95f05e289b6cbfec6b431ef"
+    },
+    {
+      "version": "4.3.0",
+      "executable_sha256": "b990c71a6415734fa69d5c9b051206e7f4ca3d02e5593c7099ae69031fbf2f3f"
+    },
+    {
+      "version": "4.4.0",
+      "executable_sha256": "1a131fd315b9d74452ad3707ebb86b30ec4f99e2229a4ef2685d536a20a3759d"
+    },
+    {
+      "version": "5.0.0",
+      "executable_sha256": "1389bcd054c2f9031da0a51a234419bedb65949f9e5b219f3f3ae64f8dae37a3"
+    },
+    {
+      "version": "5.1.0",
+      "executable_sha256": "35fb3b557415fb6d6284d5fc91cb8f862bb5590ed950c9d369b5056516dbb5be"
+    }
+  ],
+  "external_authentic_evidence": [
+    {
+      "family": "GMW-VAULT-1",
+      "schema_version": 1,
+      "name": "Rat-Trap-Beta-Queryable-Vault.gmw",
+      "bytes": 16367616,
+      "sha256": "f095309b3a6ffda902340e9085a280ec474c0be8865b475405613825e96796e2"
+    },
+    {
+      "family": "GMW-VAULT-1",
+      "schema_version": 2,
+      "name": "Rat-Trap-Beta-Structured-Vault-5.1.gmw",
+      "bytes": 21803008,
+      "sha256": "762753311679ffdcd2a692ee1162bb65fbe0a9d567c59394e6bd5b2161b0e3c9"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# Rat-Trap 5.1 - structured Queryable Vault
+# Rat-Trap 5.1.1 - structured Queryable Vault
 
 The current Windows application uses the benchmark-selected hybrid solid
 engine: exact duplicate files are stored once, then the remaining folder is
@@ -8,6 +8,8 @@ Zstd-19. Version 5.0 also adds a separate SQLite Queryable Vault for indexed
 filename/content search, preview and selective extraction. Version 5.1 adds
 typed relational import for CSV, TSV, JSON, JSONL, NDJSON, and UCI data files,
 with point-and-click filters, read-only SQL, provenance, and result export.
+Version 5.1.1 hardens format detection and legacy restore verification while
+keeping all officially supported 4.2–5.1 archive families readable.
 
 See [BENCHMARK-AUDIT.md](BENCHMARK-AUDIT.md) for the category-isolated,
 round-trip-verified evidence. The historical project material below is kept
@@ -21,6 +23,7 @@ workflow, CLI commands, schema and current limitations.
 The preserved release baseline and technical publishing rules are in:
 
 - [Rat-Trap 5.1.0 baseline](docs/BASELINE-5.1.0.md)
+- [Rat-Trap 5.1.1 compatibility gate](docs/COMPATIBILITY-GATE.md)
 - [GMW format registry](docs/GMW-FORMAT-REGISTRY.md)
 - [Benchmark history and evidence status](docs/BENCHMARK-HISTORY.md)
 - [Product and evidence lanes](docs/PRODUCT-EVIDENCE-LANES.md)

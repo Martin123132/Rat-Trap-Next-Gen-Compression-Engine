@@ -1,8 +1,22 @@
+[CmdletBinding()]
+param(
+    [string]$DistPath,
+    [string]$WorkPath
+)
+
 $ErrorActionPreference = "Stop"
 
 $projectRoot = $PSScriptRoot
 $venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
-$buildRequirements = Join-Path $projectRoot "requirements-build-5.1.0.txt"
+$buildRequirements = Join-Path $projectRoot "requirements-build-5.1.1.txt"
+if ([string]::IsNullOrWhiteSpace($DistPath)) {
+    $DistPath = Join-Path $projectRoot "dist\5.1.1"
+}
+if ([string]::IsNullOrWhiteSpace($WorkPath)) {
+    $WorkPath = Join-Path $projectRoot "build\pyinstaller-5.1.1"
+}
+$DistPath = [IO.Path]::GetFullPath($DistPath)
+$WorkPath = [IO.Path]::GetFullPath($WorkPath)
 
 if (-not (Test-Path -LiteralPath $venvPython)) {
     python -m venv (Join-Path $projectRoot ".venv")
@@ -21,8 +35,8 @@ try {
         --paths $projectRoot `
         --hidden-import zstandard `
         --version-file (Join-Path $projectRoot "packaging\windows_version_info.txt") `
-        --distpath (Join-Path $projectRoot "dist") `
-        --workpath (Join-Path $projectRoot "build\pyinstaller") `
+        --distpath $DistPath `
+        --workpath $WorkPath `
         --specpath (Join-Path $projectRoot "build") `
         (Join-Path $projectRoot "windows_main.py")
 }
@@ -30,4 +44,4 @@ finally {
     Pop-Location
 }
 
-Write-Host "Built: $(Join-Path $projectRoot 'dist\Rat-Trap.exe')"
+Write-Host "Built: $(Join-Path $DistPath 'Rat-Trap.exe')"

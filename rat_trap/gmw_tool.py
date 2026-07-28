@@ -59,6 +59,15 @@ import zipfile
 
 _CHUNK_SIZE = 512 * 1024
 _DEFAULT_COMPRESSOR = "zstd" if HAS_ZSTD else "zlib"
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+_LEGACY_SQLITE_FORMAT = "GMW-SQLITE-1"
+_LEGACY_SQLITE_SCHEMA = {
+    "metadata": frozenset({"key", "value"}),
+    "chunks": frozenset({"id", "compressor", "raw_size", "data"}),
+    "files": frozenset(
+        {"path", "size", "mtime", "mode", "ordering", "chunk_ids", "chunk_sizes"}
+    ),
+}
 
 
 @dataclass
@@ -204,6 +213,7 @@ def _compress_chunked_folder(
     compressor: str = _DEFAULT_COMPRESSOR,
     zstd_level: int = 3,
     checksum_algorithm: str = "sha256",
+    metadata_keys: Optional[frozenset[str]] = None,
 ) -> Metadata:
     if not folder.is_dir():
         raise ValueError(f"Input folder '{folder}' not found")
@@ -291,6 +301,8 @@ def _compress_chunked_folder(
                 profile="deduplicate",
             )
             for key, value in meta.as_dict().items():
+                if metadata_keys is not None and key not in metadata_keys:
+                    continue
                 conn.execute(
                     "INSERT INTO metadata(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                     (key, json.dumps(value)),
@@ -315,28 +327,163 @@ def _open_db(path: Path) -> sqlite3.Connection:
 
 
 def _load_metadata(conn: sqlite3.Connection) -> Metadata:
-    rows = {row["key"]: json.loads(row["value"]) for row in conn.execute("SELECT key, value FROM metadata")}
-    return Metadata(**rows)  # type: ignore[arg-type]
+    try:
+        rows = {
+            row["key"]: json.loads(row["value"])
+            for row in conn.execute("SELECT key, value FROM metadata")
+        }
+        metadata = Metadata(**rows)  # type: ignore[arg-type]
+    except (sqlite3.DatabaseError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ValueError("File is not a valid Rat-Trap legacy SQLite archive") from exc
+    if metadata.format != _LEGACY_SQLITE_FORMAT:
+        raise ValueError(f"Unsupported Rat-Trap SQLite format '{metadata.format}'")
+    if (
+        not isinstance(metadata.chunk_size, int)
+        or metadata.chunk_size <= 0
+        or metadata.compressor not in {"zstd", "zlib"}
+        or metadata.checksum_algorithm not in {"sha256", "none"}
+        or not isinstance(metadata.file_count, int)
+        or not isinstance(metadata.total_bytes, int)
+        or metadata.file_count < 0
+        or metadata.total_bytes < 0
+    ):
+        raise ValueError("Legacy archive contains invalid format metadata")
+    return metadata
+
+
+def is_chunked_archive(path: Path) -> bool:
+    """Return true only for a structurally valid GMW-SQLITE-1 archive."""
+    path = Path(path)
+    try:
+        with open(path, "rb") as source:
+            if source.read(len(_SQLITE_MAGIC)) != _SQLITE_MAGIC:
+                return False
+        with closing(_open_db(path)) as connection:
+            tables = {
+                str(row["name"])
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            # A database must identify as exactly one archive family. This
+            # prevents a corrupt or deliberately ambiguous Vault/legacy hybrid
+            # from falling through to the less expressive legacy reader.
+            if "vault_metadata" in tables:
+                return False
+            if not set(_LEGACY_SQLITE_SCHEMA).issubset(tables):
+                return False
+            for table, required_columns in _LEGACY_SQLITE_SCHEMA.items():
+                actual_columns = {
+                    str(row["name"])
+                    for row in connection.execute(f'PRAGMA table_info("{table}")')
+                }
+                if not required_columns.issubset(actual_columns):
+                    return False
+            return _load_metadata(connection).format == _LEGACY_SQLITE_FORMAT
+    except (OSError, sqlite3.DatabaseError, ValueError):
+        return False
+
+
+def _unsupported_archive(path: Path) -> ValueError:
+    if not Path(path).is_file():
+        return ValueError(f"Archive '{Path(path)}' not found")
+    return ValueError(
+        f"'{Path(path)}' is not a supported Rat-Trap archive "
+        f"({_LEGACY_SQLITE_FORMAT}, GMW-SOLID-2, or GMW-VAULT-1)"
+    )
+
+
+def _validate_chunked_inventory(
+    connection: sqlite3.Connection, metadata: Metadata
+) -> None:
+    file_count = 0
+    total_bytes = 0
+    for row in connection.execute("SELECT size FROM files"):
+        size = row["size"]
+        if not isinstance(size, int) or size < 0:
+            raise ValueError("Legacy archive contains invalid file size metadata")
+        file_count += 1
+        total_bytes += size
+    if (
+        file_count != metadata.file_count
+        or total_bytes != metadata.total_bytes
+    ):
+        raise ValueError(
+            "Legacy archive file inventory does not match its metadata"
+        )
+
+
+def _chunked_file_layout(row: sqlite3.Row) -> tuple[List[str], List[int]]:
+    try:
+        chunk_ids = json.loads(row["chunk_ids"])
+        chunk_sizes = json.loads(row["chunk_sizes"])
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError(
+            f"Archive has invalid chunk metadata for {row['path']!r}"
+        ) from exc
+    if not isinstance(chunk_ids, list) or not isinstance(chunk_sizes, list):
+        raise ValueError(
+            f"Archive has invalid chunk metadata for {row['path']!r}"
+        )
+    if len(chunk_ids) != len(chunk_sizes):
+        raise ValueError(
+            f"Archive has inconsistent chunk metadata for {row['path']!r}"
+        )
+    if (
+        not isinstance(row["size"], int)
+        or row["size"] < 0
+        or any(not isinstance(size, int) or size < 0 for size in chunk_sizes)
+        or sum(chunk_sizes) != row["size"]
+        or any(not isinstance(chunk_id, str) for chunk_id in chunk_ids)
+    ):
+        raise ValueError(f"Archive has invalid file size metadata for {row['path']!r}")
+    return chunk_ids, chunk_sizes
+
+
+def _read_chunked_block(
+    connection: sqlite3.Connection,
+    chunk_id: str,
+    stored_size: int,
+    stored_path: str,
+) -> bytes:
+    chunk_row = connection.execute(
+        "SELECT compressor, raw_size, data FROM chunks WHERE id = ?",
+        (chunk_id,),
+    ).fetchone()
+    if chunk_row is None:
+        raise ValueError(f"Missing chunk '{chunk_id}' in archive")
+    raw_size = chunk_row["raw_size"]
+    if (
+        not isinstance(raw_size, int)
+        or raw_size < 0
+        or stored_size > raw_size
+    ):
+        raise ValueError(f"Invalid chunk length for {stored_path!r}")
+    block = _decompress_block(
+        chunk_row["data"], chunk_row["compressor"], raw_size
+    )
+    actual_id = hashlib.blake2b(block, digest_size=16).hexdigest()
+    if actual_id != chunk_id:
+        raise ValueError(f"Chunk '{chunk_id}' failed its content digest check")
+    return block[:stored_size]
 
 
 def _extract_chunked_archive(archive: Path, output_dir: Path) -> Metadata:
     archive = archive.resolve()
     if not archive.is_file():
         raise ValueError(f"Archive '{archive}' not found")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = output_dir.resolve()
     with closing(_open_db(archive)) as conn:
         meta = _load_metadata(conn)
+        _validate_chunked_inventory(conn, meta)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = output_dir.resolve()
         cur = conn.execute("SELECT * FROM files ORDER BY ordering")
         for row in cur:
             dest = _safe_destination(output_dir, row["path"])
             if dest == archive:
                 raise ValueError("Archive contents would overwrite the archive itself")
             dest.parent.mkdir(parents=True, exist_ok=True)
-            chunk_ids = json.loads(row["chunk_ids"])
-            chunk_sizes = json.loads(row["chunk_sizes"])
-            if len(chunk_ids) != len(chunk_sizes):
-                raise ValueError(f"Archive has inconsistent chunk metadata for {row['path']!r}")
+            chunk_ids, chunk_sizes = _chunked_file_layout(row)
             temporary_name: Optional[str] = None
             try:
                 with tempfile.NamedTemporaryFile(
@@ -345,18 +492,11 @@ def _extract_chunked_archive(archive: Path, output_dir: Path) -> Metadata:
                 ) as out_fp:
                     temporary_name = out_fp.name
                     for chunk_id, size in zip(chunk_ids, chunk_sizes):
-                        c_row = conn.execute(
-                            "SELECT compressor, raw_size, data FROM chunks WHERE id = ?",
-                            (chunk_id,),
-                        ).fetchone()
-                        if c_row is None:
-                            raise ValueError(f"Missing chunk '{chunk_id}' in archive")
-                        if not isinstance(size, int) or size < 0 or size > c_row["raw_size"]:
-                            raise ValueError(f"Invalid chunk length for {row['path']!r}")
-                        block = _decompress_block(
-                            c_row["data"], c_row["compressor"], c_row["raw_size"]
+                        out_fp.write(
+                            _read_chunked_block(
+                                conn, chunk_id, size, row["path"]
+                            )
                         )
-                        out_fp.write(block[:size])
                 os.replace(temporary_name, dest)
                 temporary_name = None
             finally:
@@ -390,13 +530,11 @@ def _export_chunked_zip(archive: Path, output_zip: Path) -> Metadata:
     try:
         with closing(_open_db(archive)) as conn:
             meta = _load_metadata(conn)
+            _validate_chunked_inventory(conn, meta)
             with zipfile.ZipFile(staging_path, "w", compression=zipfile.ZIP_DEFLATED) as out_zip:
                 cur = conn.execute("SELECT * FROM files ORDER BY ordering")
                 for row in cur:
-                    chunk_ids = json.loads(row["chunk_ids"])
-                    chunk_sizes = json.loads(row["chunk_sizes"])
-                    if len(chunk_ids) != len(chunk_sizes):
-                        raise ValueError(f"Archive has inconsistent chunk metadata for {row['path']!r}")
+                    chunk_ids, chunk_sizes = _chunked_file_layout(row)
                     zip_name = _archive_relative_path(row["path"]).as_posix()
                     zi = zipfile.ZipInfo(zip_name)
                     zi.external_attr = (int(row["mode"]) & 0xFFFF) << 16
@@ -405,18 +543,11 @@ def _export_chunked_zip(archive: Path, output_zip: Path) -> Metadata:
                         zi.date_time = date_time
                     with out_zip.open(zi, "w", force_zip64=True) as out_fp:
                         for chunk_id, size in zip(chunk_ids, chunk_sizes):
-                            c_row = conn.execute(
-                                "SELECT compressor, raw_size, data FROM chunks WHERE id = ?",
-                                (chunk_id,),
-                            ).fetchone()
-                            if c_row is None:
-                                raise ValueError(f"Missing chunk '{chunk_id}' in archive")
-                            if not isinstance(size, int) or size < 0 or size > c_row["raw_size"]:
-                                raise ValueError(f"Invalid chunk length for {row['path']!r}")
-                            block = _decompress_block(
-                                c_row["data"], c_row["compressor"], c_row["raw_size"]
+                            out_fp.write(
+                                _read_chunked_block(
+                                    conn, chunk_id, size, row["path"]
+                                )
                             )
-                            out_fp.write(block[:size])
         os.replace(staging_path, output_zip)
         return meta
     finally:
@@ -611,7 +742,9 @@ def extract_archive(archive: Path, output_dir: Path) -> Metadata:
         return _solid_metadata(solid_engine.extract_archive(Path(archive), Path(output_dir)))
     if vault_engine.is_vault_archive(Path(archive)):
         return _vault_metadata(vault_engine.extract_vault(Path(archive), Path(output_dir)))
-    return _extract_chunked_archive(Path(archive), Path(output_dir))
+    if is_chunked_archive(Path(archive)):
+        return _extract_chunked_archive(Path(archive), Path(output_dir))
+    raise _unsupported_archive(Path(archive))
 
 
 def export_zip(archive: Path, output_zip: Path) -> Metadata:
@@ -619,7 +752,9 @@ def export_zip(archive: Path, output_zip: Path) -> Metadata:
         return _solid_metadata(solid_engine.export_zip(Path(archive), Path(output_zip)))
     if vault_engine.is_vault_archive(Path(archive)):
         return _vault_metadata(vault_engine.export_zip(Path(archive), Path(output_zip)))
-    return _export_chunked_zip(Path(archive), Path(output_zip))
+    if is_chunked_archive(Path(archive)):
+        return _export_chunked_zip(Path(archive), Path(output_zip))
+    raise _unsupported_archive(Path(archive))
 
 
 def read_metadata(archive: Path) -> Metadata:
@@ -627,7 +762,9 @@ def read_metadata(archive: Path) -> Metadata:
         return _solid_metadata(solid_engine.read_metadata(Path(archive)))
     if vault_engine.is_vault_archive(Path(archive)):
         return _vault_metadata(vault_engine.read_metadata(Path(archive)))
-    return _read_chunked_metadata(Path(archive))
+    if is_chunked_archive(Path(archive)):
+        return _read_chunked_metadata(Path(archive))
+    raise _unsupported_archive(Path(archive))
 
 
 def is_vault_archive(archive: Path) -> bool:
@@ -884,6 +1021,8 @@ def serve_archive(archive: Path, host: str, port: int) -> None:
         )
     if vault_engine.is_vault_archive(Path(archive)):
         raise ValueError("HTTP serving for searchable Vaults is not available yet")
+    if not is_chunked_archive(Path(archive)):
+        raise _unsupported_archive(Path(archive))
     conn = _open_db(archive)
     metadata = _load_metadata(conn)
     server = _ChunkServer((host, port), _ChunkHandler, conn, metadata)

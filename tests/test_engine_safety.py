@@ -1,10 +1,11 @@
+import json
 import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
 
-from rat_trap import gmw_tool
+from rat_trap import gmw_tool, gmw_tool_v4
 
 
 class EngineSafetyTests(unittest.TestCase):
@@ -80,6 +81,7 @@ class EngineSafetyTests(unittest.TestCase):
             archive = root / "archive.gmw"
             destination = root / "restored"
             gmw_tool.compress_folder(source, archive, compressor="zlib")
+            self.assertTrue(gmw_tool.is_chunked_archive(archive))
             gmw_tool.extract_archive(archive, destination)
 
             self.assertEqual((destination / "hello.txt").read_text(encoding="utf-8"), "hello Rat-Trap")
@@ -112,6 +114,137 @@ class EngineSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsafe file path"):
                 gmw_tool.extract_archive(archive, destination)
             self.assertFalse(escaped.exists())
+
+    def test_unknown_sqlite_family_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            (source / "safe.txt").write_text("must not be dispatched", encoding="utf-8")
+            archive = root / "unknown.gmw"
+            gmw_tool.compress_folder(source, archive, compressor="zlib")
+            with closing(sqlite3.connect(archive)) as connection:
+                connection.execute(
+                    "UPDATE metadata SET value = ? WHERE key = 'format'",
+                    (json.dumps("NOT-RAT-TRAP-9"),),
+                )
+                connection.commit()
+
+            self.assertFalse(gmw_tool.is_chunked_archive(archive))
+            with self.assertRaisesRegex(ValueError, "not a supported Rat-Trap archive"):
+                gmw_tool.read_metadata(archive)
+            with self.assertRaisesRegex(ValueError, "not a supported Rat-Trap archive"):
+                gmw_tool.extract_archive(archive, root / "restored")
+            with self.assertRaisesRegex(ValueError, "not a supported Rat-Trap archive"):
+                gmw_tool.export_zip(archive, root / "export.zip")
+            with self.assertRaisesRegex(ValueError, "not a supported Rat-Trap archive"):
+                gmw_tool.serve_archive(archive, "127.0.0.1", 0)
+            with self.assertRaisesRegex(ValueError, "not a supported Rat-Trap archive"):
+                gmw_tool_v4.extract_archive(archive, root / "v4-restored")
+            self.assertFalse((root / "restored").exists())
+            self.assertFalse((root / "export.zip").exists())
+            self.assertFalse((root / "v4-restored").exists())
+
+    def test_unrelated_or_incomplete_sqlite_database_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            unrelated = root / "unrelated.gmw"
+            with closing(sqlite3.connect(unrelated)) as connection:
+                connection.execute("CREATE TABLE notes(message TEXT)")
+                connection.execute("INSERT INTO notes VALUES ('not an archive')")
+                connection.commit()
+
+            incomplete = root / "incomplete.gmw"
+            with closing(sqlite3.connect(incomplete)) as connection:
+                connection.execute("CREATE TABLE metadata(key TEXT, value TEXT)")
+                connection.execute("CREATE TABLE chunks(id TEXT)")
+                connection.execute("CREATE TABLE files(path TEXT)")
+                connection.execute(
+                    "INSERT INTO metadata VALUES ('format', ?)",
+                    (json.dumps("GMW-SQLITE-1"),),
+                )
+                connection.commit()
+
+            for candidate in (unrelated, incomplete):
+                self.assertFalse(gmw_tool.is_chunked_archive(candidate))
+                with self.assertRaisesRegex(ValueError, "not a supported Rat-Trap archive"):
+                    gmw_tool.read_metadata(candidate)
+
+    def test_ambiguous_sqlite_family_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            (source / "safe.txt").write_text("one family only", encoding="utf-8")
+            archive = root / "ambiguous.gmw"
+            gmw_tool.compress_folder(source, archive, compressor="zlib")
+            with closing(sqlite3.connect(archive)) as connection:
+                connection.execute(
+                    "CREATE TABLE vault_metadata(key TEXT PRIMARY KEY, value TEXT)"
+                )
+                connection.executemany(
+                    "INSERT INTO vault_metadata(key, value) VALUES (?, ?)",
+                    (("format", "GMW-VAULT-1"), ("schema_version", "999")),
+                )
+                connection.commit()
+
+            self.assertFalse(gmw_tool.is_chunked_archive(archive))
+            with self.assertRaisesRegex(ValueError, "not a supported Rat-Trap archive"):
+                gmw_tool.read_metadata(archive)
+
+    def test_missing_archive_reports_not_found(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing.gmw"
+            with self.assertRaisesRegex(ValueError, "not found"):
+                gmw_tool.read_metadata(missing)
+
+    def test_deprecated_v4_facade_uses_the_hardened_legacy_engine(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            (source / "hello.txt").write_text("legacy API", encoding="utf-8")
+            archive = root / "legacy.gmw"
+
+            created = gmw_tool_v4.compress_folder(
+                source,
+                archive,
+                compressor="zlib",
+                zstd_level=3,
+            )
+            self.assertEqual(created.format, "GMW-SQLITE-1")
+            self.assertEqual(
+                set(created.as_dict()),
+                {
+                    "format",
+                    "chunk_size",
+                    "compressor",
+                    "checksum",
+                    "checksum_algorithm",
+                    "created_at",
+                    "elapsed_seconds",
+                    "file_count",
+                    "total_bytes",
+                },
+            )
+            with closing(sqlite3.connect(archive)) as connection:
+                stored_keys = {
+                    str(row[0])
+                    for row in connection.execute("SELECT key FROM metadata")
+                }
+            self.assertEqual(stored_keys, set(created.as_dict()))
+            self.assertTrue(gmw_tool.is_chunked_archive(archive))
+
+            restored = root / "restored"
+            gmw_tool_v4.extract_archive(archive, restored)
+            self.assertEqual(
+                (restored / "hello.txt").read_text(encoding="utf-8"),
+                "legacy API",
+            )
+            parsed = gmw_tool_v4.build_parser().parse_args(
+                ["info", str(archive)]
+            )
+            self.assertEqual(parsed.command, "info")
 
 
 if __name__ == "__main__":

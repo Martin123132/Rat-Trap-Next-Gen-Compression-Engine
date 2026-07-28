@@ -11,6 +11,7 @@ import dataclasses
 import hashlib
 import io
 import json
+import math
 import mimetypes
 import os
 import re
@@ -39,6 +40,51 @@ DEFAULT_INDEX_LIMIT = 16 * 1024 * 1024
 MAX_CHUNK_SIZE = 64 * 1024 * 1024
 _BUFFER_SIZE = 1024 * 1024
 _SQLITE_MAGIC = b"SQLite format 3\x00"
+_BASE_SCHEMA = {
+    "vault_metadata": frozenset({"key", "value"}),
+    "directories": frozenset({"path", "mtime", "mode"}),
+    "objects": frozenset(
+        {"id", "raw_size", "compressed_size", "compressor", "data"}
+    ),
+    "files": frozenset(
+        {
+            "id",
+            "path",
+            "size",
+            "mtime",
+            "mode",
+            "sha256",
+            "media_type",
+            "indexed",
+            "chunk_count",
+        }
+    ),
+    "file_chunks": frozenset({"file_id", "ordinal", "object_id", "raw_size"}),
+    "file_search": frozenset({"path", "content"}),
+}
+_SCHEMA_2_TABLES = {
+    "structured_sources": frozenset(
+        {
+            "id",
+            "file_id",
+            "path",
+            "name",
+            "table_name",
+            "data_format",
+            "row_count",
+            "column_count",
+        }
+    ),
+    "structured_columns": frozenset(
+        {
+            "source_id",
+            "ordinal",
+            "source_name",
+            "column_name",
+            "declared_type",
+        }
+    ),
+}
 
 TEXT_EXTENSIONS = {
     ".bat",
@@ -454,12 +500,32 @@ def _load_metadata(connection: sqlite3.Connection) -> VaultMetadata:
         metadata = VaultMetadata(**values)
     except (sqlite3.DatabaseError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise ValueError("File is not a valid Rat-Trap Vault") from exc
-    if (
-        metadata.format != FORMAT
-        or metadata.schema_version < 1
-        or metadata.schema_version > SCHEMA_VERSION
-    ):
+    if metadata.format != FORMAT:
         raise ValueError(f"Unsupported Vault format '{metadata.format}'")
+    if (
+        isinstance(metadata.schema_version, int)
+        and not isinstance(metadata.schema_version, bool)
+        and not 1 <= metadata.schema_version <= SCHEMA_VERSION
+    ):
+        raise ValueError(
+            f"Unsupported Vault format '{metadata.format}' "
+            f"schema {metadata.schema_version}"
+        )
+    integer_fields = (
+        metadata.schema_version,
+        metadata.compression_level,
+        metadata.chunk_size,
+        metadata.file_count,
+        metadata.directory_count,
+        metadata.total_bytes,
+        metadata.object_count,
+        metadata.compressed_object_bytes,
+        metadata.indexed_file_count,
+        metadata.duplicate_file_count,
+        metadata.deduplicated_bytes,
+        metadata.structured_source_count,
+        metadata.structured_row_count,
+    )
     numeric_totals = (
         metadata.file_count,
         metadata.directory_count,
@@ -473,15 +539,80 @@ def _load_metadata(connection: sqlite3.Connection) -> VaultMetadata:
         metadata.structured_row_count,
     )
     if (
-        metadata.compressor != "zstd"
+        not isinstance(metadata.schema_version, int)
+        or isinstance(metadata.schema_version, bool)
+        or metadata.schema_version < 1
+        or metadata.schema_version > SCHEMA_VERSION
+        or any(not isinstance(value, int) or isinstance(value, bool) for value in integer_fields)
+        or not isinstance(metadata.created_at, (int, float))
+        or isinstance(metadata.created_at, bool)
+        or not math.isfinite(metadata.created_at)
+        or metadata.created_at < 0
+        or not isinstance(metadata.elapsed_seconds, (int, float))
+        or isinstance(metadata.elapsed_seconds, bool)
+        or not math.isfinite(metadata.elapsed_seconds)
+        or metadata.elapsed_seconds < 0
+        or not isinstance(metadata.profile, str)
+        or not metadata.profile
+        or metadata.compressor != "zstd"
         or not -7 <= metadata.compression_level <= 22
         or not 1 <= metadata.chunk_size <= MAX_CHUNK_SIZE
         or any(value < 0 for value in numeric_totals)
         or metadata.indexed_file_count > metadata.file_count
         or metadata.duplicate_file_count > metadata.file_count
+        or metadata.structured_source_count > metadata.file_count
+        or (
+            metadata.schema_version >= 2
+            and not {
+                "structured_source_count",
+                "structured_row_count",
+            }.issubset(values)
+        )
+        or (
+            metadata.schema_version == 1
+            and (
+                metadata.structured_source_count != 0
+                or metadata.structured_row_count != 0
+            )
+        )
     ):
         raise ValueError("Vault contains invalid format metadata")
+    _validate_schema(connection, metadata.schema_version)
     return metadata
+
+
+def _validate_schema(
+    connection: sqlite3.Connection, schema_version: int
+) -> None:
+    tables = {
+        str(row["name"])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    if {"metadata", "chunks"}.issubset(tables):
+        raise ValueError("SQLite database contains ambiguous Rat-Trap families")
+    required_schema = dict(_BASE_SCHEMA)
+    if schema_version >= 2:
+        required_schema.update(_SCHEMA_2_TABLES)
+    for table, required_columns in required_schema.items():
+        if table not in tables:
+            raise ValueError(f"Vault is missing required table '{table}'")
+        actual_columns = {
+            str(row["name"])
+            for row in connection.execute(f'PRAGMA table_info("{table}")')
+        }
+        if not required_columns.issubset(actual_columns):
+            raise ValueError(f"Vault table '{table}' has an unsupported schema")
+    fts_sql_row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE name = 'file_search'"
+    ).fetchone()
+    if (
+        fts_sql_row is None
+        or not isinstance(fts_sql_row["sql"], str)
+        or "using fts5" not in fts_sql_row["sql"].lower()
+    ):
+        raise ValueError("Vault search table is not an FTS5 index")
 
 
 def is_vault_archive(path: Path) -> bool:
@@ -704,12 +835,12 @@ def extract_vault(
 ) -> VaultMetadata:
     archive = Path(archive).resolve()
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = output_dir.resolve()
     selected = None if paths is None else {_normalise_member_path(path).as_posix() for path in paths}
 
     with closing(_open_readonly(archive)) as connection:
         metadata = _load_metadata(connection)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = output_dir.resolve()
         if selected is None:
             for row in connection.execute("SELECT path, mtime, mode FROM directories ORDER BY path"):
                 destination = _safe_destination(output_dir, row["path"])

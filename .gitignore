@@ -19,6 +19,7 @@ dist/
 # Locally generated archives and release bundles
 *.gmw
 *.zip
+!tests/fixtures/formats/*.gmw
 
 # Local editor and operating-system files
 .idea/

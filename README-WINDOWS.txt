@@ -1,4 +1,4 @@
-RAT-TRAP 5.1.0 FOR WINDOWS
+RAT-TRAP 5.1.1 FOR WINDOWS
 ==========================
 
 Quick start
@@ -44,8 +44,10 @@ search index consume space. Use Balanced when queryability is not needed.
 Notes
 -----
 - Save every new .gmw file outside the folder being ingested.
-- Version 5.1 reads 5.0 searchable Vaults, 4.4 hybrid archives, earlier solid
+- Version 5.1.1 reads 5.0 searchable Vaults, 4.4 hybrid archives, earlier solid
   archives, and existing v4.2 SQLite block archives.
+- Version 5.1.1 validates the archive family and required database schema
+  before reading. Unknown, incomplete, or ambiguous SQLite files are rejected.
 - Inspect / export can convert a normal archive or Vault to a conventional ZIP.
 - The executable is not digitally signed. Windows may show an
   unknown-publisher warning. Verify the supplied SHA-256 value before running.

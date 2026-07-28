@@ -1,0 +1,10 @@
+# Exact package set used for the Rat-Trap 5.1.1 Windows release build.
+# Python 3.13.13 and pip 26.0.1 are recorded in the release manifest.
+altgraph==0.17.5
+packaging==26.2
+pefile==2024.8.26
+pyinstaller==6.21.0
+pyinstaller-hooks-contrib==2026.6
+pywin32-ctypes==0.2.3
+setuptools==83.0.0
+zstandard==0.25.0

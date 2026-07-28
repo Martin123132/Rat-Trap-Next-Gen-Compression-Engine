@@ -20,7 +20,7 @@ except ImportError:  # Allows direct execution while developing.
 
 
 APP_NAME = "Rat-Trap"
-APP_VERSION = "5.1.0"
+APP_VERSION = "5.1.1"
 PROFILE_OPTIONS = {
     "Balanced - Zstandard 6 (recommended)": "balanced",
     "Fast - Zstandard 3": "fast",
