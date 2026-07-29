@@ -40,8 +40,9 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Dict, Iterator, List, Optional
 
 try:
-    from . import solid_engine, vault_engine
+    from . import repository_engine, solid_engine, vault_engine
 except ImportError:  # Allows direct execution while developing.
+    import repository_engine  # type: ignore
     import solid_engine  # type: ignore
     import vault_engine  # type: ignore
 
@@ -953,6 +954,184 @@ def _cmd_export_zip(args: argparse.Namespace) -> None:
     print(json.dumps(meta.as_dict(), indent=2))
 
 
+def _repository_json(value: object) -> object:
+    """Convert repository results into the JSON shape used by the CLI."""
+    as_dict = getattr(value, "as_dict", None)
+    if callable(as_dict):
+        return as_dict()
+    if dataclasses.is_dataclass(value):
+        return dataclasses.asdict(value)
+    if isinstance(value, (list, tuple)):
+        return [_repository_json(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _repository_json(item) for key, item in value.items()}
+    if isinstance(value, Path):
+        return str(value)
+    return value
+
+
+def _print_repository_json(value: object) -> None:
+    print(json.dumps(_repository_json(value), indent=2))
+
+
+def _repository_progress(*values: object, **fields: object) -> None:
+    """Keep snapshot progress human-readable without contaminating JSON stdout."""
+    if fields:
+        detail = ", ".join(f"{key}={value}" for key, value in fields.items())
+    elif len(values) == 1 and isinstance(values[0], dict):
+        detail = ", ".join(
+            f"{key}={value}" for key, value in values[0].items()
+        )
+    elif len(values) >= 2 and all(
+        isinstance(value, int) for value in values[:2]
+    ):
+        done, total = values[:2]
+        suffix = f": {values[2]}" if len(values) > 2 and values[2] else ""
+        detail = f"{done}/{total}{suffix}"
+    else:
+        detail = " ".join(str(value) for value in values)
+    if detail:
+        print(f"Rat-Trap snapshot: {detail}", file=sys.stderr)
+
+
+def _retention_policy(args: argparse.Namespace) -> "repository_engine.RetentionPolicy":
+    return repository_engine.RetentionPolicy(
+        keep_last=args.keep_last,
+        keep_daily=args.keep_daily,
+        keep_weekly=args.keep_weekly,
+        keep_monthly=args.keep_monthly,
+    )
+
+
+def _cmd_repo_init(args: argparse.Namespace) -> None:
+    result = repository_engine.init_repository(
+        Path(args.repository),
+        chunk_min=args.chunk_min,
+        chunk_avg=args.chunk_avg,
+        chunk_max=args.chunk_max,
+        zstd_level=args.zstd_level,
+    )
+    _print_repository_json(result)
+
+
+def _cmd_repo_info(args: argparse.Namespace) -> None:
+    _print_repository_json(
+        repository_engine.repository_info(Path(args.repository))
+    )
+
+
+def _cmd_repo_issues(args: argparse.Namespace) -> None:
+    _print_repository_json(
+        repository_engine.list_repository_issues(Path(args.repository))
+    )
+
+
+def _cmd_repo_jobs(args: argparse.Namespace) -> None:
+    _print_repository_json(
+        repository_engine.list_incomplete_jobs(Path(args.repository))
+    )
+
+
+def _cmd_repo_abandon_job(args: argparse.Namespace) -> None:
+    if args.confirm_job_id != args.job_id:
+        raise repository_engine.RepositoryError(
+            "Abandoning a job requires --confirm-job-id to exactly match "
+            "the selected job id"
+        )
+    _print_repository_json(
+        repository_engine.abandon_incomplete_job(
+            Path(args.repository), args.job_id
+        )
+    )
+
+
+def _cmd_repo_snapshot(args: argparse.Namespace) -> None:
+    result = repository_engine.create_snapshot(
+        Path(args.repository),
+        Path(args.source),
+        label=args.label,
+        restart=args.restart,
+        progress=None if args.quiet else _repository_progress,
+    )
+    _print_repository_json(result)
+
+
+def _cmd_repo_list(args: argparse.Namespace) -> None:
+    _print_repository_json(
+        repository_engine.list_snapshots(Path(args.repository))
+    )
+
+
+def _cmd_repo_search(args: argparse.Namespace) -> None:
+    _print_repository_json(
+        repository_engine.search_history(
+            Path(args.repository), args.query, limit=args.limit
+        )
+    )
+
+
+def _cmd_repo_restore(args: argparse.Namespace) -> None:
+    result = repository_engine.restore_snapshot(
+        Path(args.repository),
+        args.snapshot_id,
+        Path(args.destination),
+    )
+    _print_repository_json(result)
+
+
+def _cmd_repo_verify(args: argparse.Namespace) -> None:
+    _print_repository_json(
+        repository_engine.verify_repository(
+            Path(args.repository), full=not args.quick
+        )
+    )
+
+
+def _cmd_repo_prune(args: argparse.Namespace) -> None:
+    if args.apply and not args.plan_id:
+        raise repository_engine.RepositoryError(
+            "Applying retention requires --plan-id from a fresh dry-run preview"
+        )
+    if args.plan_id and not args.apply:
+        raise repository_engine.RepositoryError(
+            "--plan-id is used with --apply; omit both for a dry-run preview"
+        )
+    result = repository_engine.prune_repository(
+        Path(args.repository),
+        _retention_policy(args),
+        apply=args.apply,
+        expected_plan_id=args.plan_id,
+    )
+    _print_repository_json(result)
+
+
+def _cmd_repo_export(args: argparse.Namespace) -> None:
+    result = repository_engine.export_snapshot(
+        Path(args.repository),
+        args.snapshot_id,
+        Path(args.output),
+        profile=args.profile,
+    )
+    _print_repository_json(result)
+
+
+def _set_repo_pin(args: argparse.Namespace, pinned: bool) -> None:
+    result = repository_engine.pin_snapshot(
+        Path(args.repository), args.snapshot_id, pinned=pinned
+    )
+    if result is None:
+        result = {"snapshot_id": args.snapshot_id, "pinned": pinned}
+    _print_repository_json(result)
+
+
+def _cmd_repo_pin(args: argparse.Namespace) -> None:
+    _set_repo_pin(args, True)
+
+
+def _cmd_repo_unpin(args: argparse.Namespace) -> None:
+    _set_repo_pin(args, False)
+
+
 class _ChunkHandler(http.server.BaseHTTPRequestHandler):
     def _chunk_server(self) -> "_ChunkServer":
         from typing import cast
@@ -1041,7 +1220,9 @@ def _cmd_serve(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Rat-Trap GMW archive tool")
+    parser = argparse.ArgumentParser(
+        description="Rat-Trap backup, GMW archive, and Queryable Vault tool"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_comp = sub.add_parser("compress", help="Compress a folder into a GMW archive")
@@ -1118,6 +1299,198 @@ def build_parser() -> argparse.ArgumentParser:
     p_sql.add_argument("--output", help="Optional .csv, .tsv, or .json export")
     p_sql.set_defaults(func=_cmd_vault_sql)
 
+    p_repo_init = sub.add_parser(
+        "repo-init",
+        help="Create an immutable, deduplicated snapshot repository",
+    )
+    p_repo_init.add_argument("repository", help="Repository directory")
+    p_repo_init.add_argument(
+        "--chunk-min",
+        type=int,
+        default=repository_engine.DEFAULT_CHUNK_MIN,
+        help="Minimum content-defined chunk size in bytes (default: 256 KiB)",
+    )
+    p_repo_init.add_argument(
+        "--chunk-avg",
+        type=int,
+        default=repository_engine.DEFAULT_CHUNK_AVG,
+        help="Target average chunk size in bytes (default: 1 MiB)",
+    )
+    p_repo_init.add_argument(
+        "--chunk-max",
+        type=int,
+        default=repository_engine.DEFAULT_CHUNK_MAX,
+        help="Maximum content-defined chunk size in bytes (default: 4 MiB)",
+    )
+    p_repo_init.add_argument(
+        "--zstd-level",
+        type=int,
+        default=repository_engine.DEFAULT_ZSTD_LEVEL,
+        help="Zstandard level used for new objects (default: 6)",
+    )
+    p_repo_init.set_defaults(func=_cmd_repo_init)
+
+    p_repo_info = sub.add_parser(
+        "repo-info",
+        help="Show repository identity, payload, and physical file totals",
+    )
+    p_repo_info.add_argument("repository", help="Repository directory")
+    p_repo_info.set_defaults(func=_cmd_repo_info)
+
+    p_repo_issues = sub.add_parser(
+        "repo-issues",
+        help="List damaged, unreadable, or missing repository artifacts",
+    )
+    p_repo_issues.add_argument("repository", help="Repository directory")
+    p_repo_issues.set_defaults(func=_cmd_repo_issues)
+
+    p_repo_jobs = sub.add_parser(
+        "repo-jobs",
+        help="List interrupted snapshot jobs, including unavailable sources",
+    )
+    p_repo_jobs.add_argument("repository", help="Repository directory")
+    p_repo_jobs.set_defaults(func=_cmd_repo_jobs)
+
+    p_repo_abandon = sub.add_parser(
+        "repo-abandon-job",
+        help="Move one exact interrupted job into recoverable trash",
+    )
+    p_repo_abandon.add_argument("repository", help="Repository directory")
+    p_repo_abandon.add_argument("job_id", help="Job id from repo-jobs")
+    p_repo_abandon.add_argument(
+        "--confirm-job-id",
+        required=True,
+        help="Repeat the exact job id to confirm recoverable abandonment",
+    )
+    p_repo_abandon.set_defaults(func=_cmd_repo_abandon_job)
+
+    p_repo_snapshot = sub.add_parser(
+        "repo-snapshot",
+        help="Atomically publish a deduplicated capture of a folder",
+    )
+    p_repo_snapshot.add_argument("repository", help="Repository directory")
+    p_repo_snapshot.add_argument("source", help="Folder to snapshot")
+    p_repo_snapshot.add_argument(
+        "--label", default="", help="Optional human-readable snapshot label"
+    )
+    p_repo_snapshot.add_argument(
+        "--restart",
+        action="store_true",
+        help="Move any interrupted job to trash and start it again",
+    )
+    p_repo_snapshot.add_argument(
+        "--quiet", action="store_true", help="Do not print progress to stderr"
+    )
+    p_repo_snapshot.set_defaults(func=_cmd_repo_snapshot)
+
+    p_repo_list = sub.add_parser(
+        "repo-list", help="List repository snapshots, newest first"
+    )
+    p_repo_list.add_argument("repository", help="Repository directory")
+    p_repo_list.set_defaults(func=_cmd_repo_list)
+
+    p_repo_search = sub.add_parser(
+        "repo-search", help="Search snapshot labels and stored paths"
+    )
+    p_repo_search.add_argument("repository", help="Repository directory")
+    p_repo_search.add_argument(
+        "query", help="Label or path text to find"
+    )
+    p_repo_search.add_argument(
+        "--limit", type=int, default=100, help="Maximum results (default: 100)"
+    )
+    p_repo_search.set_defaults(func=_cmd_repo_search)
+
+    p_repo_restore = sub.add_parser(
+        "repo-restore", help="Verify and restore one snapshot"
+    )
+    p_repo_restore.add_argument("repository", help="Repository directory")
+    p_repo_restore.add_argument("snapshot_id", help="Snapshot id from repo-list")
+    p_repo_restore.add_argument(
+        "destination", help="New destination directory (must not already exist)"
+    )
+    p_repo_restore.set_defaults(func=_cmd_repo_restore)
+
+    p_repo_verify = sub.add_parser(
+        "repo-verify", help="Verify repository metadata and stored object data"
+    )
+    p_repo_verify.add_argument("repository", help="Repository directory")
+    p_repo_verify.add_argument(
+        "--quick",
+        action="store_true",
+        help="Verify structure and references without reading every object",
+    )
+    p_repo_verify.set_defaults(func=_cmd_repo_verify)
+
+    retention_defaults = repository_engine.RetentionPolicy()
+    p_repo_prune = sub.add_parser(
+        "repo-prune",
+        help="Preview or apply snapshot retention (dry-run by default)",
+    )
+    p_repo_prune.add_argument("repository", help="Repository directory")
+    p_repo_prune.add_argument(
+        "--keep-last",
+        type=int,
+        default=retention_defaults.keep_last,
+        help=f"Keep the newest N snapshots (default: {retention_defaults.keep_last})",
+    )
+    p_repo_prune.add_argument(
+        "--keep-daily",
+        type=int,
+        default=retention_defaults.keep_daily,
+        help=f"Keep N daily snapshots (default: {retention_defaults.keep_daily})",
+    )
+    p_repo_prune.add_argument(
+        "--keep-weekly",
+        type=int,
+        default=retention_defaults.keep_weekly,
+        help=f"Keep N weekly snapshots (default: {retention_defaults.keep_weekly})",
+    )
+    p_repo_prune.add_argument(
+        "--keep-monthly",
+        type=int,
+        default=retention_defaults.keep_monthly,
+        help=f"Keep N monthly snapshots (default: {retention_defaults.keep_monthly})",
+    )
+    p_repo_prune.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply the previewed plan by moving eligible data to repository trash",
+    )
+    p_repo_prune.add_argument(
+        "--plan-id",
+        help="Plan id from a fresh dry run (required with --apply)",
+    )
+    p_repo_prune.set_defaults(func=_cmd_repo_prune)
+
+    p_repo_export = sub.add_parser(
+        "repo-export", help="Export one snapshot as a portable .gmw archive"
+    )
+    p_repo_export.add_argument("repository", help="Repository directory")
+    p_repo_export.add_argument("snapshot_id", help="Snapshot id from repo-list")
+    p_repo_export.add_argument("output", help="Destination .gmw file")
+    p_repo_export.add_argument(
+        "--profile",
+        choices=sorted(COMPRESSION_PROFILES),
+        default="balanced",
+        help="Portable archive compression profile (default: balanced)",
+    )
+    p_repo_export.set_defaults(func=_cmd_repo_export)
+
+    p_repo_pin = sub.add_parser(
+        "repo-pin", help="Protect one snapshot from retention"
+    )
+    p_repo_pin.add_argument("repository", help="Repository directory")
+    p_repo_pin.add_argument("snapshot_id", help="Snapshot id from repo-list")
+    p_repo_pin.set_defaults(func=_cmd_repo_pin)
+
+    p_repo_unpin = sub.add_parser(
+        "repo-unpin", help="Remove retention protection from one snapshot"
+    )
+    p_repo_unpin.add_argument("repository", help="Repository directory")
+    p_repo_unpin.add_argument("snapshot_id", help="Snapshot id from repo-list")
+    p_repo_unpin.set_defaults(func=_cmd_repo_unpin)
+
     p_ext = sub.add_parser("extract", help="Extract archive contents")
     p_ext.add_argument("archive", help="SQLite archive")
     p_ext.add_argument("output", help="Destination directory")
@@ -1144,7 +1517,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
-    args.func(args)
+    try:
+        args.func(args)
+    except repository_engine.RepositoryError as exc:
+        parser.exit(2, f"Rat-Trap repository error: {exc}\n")
+    except OSError as exc:
+        if str(args.command).startswith("repo-"):
+            parser.exit(2, f"Rat-Trap repository error: {exc}\n")
+        raise
 
 
 if __name__ == "__main__":  # pragma: no cover

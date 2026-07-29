@@ -10,17 +10,18 @@ import tempfile
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Callable
 
 try:
-    from . import gmw_tool
+    from . import gmw_tool, repository_engine
 except ImportError:  # Allows direct execution while developing.
     import gmw_tool  # type: ignore
+    import repository_engine  # type: ignore
 
 
 APP_NAME = "Rat-Trap"
-APP_VERSION = "5.1.1"
+APP_VERSION = "5.2.0"
 PROFILE_OPTIONS = {
     "Balanced - Zstandard 6 (recommended)": "balanced",
     "Fast - Zstandard 3": "fast",
@@ -49,11 +50,18 @@ def _format_size(value: int) -> str:
     return f"{size:.1f} TB"
 
 
+def _format_time_ns(value: int) -> str:
+    return dt.datetime.fromtimestamp(value / 1_000_000_000).strftime(
+        "%d %b %Y, %H:%M"
+    )
+
+
 class RatTrapApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.busy = False
         self.action_buttons: list[ttk.Button] = []
+        self._saved_action_states: dict[ttk.Button, str] = {}
 
         root.title(f"{APP_NAME} {APP_VERSION}")
         root.geometry("1100x760")
@@ -79,7 +87,7 @@ class RatTrapApp:
         ttk.Label(outer, text=APP_NAME, style="Title.TLabel").pack(anchor=tk.W)
         ttk.Label(
             outer,
-            text="Compress folders or turn them into searchable GMW Vaults.",
+            text="Back up, compress, search, restore, and share your files.",
             style="Subtitle.TLabel",
         ).pack(anchor=tk.W, pady=(0, 14))
 
@@ -87,6 +95,7 @@ class RatTrapApp:
         self.tabs.pack(fill=tk.BOTH, expand=True)
 
         self._build_create_tab()
+        self._build_repository_tab()
         self._build_vault_tab()
         self._build_data_tab()
         self._build_extract_tab()
@@ -121,9 +130,11 @@ class RatTrapApp:
     ) -> None:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky=tk.W, pady=8, padx=(0, 12))
         ttk.Entry(parent, textvariable=variable).grid(row=row, column=1, sticky=tk.EW, pady=8)
-        ttk.Button(parent, text="Browse...", command=command).grid(
+        browse_button = ttk.Button(parent, text="Browse...", command=command)
+        browse_button.grid(
             row=row, column=2, sticky=tk.E, pady=8, padx=(10, 0)
         )
+        self.action_buttons.append(browse_button)
 
     def _action_button(
         self, parent: ttk.Frame, text: str, command: Callable[[], None], row: int
@@ -186,6 +197,298 @@ class RatTrapApp:
         profile = PROFILE_OPTIONS[self.profile_label.get()]
         suffix = ".vault.gmw" if profile == "vault" else ".gmw"
         return f"{source.name}{suffix}"
+
+    def _build_repository_tab(self) -> None:
+        tab = self._new_tab("Backups & history")
+        ttk.Label(
+            tab, text="Deduplicated backups and file history", style="Heading.TLabel"
+        ).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        ttk.Label(
+            tab,
+            text=(
+                "Keep many verified snapshots in one repository. Unchanged data is "
+                "reused automatically; portable .gmw archives remain available."
+            ),
+            style="Subtitle.TLabel",
+            wraplength=820,
+        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(0, 8))
+
+        self.repository_path = tk.StringVar()
+        self.repository_source = tk.StringVar()
+        self.repository_label = tk.StringVar()
+        self.repository_search = tk.StringVar()
+        self.repository_status = tk.StringVar(value="No repository open")
+        self.repository_loaded_path: Path | None = None
+        self.repository_snapshots: dict[
+            str, repository_engine.SnapshotInfo
+        ] = {}
+        self.repository_history_snapshot_ids: dict[str, str] = {}
+
+        self._path_row(
+            tab,
+            2,
+            "Repository",
+            self.repository_path,
+            self._choose_repository,
+        )
+        repository_buttons = ttk.Frame(tab)
+        repository_buttons.grid(
+            row=3, column=0, columnspan=3, sticky=tk.EW, pady=(0, 5)
+        )
+        open_button = ttk.Button(
+            repository_buttons,
+            text="Open / refresh",
+            command=self._start_repository_refresh,
+        )
+        open_button.pack(side=tk.LEFT)
+        initialize_button = ttk.Button(
+            repository_buttons,
+            text="Initialize empty folder...",
+            command=self._start_repository_initialize,
+        )
+        initialize_button.pack(side=tk.LEFT, padx=(8, 0))
+        incomplete_button = ttk.Button(
+            repository_buttons,
+            text="Interrupted jobs...",
+            command=self._start_repository_incomplete_jobs,
+        )
+        incomplete_button.pack(side=tk.LEFT, padx=(8, 0))
+        issues_button = ttk.Button(
+            repository_buttons,
+            text="Integrity issues...",
+            command=self._start_repository_issues,
+        )
+        issues_button.pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Label(
+            repository_buttons,
+            textvariable=self.repository_status,
+            style="Subtitle.TLabel",
+        ).pack(side=tk.RIGHT)
+        self.action_buttons.extend(
+            (
+                open_button,
+                initialize_button,
+                incomplete_button,
+                issues_button,
+            )
+        )
+
+        self._path_row(
+            tab,
+            4,
+            "Folder to back up",
+            self.repository_source,
+            self._choose_repository_source,
+        )
+        ttk.Label(tab, text="Snapshot label").grid(
+            row=5, column=0, sticky=tk.W, pady=5, padx=(0, 12)
+        )
+        label_entry = ttk.Entry(tab, textvariable=self.repository_label)
+        label_entry.grid(row=5, column=1, sticky=tk.EW, pady=5)
+        backup_button = ttk.Button(
+            tab,
+            text="Back up now",
+            command=self._start_repository_snapshot,
+            style="Action.TButton",
+        )
+        backup_button.grid(row=5, column=2, sticky=tk.E, padx=(10, 0), pady=5)
+        self.action_buttons.append(backup_button)
+
+        ttk.Separator(tab, orient=tk.HORIZONTAL).grid(
+            row=6, column=0, columnspan=3, sticky=tk.EW, pady=(7, 8)
+        )
+        search_row = ttk.Frame(tab)
+        search_row.grid(row=7, column=0, columnspan=3, sticky=tk.EW, pady=(0, 6))
+        search_row.columnconfigure(1, weight=1)
+        ttk.Label(search_row, text="File/path history").grid(
+            row=0, column=0, sticky=tk.W, padx=(0, 8)
+        )
+        search_entry = ttk.Entry(
+            search_row, textvariable=self.repository_search
+        )
+        search_entry.grid(row=0, column=1, sticky=tk.EW)
+        search_entry.bind(
+            "<Return>", lambda _event: self._start_repository_search()
+        )
+        search_button = ttk.Button(
+            search_row, text="Search", command=self._start_repository_search
+        )
+        search_button.grid(row=0, column=2, padx=(8, 0))
+        show_snapshots_button = ttk.Button(
+            search_row,
+            text="Show snapshots",
+            command=self._show_repository_snapshots,
+        )
+        show_snapshots_button.grid(row=0, column=3, padx=(6, 0))
+        self.action_buttons.extend((search_button, show_snapshots_button))
+
+        self.repository_result_tabs = ttk.Notebook(tab)
+        self.repository_result_tabs.grid(
+            row=8, column=0, columnspan=3, sticky=tk.NSEW
+        )
+        snapshot_frame = ttk.Frame(self.repository_result_tabs)
+        history_frame = ttk.Frame(self.repository_result_tabs)
+        self.repository_result_tabs.add(snapshot_frame, text="Snapshots")
+        self.repository_result_tabs.add(history_frame, text="Search results")
+
+        snapshot_frame.columnconfigure(0, weight=1)
+        snapshot_frame.rowconfigure(0, weight=1)
+        self.repository_snapshot_tree = ttk.Treeview(
+            snapshot_frame,
+            columns=("created", "label", "source", "files", "size", "changes", "pin", "id"),
+            show="headings",
+            selectmode="browse",
+            height=7,
+        )
+        snapshot_headings = {
+            "created": "Created",
+            "label": "Label",
+            "source": "Source",
+            "files": "Files",
+            "size": "Size",
+            "changes": "Changes",
+            "pin": "Pinned",
+            "id": "Snapshot id",
+        }
+        for column, heading in snapshot_headings.items():
+            self.repository_snapshot_tree.heading(column, text=heading)
+        self.repository_snapshot_tree.column("created", width=125, anchor=tk.W)
+        self.repository_snapshot_tree.column("label", width=145, anchor=tk.W)
+        self.repository_snapshot_tree.column("source", width=145, anchor=tk.W)
+        self.repository_snapshot_tree.column("files", width=55, anchor=tk.E)
+        self.repository_snapshot_tree.column("size", width=75, anchor=tk.E)
+        self.repository_snapshot_tree.column("changes", width=105, anchor=tk.E)
+        self.repository_snapshot_tree.column("pin", width=50, anchor=tk.CENTER)
+        self.repository_snapshot_tree.column("id", width=85, anchor=tk.W)
+        self.repository_snapshot_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        snapshot_scroll = ttk.Scrollbar(
+            snapshot_frame,
+            orient=tk.VERTICAL,
+            command=self.repository_snapshot_tree.yview,
+        )
+        snapshot_scroll.grid(row=0, column=1, sticky=tk.NS)
+        self.repository_snapshot_tree.configure(
+            yscrollcommand=snapshot_scroll.set
+        )
+        self.repository_snapshot_tree.bind(
+            "<<TreeviewSelect>>", self._repository_snapshot_selected
+        )
+
+        history_frame.columnconfigure(0, weight=1)
+        history_frame.rowconfigure(0, weight=1)
+        self.repository_history_tree = ttk.Treeview(
+            history_frame,
+            columns=("created", "path", "type", "size", "label", "snapshot"),
+            show="headings",
+            selectmode="browse",
+            height=7,
+        )
+        history_headings = {
+            "created": "Snapshot date",
+            "path": "Stored path",
+            "type": "Type",
+            "size": "Size",
+            "label": "Snapshot label",
+            "snapshot": "Snapshot id",
+        }
+        for column, heading in history_headings.items():
+            self.repository_history_tree.heading(column, text=heading)
+        self.repository_history_tree.column("created", width=125, anchor=tk.W)
+        self.repository_history_tree.column("path", width=315, anchor=tk.W)
+        self.repository_history_tree.column("type", width=70, anchor=tk.W)
+        self.repository_history_tree.column("size", width=80, anchor=tk.E)
+        self.repository_history_tree.column("label", width=140, anchor=tk.W)
+        self.repository_history_tree.column("snapshot", width=85, anchor=tk.W)
+        self.repository_history_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        history_scroll = ttk.Scrollbar(
+            history_frame,
+            orient=tk.VERTICAL,
+            command=self.repository_history_tree.yview,
+        )
+        history_scroll.grid(row=0, column=1, sticky=tk.NS)
+        self.repository_history_tree.configure(
+            yscrollcommand=history_scroll.set
+        )
+        self.repository_history_tree.bind(
+            "<Double-1>", self._open_repository_search_snapshot
+        )
+
+        action_row = ttk.Frame(tab)
+        action_row.grid(row=9, column=0, columnspan=3, sticky=tk.EW, pady=(6, 5))
+        restore_button = ttk.Button(
+            action_row,
+            text="Restore selected...",
+            command=self._start_repository_restore,
+        )
+        restore_button.pack(side=tk.LEFT)
+        self.repository_pin_button = ttk.Button(
+            action_row,
+            text="Pin selected",
+            command=self._start_repository_pin_toggle,
+        )
+        self.repository_pin_button.pack(side=tk.LEFT, padx=(6, 0))
+        export_button = ttk.Button(
+            action_row,
+            text="Export selected .gmw...",
+            command=self._start_repository_export,
+        )
+        export_button.pack(side=tk.LEFT, padx=(6, 0))
+        verify_full_button = ttk.Button(
+            action_row,
+            text="Full verify",
+            command=lambda: self._start_repository_verify(full=True),
+        )
+        verify_full_button.pack(side=tk.RIGHT)
+        verify_quick_button = ttk.Button(
+            action_row,
+            text="Quick verify",
+            command=lambda: self._start_repository_verify(full=False),
+        )
+        verify_quick_button.pack(side=tk.RIGHT, padx=(0, 6))
+        self.action_buttons.extend(
+            (
+                restore_button,
+                self.repository_pin_button,
+                export_button,
+                verify_quick_button,
+                verify_full_button,
+            )
+        )
+
+        retention = ttk.LabelFrame(
+            tab, text="Retention cleanup (always previews first)", padding=(10, 5)
+        )
+        retention.grid(
+            row=10, column=0, columnspan=3, sticky=tk.EW, pady=(3, 0)
+        )
+        defaults = repository_engine.RetentionPolicy()
+        self.repository_keep_last = tk.StringVar(value=str(defaults.keep_last))
+        self.repository_keep_daily = tk.StringVar(value=str(defaults.keep_daily))
+        self.repository_keep_weekly = tk.StringVar(value=str(defaults.keep_weekly))
+        self.repository_keep_monthly = tk.StringVar(value=str(defaults.keep_monthly))
+        retention_values = (
+            ("Newest", self.repository_keep_last),
+            ("Daily", self.repository_keep_daily),
+            ("Weekly", self.repository_keep_weekly),
+            ("Monthly", self.repository_keep_monthly),
+        )
+        for index, (label, variable) in enumerate(retention_values):
+            ttk.Label(retention, text=label).grid(
+                row=0, column=index * 2, padx=(0 if index == 0 else 10, 4)
+            )
+            ttk.Entry(retention, textvariable=variable, width=5).grid(
+                row=0, column=index * 2 + 1
+            )
+        retention.columnconfigure(8, weight=1)
+        preview_button = ttk.Button(
+            retention,
+            text="Preview cleanup...",
+            command=self._start_repository_retention_preview,
+        )
+        preview_button.grid(row=0, column=9, sticky=tk.E)
+        self.action_buttons.append(preview_button)
+
+        tab.rowconfigure(8, weight=1)
 
     def _build_vault_tab(self) -> None:
         tab = self._new_tab("Search Vault")
@@ -459,6 +762,20 @@ class RatTrapApp:
         if selected:
             self.create_archive.set(selected)
 
+    def _choose_repository(self) -> None:
+        selected = filedialog.askdirectory(
+            title="Choose a Rat-Trap repository or a new empty folder"
+        )
+        if selected:
+            self.repository_path.set(selected)
+            self.repository_loaded_path = None
+            self.repository_status.set("Repository selected; choose Open / refresh")
+
+    def _choose_repository_source(self) -> None:
+        selected = filedialog.askdirectory(title="Choose the folder to back up")
+        if selected:
+            self.repository_source.set(selected)
+
     def _choose_extract_archive(self) -> None:
         selected = filedialog.askopenfilename(title="Open Rat-Trap archive", filetypes=ARCHIVE_TYPES)
         if not selected:
@@ -507,6 +824,683 @@ class RatTrapApp:
             messagebox.showwarning(APP_NAME, "This archive is not a queryable Vault.")
             return None
         return archive
+
+    def _checked_repository(self, *, require_open: bool = True) -> Path | None:
+        value = self.repository_path.get().strip()
+        if not value:
+            messagebox.showwarning(APP_NAME, "Choose a repository folder first.")
+            return None
+        repository = Path(value).resolve()
+        if require_open and self.repository_loaded_path != repository:
+            messagebox.showwarning(
+                APP_NAME,
+                "Open or refresh this repository before using its history.",
+            )
+            return None
+        return repository
+
+    def _render_repository(
+        self,
+        repository: Path,
+        info: repository_engine.RepositoryInfo,
+        snapshots: list[repository_engine.SnapshotInfo],
+    ) -> None:
+        self.repository_path.set(str(repository))
+        self.repository_loaded_path = repository
+        self.repository_snapshots = {
+            snapshot.snapshot_id: snapshot for snapshot in snapshots
+        }
+        for item_id in self.repository_snapshot_tree.get_children():
+            self.repository_snapshot_tree.delete(item_id)
+        for snapshot in snapshots:
+            source_name = Path(snapshot.source_path).name or snapshot.source_path
+            changes = (
+                f"{snapshot.changed_file_count:,}"
+                f" / -{snapshot.deleted_file_count:,}"
+            )
+            self.repository_snapshot_tree.insert(
+                "",
+                tk.END,
+                iid=snapshot.snapshot_id,
+                values=(
+                    _format_time_ns(snapshot.created_at_ns),
+                    snapshot.label or "(no label)",
+                    source_name,
+                    f"{snapshot.file_count:,}",
+                    _format_size(snapshot.total_bytes),
+                    changes,
+                    "Yes" if snapshot.pinned else "",
+                    snapshot.snapshot_id[:10],
+                ),
+            )
+        warning = (
+            f"  |  WARNING: {info.issue_count:,} integrity issue(s); "
+            "run Verify"
+            if info.issue_count
+            else ""
+        )
+        self.repository_status.set(
+            f"{info.snapshot_count:,} snapshot(s)  |  "
+            f"{info.pack_count:,} pack(s)  |  "
+            f"{info.object_count:,} object(s)  |  "
+            f"{_format_size(info.repository_file_bytes)} repository files  |  "
+            f"{_format_size(info.pack_file_bytes)} active pack files  |  "
+            f"{_format_size(info.trash_file_bytes)} recoverable trash"
+            f"{warning}"
+        )
+        self.repository_pin_button.config(text="Pin selected")
+        self.repository_result_tabs.select(0)
+
+    def _start_repository_initialize(self) -> None:
+        repository = self._checked_repository(require_open=False)
+        if repository is None:
+            return
+        if (repository / "repository.json").is_file():
+            self._start_repository_refresh()
+            return
+        try:
+            contains_files = repository.exists() and any(repository.iterdir())
+        except OSError as exc:
+            messagebox.showerror(
+                APP_NAME, f"Could not inspect this folder.\n\n{exc}"
+            )
+            return
+        if contains_files:
+            messagebox.showwarning(
+                APP_NAME,
+                "Initialization needs a new or empty folder. This folder already "
+                "contains other files.",
+            )
+            return
+        if not messagebox.askyesno(
+            APP_NAME,
+            "Initialize this folder as a Rat-Trap backup repository?\n\n"
+            f"{repository}",
+        ):
+            return
+
+        def work():
+            info = repository_engine.init_repository(repository)
+            snapshots = repository_engine.list_snapshots(repository)
+            return info, snapshots
+
+        def done(result) -> None:
+            info, snapshots = result
+            self._render_repository(repository, info, snapshots)
+            messagebox.showinfo(
+                APP_NAME,
+                "Backup repository is ready.\n\n"
+                "Choose a source folder and select Back up now.",
+            )
+
+        self._run_task("Initializing backup repository...", work, done)
+
+    def _start_repository_refresh(self) -> None:
+        repository = self._checked_repository(require_open=False)
+        if repository is None:
+            return
+
+        def work():
+            return (
+                repository_engine.repository_info(repository),
+                repository_engine.list_snapshots(repository),
+            )
+
+        def done(result) -> None:
+            info, snapshots = result
+            self._render_repository(repository, info, snapshots)
+            self.status_text.set("Backup history refreshed")
+
+        self._run_task("Opening backup repository...", work, done)
+
+    def _start_repository_incomplete_jobs(self) -> None:
+        repository = self._checked_repository()
+        if repository is None:
+            return
+
+        def work():
+            return repository_engine.list_incomplete_jobs(repository)
+
+        def done(result: object) -> None:
+            jobs = list(result)
+            if not jobs:
+                messagebox.showinfo(
+                    APP_NAME, "There are no interrupted backup jobs."
+                )
+                return
+            by_id = {job.job_id: job for job in jobs}
+            if len(jobs) == 1:
+                selected = jobs[0]
+            else:
+                summary = "\n".join(
+                    f"{job.job_id}  {job.completed_files}/{job.total_files}  "
+                    f"{job.source_path}"
+                    for job in jobs[:8]
+                )
+                selected_id = simpledialog.askstring(
+                    APP_NAME,
+                    "Interrupted backup jobs:\n\n"
+                    f"{summary}\n\n"
+                    "Enter the exact job id to move to recoverable trash:",
+                    parent=self.root,
+                )
+                if not selected_id:
+                    return
+                selected = by_id.get(selected_id.strip())
+                if selected is None:
+                    messagebox.showwarning(
+                        APP_NAME,
+                        "That exact interrupted job id was not found.",
+                    )
+                    return
+            if not messagebox.askyesno(
+                APP_NAME,
+                "Move this interrupted job to recoverable trash?\n\n"
+                f"Job: {selected.job_id}\n"
+                f"Source: {selected.source_path}\n"
+                f"Progress: {selected.completed_files:,}/"
+                f"{selected.total_files:,} files\n"
+                f"Staged payload: "
+                f"{_format_size(selected.staged_object_payload_bytes)}\n\n"
+                "This does not remove any published snapshot.",
+                icon=messagebox.WARNING,
+            ):
+                return
+
+            def abandon_work():
+                return repository_engine.abandon_incomplete_job(
+                    repository, selected.job_id
+                )
+
+            def abandon_done(
+                abandoned: repository_engine.AbandonJobResult,
+            ) -> None:
+                messagebox.showinfo(
+                    APP_NAME,
+                    "Interrupted work moved to recoverable trash.\n\n"
+                    f"{abandoned.trash_path}",
+                )
+                self._start_repository_refresh()
+
+            self._run_task(
+                "Moving interrupted work to recoverable trash...",
+                abandon_work,
+                abandon_done,
+            )
+
+        self._run_task("Checking interrupted backup jobs...", work, done)
+
+    def _start_repository_issues(self) -> None:
+        repository = self._checked_repository()
+        if repository is None:
+            return
+
+        def work():
+            return repository_engine.list_repository_issues(repository)
+
+        def done(result: object) -> None:
+            issues = list(result)
+            if not issues:
+                messagebox.showinfo(
+                    APP_NAME,
+                    "No canonical artifact or missing-object issues were found.\n\n"
+                    "Use Quick verify or Full verify for the corresponding "
+                    "integrity check.",
+                )
+                return
+            details = "\n\n".join(
+                f"{issue.kind}: {issue.relpath}\n{issue.message}"
+                for issue in issues[:12]
+            )
+            if len(issues) > 12:
+                details += (
+                    f"\n\n...and {len(issues) - 12:,} additional issue(s)."
+                )
+            messagebox.showwarning(
+                APP_NAME,
+                f"Repository integrity issues: {len(issues):,}\n\n"
+                f"{details}\n\n"
+                "Healthy unrelated snapshots remain available. Cleanup is "
+                "blocked until these issues are resolved.",
+            )
+
+        self._run_task("Reading repository integrity issues...", work, done)
+
+    def _start_repository_snapshot(self) -> None:
+        repository = self._checked_repository()
+        if repository is None:
+            return
+        source_value = self.repository_source.get().strip()
+        label = self.repository_label.get().strip()
+        if not source_value or not Path(source_value).is_dir():
+            messagebox.showwarning(APP_NAME, "Choose an existing folder to back up.")
+            return
+        source = Path(source_value).resolve()
+
+        def progress(event: dict[str, object]) -> None:
+            completed = int(event.get("completed_files", 0))
+            total = int(event.get("total_files", 0))
+            phase = str(event.get("phase", "snapshot"))
+            path = str(event.get("path", ""))
+            if phase == "publish":
+                detail = "Publishing verified snapshot..."
+            elif path:
+                detail = f"Backing up {completed:,}/{total:,}: {path}"
+            else:
+                detail = f"Preparing backup ({completed:,}/{total:,} files)..."
+            self.root.after(
+                0, lambda status=detail: self.status_text.set(status)
+            )
+
+        def launch(*, restart: bool) -> None:
+            def work():
+                try:
+                    return repository_engine.create_snapshot(
+                        repository,
+                        source,
+                        label=label,
+                        restart=restart,
+                        progress=progress,
+                    )
+                except repository_engine.SourceChangedError as exc:
+                    return exc
+
+            def done(result: object) -> None:
+                if isinstance(result, repository_engine.SourceChangedError):
+                    if messagebox.askyesno(
+                        APP_NAME,
+                        "The source changed after an earlier backup was interrupted.\n\n"
+                        "Preserve that incomplete work in repository trash and "
+                        "start a fresh snapshot of the folder as it is now?",
+                        icon=messagebox.WARNING,
+                    ):
+                        launch(restart=True)
+                    return
+                snapshot = result
+                if not isinstance(snapshot, repository_engine.SnapshotInfo):
+                    raise RuntimeError("Backup returned an unexpected result")
+                messagebox.showinfo(
+                    APP_NAME,
+                    "Backup completed and verified.\n\n"
+                    f"Files: {snapshot.file_count:,}\n"
+                    f"Snapshot size: {_format_size(snapshot.total_bytes)}\n"
+                    f"Changed files: {snapshot.changed_file_count:,}\n"
+                    f"New pack file: {_format_size(snapshot.new_pack_file_bytes)}\n"
+                    f"Compressed object payload: "
+                    f"{_format_size(snapshot.new_object_payload_bytes)}\n"
+                    f"Existing data reused: {_format_size(snapshot.reused_bytes)}"
+                    + ("\nResumed an interrupted backup." if snapshot.resumed else ""),
+                )
+                self.repository_label.set("")
+                self.repository_path.set(str(repository))
+                self._start_repository_refresh()
+
+            self._run_task(
+                "Restarting backup..." if restart else "Preparing backup...",
+                work,
+                done,
+            )
+
+        launch(restart=False)
+
+    def _selected_repository_snapshot(
+        self, *, warn: bool = True
+    ) -> repository_engine.SnapshotInfo | None:
+        selection = self.repository_snapshot_tree.selection()
+        if len(selection) != 1:
+            if warn:
+                messagebox.showwarning(
+                    APP_NAME, "Select one snapshot from the Snapshots table first."
+                )
+            return None
+        snapshot = self.repository_snapshots.get(selection[0])
+        if snapshot is None and warn:
+            messagebox.showwarning(
+                APP_NAME, "Refresh the repository and select the snapshot again."
+            )
+        return snapshot
+
+    def _repository_snapshot_selected(self, _event=None) -> None:
+        snapshot = self._selected_repository_snapshot(warn=False)
+        if snapshot is None:
+            self.repository_pin_button.config(text="Pin selected")
+        else:
+            self.repository_pin_button.config(
+                text="Unpin selected" if snapshot.pinned else "Pin selected"
+            )
+
+    def _show_repository_snapshots(self) -> None:
+        self.repository_result_tabs.select(0)
+
+    def _open_repository_search_snapshot(self, _event=None) -> None:
+        selection = self.repository_history_tree.selection()
+        if len(selection) != 1:
+            return
+        snapshot_id = self.repository_history_snapshot_ids.get(selection[0])
+        if snapshot_id not in self.repository_snapshots:
+            return
+        self.repository_result_tabs.select(0)
+        self.repository_snapshot_tree.selection_set(snapshot_id)
+        self.repository_snapshot_tree.focus(snapshot_id)
+        self.repository_snapshot_tree.see(snapshot_id)
+
+    def _start_repository_search(self) -> None:
+        repository = self._checked_repository()
+        if repository is None:
+            return
+        query = self.repository_search.get().strip()
+        if not query:
+            messagebox.showwarning(
+                APP_NAME, "Enter part of a filename, stored path, or snapshot label."
+            )
+            return
+
+        def work():
+            return repository_engine.search_history(
+                repository, query, limit=1000
+            )
+
+        def done(results: list[repository_engine.HistoryEntry]) -> None:
+            for item_id in self.repository_history_tree.get_children():
+                self.repository_history_tree.delete(item_id)
+            self.repository_history_snapshot_ids.clear()
+            for index, result in enumerate(results):
+                item_id = f"history-{index}"
+                self.repository_history_snapshot_ids[item_id] = (
+                    result.snapshot_id
+                )
+                self.repository_history_tree.insert(
+                    "",
+                    tk.END,
+                    iid=item_id,
+                    values=(
+                        _format_time_ns(result.created_at_ns),
+                        result.path,
+                        result.kind.title(),
+                        _format_size(result.size),
+                        result.label or "(no label)",
+                        result.snapshot_id[:10],
+                    ),
+                )
+            self.repository_result_tabs.select(1)
+            self.status_text.set(
+                f"Found {len(results):,} path-history result(s)"
+            )
+
+        self._run_task("Searching backup history...", work, done)
+
+    def _start_repository_restore(self) -> None:
+        repository = self._checked_repository()
+        if repository is None:
+            return
+        snapshot = self._selected_repository_snapshot()
+        if snapshot is None:
+            return
+        parent_value = filedialog.askdirectory(
+            title="Choose the parent folder for the restored snapshot"
+        )
+        if not parent_value:
+            return
+        source_name = Path(snapshot.source_path).name or "restored snapshot"
+        created_name = dt.datetime.fromtimestamp(
+            snapshot.created_at_ns / 1_000_000_000
+        ).strftime("%Y-%m-%d %H%M")
+        default_name = f"{source_name} restored {created_name}"
+        folder_name = simpledialog.askstring(
+            APP_NAME,
+            "Name the new restored folder:",
+            initialvalue=default_name,
+            parent=self.root,
+        )
+        if folder_name is None:
+            return
+        folder_name = folder_name.strip()
+        if (
+            not folder_name
+            or folder_name in {".", ".."}
+            or Path(folder_name).name != folder_name
+        ):
+            messagebox.showwarning(APP_NAME, "Enter one safe folder name.")
+            return
+        destination = Path(parent_value).resolve() / folder_name
+        if destination.exists():
+            messagebox.showwarning(
+                APP_NAME,
+                "Verified restores never merge into an existing folder. Choose a "
+                "different name.",
+            )
+            return
+        snapshot_id = snapshot.snapshot_id
+
+        def work():
+            return repository_engine.restore_snapshot(
+                repository, snapshot_id, destination
+            )
+
+        def done(result: repository_engine.RestoreResult) -> None:
+            messagebox.showinfo(
+                APP_NAME,
+                f"Restored and verified {result.file_count:,} file(s).\n\n"
+                f"{result.destination}",
+            )
+
+        self._run_task("Restoring and verifying snapshot...", work, done)
+
+    def _start_repository_pin_toggle(self) -> None:
+        repository = self._checked_repository()
+        if repository is None:
+            return
+        snapshot = self._selected_repository_snapshot()
+        if snapshot is None:
+            return
+        snapshot_id = snapshot.snapshot_id
+        pinned = not snapshot.pinned
+
+        def work():
+            return repository_engine.pin_snapshot(
+                repository, snapshot_id, pinned=pinned
+            )
+
+        def done(_snapshot: repository_engine.SnapshotInfo) -> None:
+            self.repository_path.set(str(repository))
+            self._start_repository_refresh()
+
+        action = "Pinning" if pinned else "Unpinning"
+        self._run_task(f"{action} snapshot...", work, done)
+
+    def _start_repository_export(self) -> None:
+        repository = self._checked_repository()
+        if repository is None:
+            return
+        snapshot = self._selected_repository_snapshot()
+        if snapshot is None:
+            return
+        created = dt.datetime.fromtimestamp(
+            snapshot.created_at_ns / 1_000_000_000
+        ).strftime("%Y-%m-%d")
+        initial_name = (
+            f"{Path(snapshot.source_path).name or 'snapshot'}-"
+            f"{created}-{snapshot.snapshot_id[:8]}.gmw"
+        )
+        selected = filedialog.asksaveasfilename(
+            title="Export snapshot as a portable GMW archive",
+            initialfile=initial_name,
+            defaultextension=".gmw",
+            filetypes=ARCHIVE_TYPES,
+        )
+        if not selected:
+            return
+        output = Path(selected).resolve()
+        if output.exists():
+            messagebox.showwarning(
+                APP_NAME,
+                "Portable export will not replace an existing file. Choose a new name.",
+            )
+            return
+        snapshot_id = snapshot.snapshot_id
+
+        def work():
+            return repository_engine.export_snapshot(
+                repository,
+                snapshot_id,
+                output,
+                profile="balanced",
+            )
+
+        def done(result: repository_engine.ExportResult) -> None:
+            messagebox.showinfo(
+                APP_NAME,
+                "Portable GMW archive created.\n\n"
+                f"Archive size: {_format_size(result.archive_bytes)}\n"
+                f"Profile: {result.profile}\n\n"
+                f"{result.output}",
+            )
+
+        self._run_task("Creating portable GMW archive...", work, done)
+
+    def _start_repository_verify(self, *, full: bool) -> None:
+        repository = self._checked_repository()
+        if repository is None:
+            return
+
+        def work():
+            return repository_engine.verify_repository(
+                repository, full=full
+            )
+
+        def done(result: repository_engine.VerifyResult) -> None:
+            verification = (
+                "Full verification read and checked every stored object and file."
+                if result.full_data_verified
+                else "Quick verification checked repository structure and references."
+            )
+            messagebox.showinfo(
+                APP_NAME,
+                f"{verification}\n\n"
+                f"Snapshots: {result.snapshot_count:,}\n"
+                f"Files across history: {result.file_count:,}\n"
+                f"Unique objects: {result.object_count:,}\n"
+                f"Compressed object payload: "
+                f"{_format_size(result.object_payload_bytes)}\n"
+                f"Active pack files: {_format_size(result.pack_file_bytes)}\n"
+                f"All repository files: "
+                f"{_format_size(result.repository_file_bytes)}\n"
+                f"Recoverable trash: {_format_size(result.trash_file_bytes)}\n"
+                f"Unreferenced objects: {result.unreferenced_object_count:,}\n"
+                f"Orphan packs: {result.orphan_pack_count:,}",
+            )
+
+        label = (
+            "Fully verifying all repository data..."
+            if full
+            else "Quickly verifying repository structure..."
+        )
+        self._run_task(label, work, done)
+
+    def _repository_retention_policy(
+        self,
+    ) -> repository_engine.RetentionPolicy | None:
+        raw_values = (
+            self.repository_keep_last.get().strip(),
+            self.repository_keep_daily.get().strip(),
+            self.repository_keep_weekly.get().strip(),
+            self.repository_keep_monthly.get().strip(),
+        )
+        try:
+            values = tuple(int(value) for value in raw_values)
+            policy = repository_engine.RetentionPolicy(*values)
+            policy.validate()
+        except (ValueError, repository_engine.RepositoryError):
+            messagebox.showwarning(
+                APP_NAME,
+                "Retention values must be whole numbers of zero or more.",
+            )
+            return None
+        return policy
+
+    def _start_repository_retention_preview(self) -> None:
+        repository = self._checked_repository()
+        if repository is None:
+            return
+        policy = self._repository_retention_policy()
+        if policy is None:
+            return
+
+        def work():
+            return repository_engine.plan_retention(repository, policy)
+
+        def done(plan: repository_engine.RetentionPlan) -> None:
+            if (
+                not plan.remove_snapshot_ids
+                and plan.fully_reclaimable_pack_bytes == 0
+            ):
+                messagebox.showinfo(
+                    APP_NAME,
+                    "Nothing is eligible for cleanup under this retention policy.\n\n"
+                    f"Snapshots kept: {len(plan.keep_snapshot_ids):,}",
+                )
+                return
+            apply_now = messagebox.askyesno(
+                APP_NAME,
+                "Retention preview\n\n"
+                f"Snapshots kept: {len(plan.keep_snapshot_ids):,}\n"
+                f"Snapshots moved to trash: {len(plan.remove_snapshot_ids):,}\n"
+                f"Logical history removed: "
+                f"{_format_size(plan.logical_bytes_removed)}\n"
+                f"Pack data eligible for recoverable trash: "
+                f"{_format_size(plan.fully_reclaimable_pack_bytes)}\n"
+                f"Logical dead content sharing retained packs "
+                f"(not currently disk-reclaimable): "
+                f"{_format_size(plan.unreclaimed_dead_object_raw_bytes)}\n\n"
+                "Apply this exact freshly previewed plan?\n"
+                "Removed repository files are moved into its trash folder. "
+                "Disk usage is retained until a future trash-purge stage.",
+                icon=messagebox.WARNING,
+            )
+            if apply_now:
+                self._start_repository_retention_apply(
+                    repository, policy, plan.plan_id
+                )
+
+        self._run_task("Preparing retention preview...", work, done)
+
+    def _start_repository_retention_apply(
+        self,
+        repository: Path,
+        policy: repository_engine.RetentionPolicy,
+        plan_id: str,
+    ) -> None:
+        def work():
+            return repository_engine.prune_repository(
+                repository,
+                policy,
+                apply=True,
+                expected_plan_id=plan_id,
+            )
+
+        def done(result: repository_engine.PruneResult) -> None:
+            location = (
+                f"\n\nTrash: {result.trash_path}"
+                if result.trash_path
+                else ""
+            )
+            moved_pack_bytes = int(
+                getattr(result, "moved_to_trash_pack_bytes", 0)
+            )
+            messagebox.showinfo(
+                APP_NAME,
+                "Retention cleanup applied.\n\n"
+                f"Snapshots moved: {result.moved_manifest_count:,}\n"
+                f"Packs moved: {result.moved_pack_count:,}\n"
+                f"Pack data moved to recoverable trash: "
+                f"{_format_size(moved_pack_bytes)}\n"
+                "Disk usage is retained until a future trash-purge stage."
+                f"{location}",
+            )
+            self.repository_path.set(str(repository))
+            self._start_repository_refresh()
+
+        self._run_task("Applying verified retention plan...", work, done)
 
     def _start_load_data_sources(self) -> None:
         archive = self._checked_data_archive()
@@ -955,6 +1949,10 @@ class RatTrapApp:
         self.busy = True
         self.status_text.set(label)
         self.progress.start(12)
+        self._saved_action_states = {
+            button: str(button.cget("state"))
+            for button in self.action_buttons
+        }
         for button in self.action_buttons:
             button.config(state=tk.DISABLED)
 
@@ -974,7 +1972,10 @@ class RatTrapApp:
     ) -> None:
         self.progress.stop()
         for button in self.action_buttons:
-            button.config(state=tk.NORMAL)
+            button.config(
+                state=self._saved_action_states.get(button, tk.NORMAL)
+            )
+        self._saved_action_states.clear()
         self.busy = False
         if error is not None:
             self.status_text.set("Operation failed")
@@ -1008,13 +2009,22 @@ def main() -> None:
     root.mainloop()
 
 
+def _require_fastcdc_accelerator() -> None:
+    """Fail the release gate if the frozen build lost its native chunker."""
+    if not repository_engine.FastCDC.__module__.startswith("pyfastcdc.cy"):
+        raise RuntimeError(
+            "Packaged FastCDC Cython accelerator is unavailable"
+        )
+
+
 def _self_test() -> None:
     """Exercise the frozen GUI and Zstandard archive engine without showing a window."""
+    _require_fastcdc_accelerator()
     root = tk.Tk()
     root.withdraw()
     app = RatTrapApp(root)
     root.update_idletasks()
-    if app.tabs.index("end") != 5:
+    if app.tabs.index("end") != 6:
         raise RuntimeError("GUI did not create all expected tabs")
     root.destroy()
 
@@ -1033,6 +2043,25 @@ def _self_test() -> None:
         gmw_tool.extract_archive(archive, restored)
         if (restored / "sample.txt").read_bytes() != expected:
             raise RuntimeError("Packaged archive round-trip did not preserve file contents")
+        repository = base / "repository"
+        repository_restored = base / "repository-restored"
+        repository_engine.init_repository(repository)
+        snapshot = repository_engine.create_snapshot(
+            repository, source, label="Packaged self-test"
+        )
+        repository_engine.restore_snapshot(
+            repository, snapshot.snapshot_id, repository_restored
+        )
+        verified_repository = repository_engine.verify_repository(
+            repository, full=True
+        )
+        if (
+            verified_repository.snapshot_count != 1
+            or (repository_restored / "sample.txt").read_bytes() != expected
+        ):
+            raise RuntimeError(
+                "Packaged repository round-trip did not preserve file contents"
+            )
         vault = base / "sample.vault.gmw"
         vault_restored = base / "vault-restored"
         gmw_tool.compress_folder(source, vault, profile="vault")
@@ -1071,6 +2100,7 @@ def _tree_digest(folder: Path) -> tuple[str, int, int]:
 
 def _folder_self_test(source: Path) -> None:
     """Release-only check: run every packaged profile against a real folder."""
+    _require_fastcdc_accelerator()
     source = source.resolve()
     if not source.is_dir():
         raise RuntimeError(f"Self-test folder not found: {source}")
@@ -1087,6 +2117,21 @@ def _folder_self_test(source: Path) -> None:
             gmw_tool.extract_archive(archive, restored)
             if _tree_digest(restored) != expected:
                 raise RuntimeError(f"Packaged {profile} round-trip failed")
+        repository = root / "repository"
+        repository_restored = root / "repository-restored"
+        repository_engine.init_repository(repository)
+        snapshot = repository_engine.create_snapshot(
+            repository, source, label="Packaged folder gate"
+        )
+        repository_engine.restore_snapshot(
+            repository, snapshot.snapshot_id, repository_restored
+        )
+        verified = repository_engine.verify_repository(repository, full=True)
+        if (
+            verified.snapshot_count != 1
+            or _tree_digest(repository_restored) != expected
+        ):
+            raise RuntimeError("Packaged repository folder round-trip failed")
 
 
 if __name__ == "__main__":

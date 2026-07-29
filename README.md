@@ -1,35 +1,82 @@
-# Rat-Trap 5.1.1 - structured Queryable Vault
+# Rat-Trap 5.2 — compressed backups, portable archives and queryable vaults
 
-The current Windows application uses the benchmark-selected hybrid solid
-engine: exact duplicate files are stored once, then the remaining folder is
-streamed through Zstandard. Balanced (Zstd-6) is recommended, Fast uses
-ordinary Zstd-3 without the duplicate hash pass, and Smallest uses hybrid
-Zstd-19. Version 5.0 also adds a separate SQLite Queryable Vault for indexed
-filename/content search, preview and selective extraction. Version 5.1 adds
-typed relational import for CSV, TSV, JSON, JSONL, NDJSON, and UCI data files,
-with point-and-click filters, read-only SQL, provenance, and result export.
-Version 5.1.1 hardens format detection and legacy restore verification while
-keeping all officially supported 4.2–5.1 archive families readable.
+Rat-Trap gives Windows users one place to back up changing folders, recover an
+older version, create a compact file for sharing, or turn stored data into a
+searchable local vault.
 
-See [BENCHMARK-AUDIT.md](BENCHMARK-AUDIT.md) for the category-isolated,
-round-trip-verified evidence. The historical project material below is kept
-for provenance; its older headline performance claims were not used to select
-the current engines because the committed historical benchmarks are not fully
-reproducible or equivalent.
+## What Rat-Trap gives you
 
-See [VAULT-README.md](VAULT-README.md) for the searchable format, Windows
-workflow, CLI commands, schema and current limitations.
+- **Compressed backup history.** Save many versioned folder captures in one
+  repository and restore any generation as a complete verified folder.
+- **Less repeated storage.** Content-defined chunking finds unchanged and
+  shifted data across snapshots, while exact duplicate files are stored once.
+- **Safe interrupted-run recovery.** Snapshot work is committed per file and
+  resumes after a restart. A snapshot only enters history after its data and
+  checksum-named manifest are complete.
+- **Find a file across time.** Search stored paths, filenames and snapshot
+  labels, then jump to the matching generation.
+- **Portable `.gmw` archives.** Export any verified snapshot, or create a Fast,
+  Balanced or Smallest archive directly.
+- **Queryable Vaults.** Search filenames and supported text without unpacking;
+  import CSV, TSV, JSON, JSONL, NDJSON and UCI data into local relational
+  tables with point-and-click filters, read-only SQL and result export.
+- **Visible integrity controls.** Quick checks validate structure and
+  references. Full checks read every object and reconstruct every file hash.
+- **Deliberate cleanup.** Preview retention first, protect important snapshots
+  with pins, and apply only the exact reviewed plan. Version 5.2 moves removed
+  data to recoverable trash rather than claiming it has already freed disk
+  space.
 
-The preserved release baseline and technical publishing rules are in:
+For Windows, extract the release ZIP and double-click `Rat-Trap.exe`; Python is
+not required. Open **Backups & history**, initialize a new empty repository,
+choose a folder and select **Back up now**.
 
-- [Rat-Trap 5.1.0 baseline](docs/BASELINE-5.1.0.md)
-- [Rat-Trap 5.1.1 compatibility gate](docs/COMPATIBILITY-GATE.md)
+The command line exposes the same repository workflow:
+
+```text
+rat-trap repo-init <repository>
+rat-trap repo-issues <repository>
+rat-trap repo-jobs <repository>
+rat-trap repo-snapshot <repository> <folder> --label "Before edit"
+rat-trap repo-list <repository>
+rat-trap repo-search <repository> <filename>
+rat-trap repo-restore <repository> <snapshot-id> <new-folder>
+rat-trap repo-verify <repository>
+rat-trap repo-prune <repository>
+```
+
+If an interrupted source is later disconnected or moved, `repo-jobs` exposes
+the exact pending job and `repo-abandon-job` can move only that confirmed job
+to recoverable trash; the Windows app provides the same **Interrupted jobs**
+action.
+
+Rat-Trap 5.2 keeps the supported 4.2–5.1 `.gmw` families readable and does not
+change their formats.
+
+## Technical evidence and buyer diligence
+
+The public product summary above describes Rat-Trap’s own capabilities. The
+technical lane keeps the detailed evidence, formats, test boundaries and
+limitations available for engineering review:
+
+- [5.2 repository format and safety model](docs/REPOSITORY-FORMAT.md)
+- [5.2 repository release gate](docs/REPOSITORY-GATE-5.2.0.md)
+- [Benchmark audit](BENCHMARK-AUDIT.md)
+- [Queryable Vault format and workflow](VAULT-README.md)
+- [5.1.0 preserved baseline](docs/BASELINE-5.1.0.md)
+- [5.1.1 compatibility gate](docs/COMPATIBILITY-GATE.md)
 - [GMW format registry](docs/GMW-FORMAT-REGISTRY.md)
 - [Benchmark history and evidence status](docs/BENCHMARK-HISTORY.md)
 - [Product and evidence lanes](docs/PRODUCT-EVIDENCE-LANES.md)
 
-For Windows, extract the release ZIP and double-click `Rat-Trap.exe`. No Python
-installation is required.
+Current repository snapshots are local and checksum-verified, not encrypted.
+Authenticated encryption, recovery keys, VSS handling for open files,
+scheduling, off-site storage and permanent trash expiry are later stages, not
+hidden 5.2 claims. Version 5.2 reads a live folder file by file and atomically
+publishes the completed capture; without VSS it does not claim a filesystem-wide
+point-in-time view while applications are actively changing multiple files.
+It refuses EFS-encrypted, NTFS-compressed, sparse, hard-linked, reparse-point
+and alternate-data-stream inputs instead of silently changing their meaning.
 
 ---
 
@@ -86,7 +133,7 @@ Key Innovations:
   * **Parallelized Bucket Packing** – Optimized thread-based bucket construction for multi-core compression, which is the source of its massive speed advantage over single-stream `tar` pipes.
   * **Z-Order Encoding** – Efficient voxel key mapping using Morton encoding for enhanced spatial data compaction.
   * **Adaptive ZSTD Layers** – Configurable trade-offs between speed and compression depth (levels 1–9) to match specific latency requirements.
-  * **Planned Authenticated Encryption** – Not included in Rat-Trap 5.1; the current `.gmw` formats are not encrypted.
+  * **Planned Authenticated Encryption** – Not included in Rat-Trap 5.2; the current `.gmw` and repository formats are not encrypted.
 
 -----
 
@@ -105,7 +152,7 @@ pip install .[crypto]
 ```
 
 The `crypto` extra retains dependencies used by historical helper code. It
-does not encrypt Rat-Trap 5.1 archives.
+does not encrypt Rat-Trap 5.2 archives or repositories.
 
 > **Note:** The default compression engine uses [Zstandard]. The package declares
 > it as a dependency, but if you install manually without dependencies the CLI

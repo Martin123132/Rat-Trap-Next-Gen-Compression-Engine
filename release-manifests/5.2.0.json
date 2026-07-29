@@ -1,0 +1,212 @@
+{
+  "schema": "rat-trap-release-manifest/v1",
+  "product": "Rat-Trap",
+  "version": "5.2.0",
+  "release_date": "2026-07-29",
+  "source": {
+    "repository": "Martin123132/Rat-Trap-Next-Gen-Compression-Engine",
+    "ref": "v5.2.0",
+    "baseline_ref": "v5.1.1",
+    "baseline_commit": "206ed2fae67af8b55e5bfaa09c40be8f7c2c905e",
+    "note": "The local annotated v5.2.0 tag identifies the commit containing this manifest and the tested source. No remote push is part of this gate."
+  },
+  "build_environment": {
+    "os_family": "Windows",
+    "architecture": "x86_64",
+    "python": "3.13.13",
+    "pip": "26.0.1",
+    "pyinstaller": "6.21.0",
+    "pyfastcdc": "0.2.1",
+    "typing_extensions": "4.15.0",
+    "zstandard": "0.25.0",
+    "dependency_file": "requirements-build-5.2.0.txt",
+    "byte_reproducible_build_claimed": false
+  },
+  "artifacts": [
+    {
+      "name": "Rat-Trap.exe",
+      "role": "portable Windows backup, archive and Queryable Vault application",
+      "bytes": 14179134,
+      "sha256": "80DD417A95BF930914CA167D9502CCD21BEF65D4BE0508853A63A9EA2081150C",
+      "file_version": "5.2.0",
+      "product_version": "5.2.0",
+      "authenticode": "NotSigned"
+    },
+    {
+      "name": "Rat-Trap-Windows-5.2.0.zip",
+      "role": "24-file portable Windows release",
+      "bytes": 14014802,
+      "sha256": "EAEBA58329CCC54235A5DD07B8469ECB3BAEAE4B198361D8E88B87CFBEE5ED80"
+    },
+    {
+      "name": "Rat-Trap-Beta-Test-Data.zip",
+      "role": "canonical corrected beta corpus",
+      "bytes": 29325417,
+      "sha256": "8FD745B2E9969DC49A34685D7FE62241B9E49F1D6729BC197D9935959C20A16A"
+    },
+    {
+      "name": "Rat-Trap-Beta-Queryable-Vault.gmw",
+      "role": "authentic schema-1 Vault compatibility evidence",
+      "bytes": 16367616,
+      "sha256": "F095309B3A6FFDA902340E9085A280EC474C0BE8865B475405613825E96796E2"
+    },
+    {
+      "name": "Rat-Trap-Beta-Structured-Vault-5.1.gmw",
+      "role": "authentic schema-2 structured Vault compatibility evidence",
+      "bytes": 21803008,
+      "sha256": "762753311679FFDCD2A692EE1162BB65FBE0A9D567C59394E6BD5B2161B0E3C9"
+    }
+  ],
+  "release_zip_inventory": [
+    "BENCHMARK-AUDIT.md",
+    "COMMERCIAL-LICENSE.md",
+    "COMPATIBILITY-GATE.md",
+    "GMW-FORMAT-REGISTRY.md",
+    "LICENSE.md",
+    "NOTICE.md",
+    "Rat-Trap-Beta-4.4-final.json",
+    "Rat-Trap-Beta-Categories-baseline.json",
+    "Rat-Trap-Beta-Categories-hybrid.json",
+    "Rat-Trap-Structured-Beta-benchmark.json",
+    "Rat-Trap-Vault-Beta-benchmark.json",
+    "Rat-Trap.exe",
+    "README-WINDOWS.txt",
+    "REPOSITORY-FORMAT.md",
+    "REPOSITORY-GATE-5.2.0.md",
+    "SHA256.txt",
+    "THIRD-PARTY-LICENSES/PYFASTCDC-0.2.1-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/PYINSTALLER-6.21.0-COPYING.txt",
+    "THIRD-PARTY-LICENSES/PYTHON-3.13.13-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/PYTHON-ZSTANDARD-0.25.0-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/TCL-TK-8.6-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/TYPING-EXTENSIONS-4.15.0-LICENSE.txt",
+    "THIRD-PARTY-NOTICES.md",
+    "VAULT-README.md"
+  ],
+  "compatibility_fixtures": {
+    "classification": "deterministic_compatibility_reconstruction",
+    "original_writer_executables_used": false,
+    "manifest": {
+      "path": "tests/fixtures/formats/manifest.json",
+      "sha256": "3A742B5E491DF6B435EE18097B57596D4D6BB52868318DD41ACAFD95D8445F8E"
+    },
+    "archives": [
+      {
+        "name": "gmw-sqlite-1-4.2.gmw",
+        "bytes": 28672,
+        "sha256": "3D1F2F8D2C1DDC35A9918CBD77087C5E8A5973C6868BCD3A7C7AFA7D59CC94AB"
+      },
+      {
+        "name": "gmw-solid-2-4.3.gmw",
+        "bytes": 1324,
+        "sha256": "458AD4B765F45DF79537F3695C26ED1BFC6A45015E6DECE3463B36A5030E1E78"
+      },
+      {
+        "name": "gmw-solid-2-4.4-dedup.gmw",
+        "bytes": 1454,
+        "sha256": "D4C5CEE824C448ACCB5830DF719CBCECCB439820F2C1136DFBC8E28FE45047F8"
+      },
+      {
+        "name": "gmw-vault-1-schema-1.gmw",
+        "bytes": 73728,
+        "sha256": "6DAE7E9AF6090490EF27E4D5677FA07AAC0EC525E303C8B27BFB9EB741626FEF"
+      },
+      {
+        "name": "gmw-vault-1-schema-2.gmw",
+        "bytes": 118784,
+        "sha256": "1A5E8DF476642D5D42EA5B30451C5F6A17DF5522EEC93B5AEBB6457D75151A4A"
+      }
+    ]
+  },
+  "repository_format": {
+    "configuration": "RAT-TRAP-REPOSITORY-1",
+    "pack": "RAT-TRAP-PACK-1",
+    "snapshot": "RAT-TRAP-SNAPSHOT-1",
+    "chunking": "fastcdc-2020-hybrid-1",
+    "chunking_implementation": "pyfastcdc.cy.fastcdc",
+    "manifest_commit_marker": true,
+    "catalog_rebuildable": true,
+    "retention_moves_to_recoverable_trash": true
+  },
+  "verification": {
+    "python_unit_tests": {
+      "command": "python -m unittest discover -s tests -v",
+      "passed": 64
+    },
+    "python_compile": {
+      "command": "python -m compileall -q rat_trap tests",
+      "passed": true
+    },
+    "packaged_self_test": {
+      "command": "Rat-Trap.exe --self-test",
+      "passed": true,
+      "native_fastcdc_required": true
+    },
+    "packaged_folder_test": {
+      "command": "Rat-Trap.exe --self-test-folder <canonical-beta-folder>",
+      "fixture": {
+        "source_archive": "Rat-Trap-Beta-Test-Data.zip",
+        "file_count": 464,
+        "total_bytes": 36991791,
+        "tree_sha256": "4FA04A491B9BF50C0FC3DFECB40FB685F5BA5CBA4145C32B555AE298525A3F9A"
+      },
+      "portable_profiles": [
+        "fast",
+        "balanced",
+        "smallest",
+        "vault"
+      ],
+      "repository_snapshot_full_verify_restore": true,
+      "round_trip_verified": true
+    },
+    "repository_recovery": {
+      "real_child_process_termination_boundaries": [
+        "after-file-commit",
+        "after-pack-publication",
+        "after-manifest-publication"
+      ],
+      "interrupted_job_exact_id_abandonment": true,
+      "concurrent_initialization_identity_preserved": true
+    },
+    "repository_integrity": {
+      "malformed_history_isolated_but_reported": true,
+      "retention_blocked_on_unresolved_issues": true,
+      "full_payload_and_file_hash_verification": true,
+      "source_fidelity_refusals": [
+        "reparse-points",
+        "alternate-data-streams",
+        "sparse-files",
+        "hard-links",
+        "ntfs-compressed-items",
+        "efs-encrypted-items"
+      ]
+    },
+    "authentic_vaults": {
+      "schema_1_verified": true,
+      "schema_2_verified": true
+    },
+    "release_zip": {
+      "inventory_file_count": 24,
+      "third_party_license_file_count": 6,
+      "checksum_file_matches_executable": true,
+      "packaged_executable_matches_tested_build": true
+    }
+  },
+  "security": {
+    "repository_encryption": false,
+    "archive_encryption": false,
+    "archive_authentication": false,
+    "release_signature": false,
+    "source_is_live_not_vss_point_in_time": true
+  },
+  "known_limitations": [
+    "No authenticated encryption or recovery keys",
+    "No VSS source snapshot, scheduler or off-site backend",
+    "No ACL/security-descriptor preservation",
+    "Unsupported Windows storage semantics are refused rather than transformed",
+    "Retention trash is recoverable and does not yet free disk space",
+    "No mixed-pack compaction or permanent trash expiry",
+    "One capture currently derives one pack and can require roughly twice the new payload in peak free space",
+    "The portable Windows executable is not Authenticode-signed"
+  ]
+}

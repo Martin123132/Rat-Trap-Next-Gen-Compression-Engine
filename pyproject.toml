@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rat-trap"
-version = "5.1.1"
-description = "Hybrid GMW compression engine with searchable, relational SQLite Vaults"
+version = "5.2.0"
+description = "Windows-first compressed snapshots, portable GMW archives, and queryable Vaults"
 readme = "README.md"
-license = { file = "Rat-Trap License" }
+license = { file = "LICENSE.md" }
 authors = [
     { name = "Glyn Evans" },
     { name = "Martin Ollett" }
@@ -22,6 +22,7 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 dependencies = [
+    "pyfastcdc>=0.2.1,<0.3",
     "zstandard>=0.21.0",
 ]
 

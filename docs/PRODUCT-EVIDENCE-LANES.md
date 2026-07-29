@@ -15,10 +15,17 @@ Use:
 - screenshots and simple workflows;
 - direct calls to download, try, or license.
 
-The lead proposition for the 5.1 technology is:
+The lead proposition for the 5.2 product is:
 
-> A portable compressed archive you can also search and query without first
-> unpacking the whole collection.
+> Compressed backup history, portable archives and queryable local vaults in
+> one Windows application.
+
+Supporting propositions are:
+
+- recurring snapshots reuse matching content across time;
+- any verified snapshot can become one portable `.gmw`;
+- Queryable Vaults search supported files and structured data without first
+  unpacking the collection.
 
 Commercial copy does not need to advertise every competitor win. It does need
 to remain literally supportable by the evidence lane. A number beside a claim

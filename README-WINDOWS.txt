@@ -1,11 +1,26 @@
-RAT-TRAP 5.1.1 FOR WINDOWS
+RAT-TRAP 5.2.0 FOR WINDOWS
 ==========================
 
 Quick start
 -----------
 1. Extract the ZIP file to a folder.
 2. Double-click Rat-Trap.exe. No Python installation is required.
-3. Use Create, Search Vault, Data Tables, Extract archive, or Inspect / export.
+3. Use Backups & history for recurring snapshots, or the other tabs for
+   portable archives and Queryable Vaults.
+
+Backups & history
+-----------------
+1. Choose a new empty folder for the repository and select Initialize.
+2. Choose the folder you want to protect, add an optional label, and select
+   Back up now.
+3. Later backups reuse matching content already in the repository.
+4. Select any snapshot to restore it into a new verified folder, pin it
+   against retention, or export it as a portable .gmw archive.
+5. Search finds stored filenames, paths and snapshot labels across history.
+6. Quick verify checks repository structure and references. Full verify reads
+   every object and reconstructs every file checksum.
+7. Cleanup always previews first. Version 5.2 moves eligible data to
+   recoverable repository trash; it does not yet free that disk space.
 
 Available formats
 -----------------
@@ -44,14 +59,25 @@ search index consume space. Use Balanced when queryability is not needed.
 Notes
 -----
 - Save every new .gmw file outside the folder being ingested.
-- Version 5.1.1 reads 5.0 searchable Vaults, 4.4 hybrid archives, earlier solid
+- Keep a backup repository outside the folder it protects.
+- Version 5.2.0 reads 5.0 searchable Vaults, 4.4 hybrid archives, earlier solid
   archives, and existing v4.2 SQLite block archives.
-- Version 5.1.1 validates the archive family and required database schema
+- Version 5.2.0 validates the archive family and required database schema
   before reading. Unknown, incomplete, or ambiguous SQLite files are rejected.
+- Repository schema 1 rejects symbolic links, junctions, alternate data
+  streams, sparse files, hard links, NTFS-compressed items and EFS-encrypted
+  items instead of silently changing their meaning or copying decrypted
+  plaintext. ACL preservation and VSS handling for open files are not
+  implemented yet.
+- Backups read a live folder file by file, then atomically publish the complete
+  capture. Without VSS they are not a filesystem-wide point-in-time view while
+  applications are actively changing multiple files.
+- Repository snapshots are checksum-verified but are not encrypted.
 - Inspect / export can convert a normal archive or Vault to a conventional ZIP.
 - The executable is not digitally signed. Windows may show an
   unknown-publisher warning. Verify the supplied SHA-256 value before running.
-- See BENCHMARK-AUDIT.md and VAULT-README.md for evidence and technical limits.
+- See REPOSITORY-FORMAT.md, BENCHMARK-AUDIT.md and VAULT-README.md for evidence,
+  formats and technical limits.
 
 License
 -------

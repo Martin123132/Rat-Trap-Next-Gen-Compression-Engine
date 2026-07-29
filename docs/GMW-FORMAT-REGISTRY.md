@@ -1,10 +1,10 @@
 # GMW format registry and compatibility policy
 
-Status: normative for Rat-Trap 5.1.1 and later readers
+Status: normative for Rat-Trap 5.2.0 and later readers
 
 ## Registry
 
-| Family | Identification | First supported | Current writer | 5.1.1 reader | Status |
+| Family | Identification | First supported | Current writer | 5.2 reader | Status |
 |---|---|---:|---:|---:|---|
 | `GMW-SQLITE-1` | SQLite plus `metadata.format` | 4.2 | Optional legacy profile | Yes | Legacy read/export |
 | `GMW-SOLID-2` | `RATGMW2\n` file magic | 4.3 | Yes | Yes | Current portable archive |
@@ -99,7 +99,7 @@ Readers identify formats in this order:
 4. A recognized `GMW-SQLITE-1` database is handled by the legacy reader.
 5. Anything else fails as unsupported.
 
-Rat-Trap 5.1.1 enforces this policy before inspect, extraction, ZIP export, or
+Rat-Trap 5.2.0 enforces this policy before inspect, extraction, ZIP export, or
 legacy HTTP serving. The legacy detector requires SQLite magic, the exact
 `GMW-SQLITE-1` marker, and the required metadata/chunk/file columns. The Vault
 detector requires the exact family and supported schema version, typed

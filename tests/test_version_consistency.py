@@ -6,7 +6,7 @@ from rat_trap.windows_app import APP_VERSION
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "5.1.1"
+EXPECTED_VERSION = "5.2.0"
 
 
 class VersionConsistencyTests(unittest.TestCase):
@@ -29,16 +29,17 @@ class VersionConsistencyTests(unittest.TestCase):
         )
         self.assertIsNotNone(project_version)
         self.assertEqual(project_version.group(1), EXPECTED_VERSION)
+        self.assertIn('license = { file = "LICENSE.md" }', pyproject)
         self.assertEqual(APP_VERSION, EXPECTED_VERSION)
-        self.assertIn("filevers=(5, 1, 1, 0)", resource)
-        self.assertIn("prodvers=(5, 1, 1, 0)", resource)
-        self.assertIn("FileVersion', u'5.1.1'", resource)
-        self.assertIn("ProductVersion', u'5.1.1'", resource)
+        self.assertIn("filevers=(5, 2, 0, 0)", resource)
+        self.assertIn("prodvers=(5, 2, 0, 0)", resource)
+        self.assertIn("FileVersion', u'5.2.0'", resource)
+        self.assertIn("ProductVersion', u'5.2.0'", resource)
         self.assertTrue(
-            windows_readme.startswith("RAT-TRAP 5.1.1 FOR WINDOWS")
+            windows_readme.startswith("RAT-TRAP 5.2.0 FOR WINDOWS")
         )
-        self.assertIn("requirements-build-5.1.1.txt", build_script)
-        self.assertIn('dist\\5.1.1', build_script)
+        self.assertIn("requirements-build-5.2.0.txt", build_script)
+        self.assertIn('dist\\5.2.0', build_script)
 
 
 if __name__ == "__main__":
