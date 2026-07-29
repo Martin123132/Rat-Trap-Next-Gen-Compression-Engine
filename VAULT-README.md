@@ -1,6 +1,6 @@
 # Rat-Trap Queryable Vault
 
-Rat-Trap 5.1 uses `GMW-VAULT-1`, a searchable SQLite format intended for data
+Rat-Trap uses `GMW-VAULT-1`, a searchable SQLite format intended for data
 collections where discovery and selective extraction matter more than the
 smallest possible container.
 
@@ -73,6 +73,25 @@ Python callers can additionally use `list_structured_sources`,
 `list_structured_columns`, `query_structured_source`, `execute_structured_sql`,
 and `export_structured_result`.
 
+## Encrypted Vaults in 5.3
+
+The Create tab and `vault-create --encrypt` can wrap the complete Vault with
+the authenticated `RAT-TRAP-ENCRYPTED-1` envelope. Filenames, indexed text,
+table schemas, rows, checksums and stored content are encrypted at rest. A
+password and independently generated `.rtrk` recovery file can each unlock it.
+
+Search and SQLite queryability require an unlocked database. Rat-Trap 5.3
+therefore decrypts an encrypted Vault into an isolated plaintext temporary
+working copy for each operation, removes it on a best-effort basis, and makes
+no secure-deletion claim. Windows, SSDs, backup tools, crash dumps, antivirus,
+or malware may retain traces. CLI users must pass
+`--allow-plaintext-temp`; operations that restore/export plaintext use
+`--allow-plaintext-output`.
+
+For very large collections that must remain instantly queryable, use an
+unencrypted local Vault on a device protected by Windows drive encryption and
+create a separate encrypted portable copy for storage or transport.
+
 ## Current limits
 
 - Search indexes text, not OCR within images or speech recognition within WAV.
@@ -86,3 +105,6 @@ and `export_structured_result`.
   content-defined chunking for shifted duplicate regions.
 - FTS results are file-level and do not currently include highlighted snippets.
 - HTTP serving remains available only for the legacy v4 SQLite block format.
+- Encrypted Vault queries currently authenticate and materialize the complete
+  Vault before SQLite opens it; random-access encrypted pages are a later
+  storage-format project.

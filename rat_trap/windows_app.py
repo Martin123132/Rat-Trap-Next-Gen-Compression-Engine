@@ -9,19 +9,22 @@ import sys
 import tempfile
 import threading
 import tkinter as tk
+import unicodedata
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Callable
 
 try:
-    from . import gmw_tool, repository_engine
+    from . import gmw_tool, repository_engine, secure_engine, vault_engine
 except ImportError:  # Allows direct execution while developing.
     import gmw_tool  # type: ignore
     import repository_engine  # type: ignore
+    import secure_engine  # type: ignore
+    import vault_engine  # type: ignore
 
 
 APP_NAME = "Rat-Trap"
-APP_VERSION = "5.2.0"
+APP_VERSION = "5.3.0"
 PROFILE_OPTIONS = {
     "Balanced - Zstandard 6 (recommended)": "balanced",
     "Fast - Zstandard 3": "fast",
@@ -54,6 +57,65 @@ def _format_time_ns(value: int) -> str:
     return dt.datetime.fromtimestamp(value / 1_000_000_000).strftime(
         "%d %b %Y, %H:%M"
     )
+
+
+def _same_parent(first: Path, second: Path) -> bool:
+    return Path(first).resolve().parent == Path(second).resolve().parent
+
+
+def _preferred_recovery_directory(
+    archive: Path,
+    *,
+    home: Path | None = None,
+) -> Path:
+    """Prefer an existing user folder away from the archive's directory."""
+
+    archive_parent = Path(archive).resolve().parent
+    user_home = Path.home() if home is None else Path(home)
+    candidates = (
+        user_home / "Documents",
+        user_home / "Desktop",
+        user_home,
+    )
+    for candidate in candidates:
+        if candidate.is_dir() and candidate.resolve() != archive_parent:
+            return candidate.resolve()
+    return archive_parent
+
+
+def _load_structured_workspace(
+    archive: Path,
+    *,
+    access: dict[str, object],
+    source_id: int | None = None,
+    search: str = "",
+    descending: bool = False,
+):
+    """Load one UI catalog/schema/result bundle with one secure materialization."""
+
+    with gmw_tool._materialized_archive(  # Package-internal compound operation.
+        Path(archive),
+        **access,
+    ) as (inner, _encrypted):
+        sources = vault_engine.list_structured_sources(inner)
+        if not sources:
+            return sources, None, [], None
+        source = (
+            sources[0]
+            if source_id is None
+            else next((item for item in sources if item.id == source_id), None)
+        )
+        if source is None:
+            raise ValueError("The selected structured source is no longer available")
+        columns = vault_engine.list_structured_columns(inner, source.id)
+        result = vault_engine.query_structured_source(
+            inner,
+            source.id,
+            search=search,
+            descending=descending,
+            limit=5000,
+        )
+        return sources, source, columns, result
 
 
 class RatTrapApp:
@@ -156,6 +218,7 @@ class RatTrapApp:
 
         self.source_folder = tk.StringVar()
         self.create_archive = tk.StringVar()
+        self.encrypt_created_archive = tk.BooleanVar(value=False)
         self.profile_label = tk.StringVar(value=next(iter(PROFILE_OPTIONS)))
         self.profile_note = tk.StringVar(value=PROFILE_NOTES["balanced"])
         self._path_row(tab, 2, "Source folder", self.source_folder, self._choose_source)
@@ -178,7 +241,23 @@ class RatTrapApp:
             wraplength=560,
         ).grid(row=5, column=0, columnspan=3, sticky=tk.W, pady=(2, 4))
 
-        self._action_button(tab, "Create", self._start_create, 6)
+        ttk.Checkbutton(
+            tab,
+            text="Encrypt this portable archive (password + recovery key)",
+            variable=self.encrypt_created_archive,
+        ).grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=(10, 2))
+        ttk.Label(
+            tab,
+            text=(
+                "Encryption protects the complete archive at rest. Rat-Trap "
+                "currently stages a temporary plaintext inner archive and "
+                "does not claim secure deletion."
+            ),
+            style="Subtitle.TLabel",
+            wraplength=720,
+        ).grid(row=7, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+
+        self._action_button(tab, "Create", self._start_create, 8)
 
     def _profile_changed(self, _event=None) -> None:
         profile = PROFILE_OPTIONS[self.profile_label.get()]
@@ -197,6 +276,158 @@ class RatTrapApp:
         profile = PROFILE_OPTIONS[self.profile_label.get()]
         suffix = ".vault.gmw" if profile == "vault" else ".gmw"
         return f"{source.name}{suffix}"
+
+    def _new_encryption_options(
+        self,
+        output: Path,
+        *,
+        action: str,
+    ) -> dict[str, object] | None:
+        if not messagebox.askyesno(
+            APP_NAME,
+            f"{action} will use an isolated plaintext temporary working "
+            "archive before authenticated encryption.\n\n"
+            "Windows, SSDs, backup tools, or malware may retain traces. "
+            "Rat-Trap does not claim secure deletion.\n\nContinue?",
+        ):
+            return None
+        password = simpledialog.askstring(
+            APP_NAME,
+            "Enter a password or passphrase (at least 15 characters):",
+            show="*",
+            parent=self.root,
+        )
+        if password is None:
+            return None
+        if len(unicodedata.normalize("NFC", password)) < 15:
+            messagebox.showwarning(
+                APP_NAME,
+                "Use a password or passphrase containing at least 15 characters.",
+            )
+            return None
+        confirmation = simpledialog.askstring(
+            APP_NAME,
+            "Enter the same password again:",
+            show="*",
+            parent=self.root,
+        )
+        if confirmation is None:
+            return None
+        if password != confirmation:
+            messagebox.showwarning(APP_NAME, "The two passwords did not match.")
+            return None
+        selected = filedialog.asksaveasfilename(
+            title="Save the independent Rat-Trap recovery key",
+            initialdir=str(_preferred_recovery_directory(output)),
+            initialfile=f"{output.stem}.rtrk",
+            defaultextension=".rtrk",
+            filetypes=[
+                ("Rat-Trap recovery keys", "*.rtrk"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not selected:
+            return None
+        recovery = Path(selected).resolve()
+        if recovery.exists():
+            messagebox.showwarning(
+                APP_NAME,
+                "Recovery keys are never overwritten. Choose a new filename.",
+            )
+            return None
+        if recovery == output.resolve():
+            messagebox.showwarning(
+                APP_NAME,
+                "The archive and recovery key must use different files.",
+            )
+            return None
+        if _same_parent(recovery, output) and not messagebox.askyesno(
+            APP_NAME,
+            "This recovery key is in the same folder as the archive.\n\n"
+            "A disk failure, ransomware incident, or synchronized-folder "
+            "problem could affect both files. Store the recovery key "
+            "separately, ideally on another drive or storage account.\n\n"
+            "Save it beside the archive anyway?",
+        ):
+            return None
+        return {
+            "encryption_password": password,
+            "recovery_key_output": recovery,
+            "allow_plaintext_temp": True,
+        }
+
+    def _unlock_credential(
+        self,
+        archive: Path,
+        *,
+        action: str,
+    ) -> dict[str, object] | None:
+        password_choice = messagebox.askyesnocancel(
+            APP_NAME,
+            f"{action}\n\nUnlock with the password?\n\n"
+            "Choose Yes for password, No for a .rtrk recovery file, "
+            "or Cancel to stop.",
+        )
+        if password_choice is None:
+            return None
+        if password_choice:
+            password = simpledialog.askstring(
+                APP_NAME,
+                "Archive password:",
+                show="*",
+                parent=self.root,
+            )
+            if password is None:
+                return None
+            return {
+                "password": password,
+                "allow_plaintext_temp": True,
+            }
+        selected = filedialog.askopenfilename(
+            title="Open the matching Rat-Trap recovery key",
+            filetypes=[
+                ("Rat-Trap recovery keys", "*.rtrk"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not selected:
+            return None
+        return {
+            "recovery_key": Path(selected),
+        }
+
+    def _archive_access(
+        self,
+        archive: Path,
+        *,
+        action: str,
+        plaintext_output: bool = False,
+    ) -> dict[str, object] | None:
+        if not secure_engine.is_encrypted_archive(archive):
+            return {}
+        output_note = (
+            "The selected destination will contain ordinary plaintext files."
+            if plaintext_output
+            else "Rat-Trap will use an isolated plaintext temporary working archive."
+        )
+        if not messagebox.askyesno(
+            APP_NAME,
+            f"{action} requires unlocking this encrypted archive.\n\n"
+            f"{output_note}\n"
+            "Temporary cleanup is best-effort; secure deletion is not claimed.\n\n"
+            "Continue?",
+        ):
+            return None
+        credential = self._unlock_credential(
+            archive,
+            action="Choose an unlock method",
+        )
+        if credential is None:
+            return None
+        return {
+            **credential,
+            "allow_plaintext_temp": True,
+        }
 
     def _build_repository_tab(self) -> None:
         tab = self._new_tab("Backups & history")
@@ -504,6 +735,7 @@ class RatTrapApp:
         self.vault_archive = tk.StringVar()
         self.vault_query = tk.StringVar()
         self.vault_extension = tk.StringVar()
+        self.vault_results_archive: Path | None = None
         self._path_row(tab, 2, "Vault", self.vault_archive, self._choose_vault_archive)
 
         search_row = ttk.Frame(tab)
@@ -584,6 +816,7 @@ class RatTrapApp:
         self.vault_preview.grid(row=6, column=0, columnspan=3, sticky=tk.NSEW)
         tab.rowconfigure(4, weight=3)
         tab.rowconfigure(6, weight=2)
+        self.vault_archive.trace_add("write", self._vault_archive_changed)
 
     def _build_data_tab(self) -> None:
         tab = self._new_tab("Data Tables")
@@ -606,6 +839,9 @@ class RatTrapApp:
         self.data_column_map: dict[str, str] = {"All columns": ""}
         self.data_sort_map: dict[str, str] = {"Original row order": ""}
         self.data_current_result = None
+        self.data_loaded_archive: Path | None = None
+        self.data_result_archive: Path | None = None
+        self.data_result_encrypted = False
         self._path_row(tab, 2, "Vault", self.data_archive, self._choose_data_archive)
 
         source_row = ttk.Frame(tab)
@@ -692,6 +928,7 @@ class RatTrapApp:
         ).pack(side=tk.RIGHT)
         self.action_buttons.append(export_button)
         tab.rowconfigure(5, weight=1)
+        self.data_archive.trace_add("write", self._data_archive_changed)
 
     def _build_extract_tab(self) -> None:
         tab = self._new_tab("Extract archive")
@@ -725,7 +962,26 @@ class RatTrapApp:
         inspect_button.pack(side=tk.LEFT)
         export_button = ttk.Button(button_row, text="Export as ZIP...", command=self._start_export)
         export_button.pack(side=tk.LEFT, padx=(10, 0))
-        self.action_buttons.extend((inspect_button, export_button))
+        password_button = ttk.Button(
+            button_row,
+            text="Change password...",
+            command=self._start_change_password,
+        )
+        password_button.pack(side=tk.LEFT, padx=(10, 0))
+        recovery_button = ttk.Button(
+            button_row,
+            text="Replace recovery key...",
+            command=self._start_rotate_recovery,
+        )
+        recovery_button.pack(side=tk.LEFT, padx=(10, 0))
+        self.action_buttons.extend(
+            (
+                inspect_button,
+                export_button,
+                password_button,
+                recovery_button,
+            )
+        )
 
         self.details = tk.Text(
             tab,
@@ -740,6 +996,54 @@ class RatTrapApp:
         )
         self.details.grid(row=3, column=0, columnspan=3, sticky=tk.NSEW)
         tab.rowconfigure(3, weight=1)
+        self.inspect_archive.trace_add(
+            "write",
+            self._inspect_archive_changed,
+        )
+
+    @staticmethod
+    def _selected_archive_path(variable: tk.StringVar) -> Path | None:
+        value = variable.get().strip()
+        return Path(value).resolve() if value else None
+
+    def _clear_vault_state(self) -> None:
+        self.vault_results_archive = None
+        for item_id in self.vault_results.get_children():
+            self.vault_results.delete(item_id)
+        self.vault_result_count.set("No Vault loaded")
+        self.vault_preview.config(state=tk.NORMAL)
+        self.vault_preview.delete("1.0", tk.END)
+        self.vault_preview.config(state=tk.DISABLED)
+
+    def _vault_archive_changed(self, *_trace_args: object) -> None:
+        self._clear_vault_state()
+
+    def _clear_data_state(self) -> None:
+        self.data_loaded_archive = None
+        self.data_source_map.clear()
+        self.data_source_box.configure(values=())
+        self.data_source_label.set("")
+        self.data_column_map = {"All columns": ""}
+        self.data_sort_map = {"Original row order": ""}
+        self.data_column_box.configure(values=("All columns",))
+        self.data_sort_box.configure(values=("Original row order",))
+        self.data_column_label.set("All columns")
+        self.data_sort_label.set("Original row order")
+        self.data_catalog_note.set("No Vault loaded")
+        self.data_result_count.set("No query run")
+        self.data_sql.delete("1.0", tk.END)
+        self._render_data_result(None)
+
+    def _data_archive_changed(self, *_trace_args: object) -> None:
+        self._clear_data_state()
+
+    def _clear_inspect_state(self) -> None:
+        self.details.config(state=tk.NORMAL)
+        self.details.delete("1.0", tk.END)
+        self.details.config(state=tk.DISABLED)
+
+    def _inspect_archive_changed(self, *_trace_args: object) -> None:
+        self._clear_inspect_state()
 
     def _choose_source(self) -> None:
         selected = filedialog.askdirectory(title="Choose the folder to archive")
@@ -820,10 +1124,13 @@ class RatTrapApp:
         if not value or not archive.is_file():
             messagebox.showwarning(APP_NAME, "Choose an existing queryable Vault first.")
             return None
-        if not gmw_tool.is_vault_archive(archive):
+        if (
+            not secure_engine.is_encrypted_archive(archive)
+            and not gmw_tool.is_vault_archive(archive)
+        ):
             messagebox.showwarning(APP_NAME, "This archive is not a queryable Vault.")
             return None
-        return archive
+        return archive.resolve()
 
     def _checked_repository(self, *, require_open: bool = True) -> Path | None:
         value = self.repository_path.get().strip()
@@ -1338,6 +1645,19 @@ class RatTrapApp:
             )
             return
         snapshot_id = snapshot.snapshot_id
+        encryption: dict[str, object] = {}
+        if messagebox.askyesno(
+            APP_NAME,
+            "Encrypt this portable snapshot export with a password and "
+            "independent recovery key?",
+        ):
+            selected_encryption = self._new_encryption_options(
+                output,
+                action="Exporting this encrypted snapshot",
+            )
+            if selected_encryption is None:
+                return
+            encryption = selected_encryption
 
         def work():
             return repository_engine.export_snapshot(
@@ -1345,14 +1665,23 @@ class RatTrapApp:
                 snapshot_id,
                 output,
                 profile="balanced",
+                **encryption,
             )
 
         def done(result: repository_engine.ExportResult) -> None:
+            secure_note = (
+                "\nAuthenticated encryption: AES-256-GCM-SIV"
+                f"\nRecovery key: {result.recovery_key_path}"
+                "\nStore the recovery key separately from the archive."
+                if result.encrypted
+                else ""
+            )
             messagebox.showinfo(
                 APP_NAME,
                 "Portable GMW archive created.\n\n"
                 f"Archive size: {_format_size(result.archive_bytes)}\n"
-                f"Profile: {result.profile}\n\n"
+                f"Profile: {result.profile}"
+                f"{secure_note}\n\n"
                 f"{result.output}",
             )
 
@@ -1502,15 +1831,42 @@ class RatTrapApp:
 
         self._run_task("Applying verified retention plan...", work, done)
 
-    def _start_load_data_sources(self) -> None:
+    def _start_load_data_sources(
+        self,
+        access: dict[str, object] | None = None,
+    ) -> None:
         archive = self._checked_data_archive()
         if archive is None:
             return
+        if access is None:
+            # Invalidate the previous catalog before a password/recovery prompt.
+            # A cancelled or failed unlock must not leave rows from another Vault
+            # displayed under the newly selected archive path.
+            self._clear_data_state()
+            access = self._archive_access(
+                archive,
+                action="Opening the Vault data catalog",
+            )
+            if access is None:
+                return
+
+        search = self.data_search.get().strip()
+        descending = self.data_descending.get()
+        encrypted_source = secure_engine.is_encrypted_archive(archive)
 
         def work():
-            return gmw_tool.list_structured_sources(archive)
+            return _load_structured_workspace(
+                archive,
+                access=access,
+                search=search,
+                descending=descending,
+            )
 
-        def done(sources) -> None:
+        def done(bundle) -> None:
+            if self._selected_archive_path(self.data_archive) != archive:
+                return
+            sources, selected_source, columns, result = bundle
+            self.data_loaded_archive = archive
             self.data_source_map.clear()
             labels: list[str] = []
             for source in sources:
@@ -1533,49 +1889,113 @@ class RatTrapApp:
                 self._render_data_result(None)
                 return
             self.data_source_label.set(labels[0])
-            self._data_source_changed()
+            self._apply_data_columns(selected_source, columns)
+            self._render_data_result(
+                result,
+                archive=archive,
+                encrypted_source=encrypted_source,
+            )
+            self.status_text.set("Structured table loaded")
 
         self._run_task("Loading structured table catalog...", work, done)
 
     def _selected_data_source(self):
+        if (
+            self.data_loaded_archive is None
+            or self._selected_archive_path(self.data_archive)
+            != self.data_loaded_archive
+        ):
+            return None
         return self.data_source_map.get(self.data_source_label.get())
 
-    def _data_source_changed(self, _event=None) -> None:
+    def _apply_data_columns(self, source, columns) -> None:
+        self.data_column_map = {"All columns": ""}
+        self.data_sort_map = {"Original row order": ""}
+        for item in columns:
+            label = f"{item.source_name}  [{item.declared_type}]"
+            if label in self.data_column_map:
+                label = f"{label}  ({item.column_name})"
+            self.data_column_map[label] = item.column_name
+            self.data_sort_map[label] = item.column_name
+        self.data_column_box.configure(values=tuple(self.data_column_map))
+        self.data_sort_box.configure(values=tuple(self.data_sort_map))
+        self.data_column_label.set("All columns")
+        self.data_sort_label.set("Original row order")
+        self.data_sql.delete("1.0", tk.END)
+        self.data_sql.insert(
+            "1.0", f'SELECT * FROM "{source.table_name}" LIMIT 1000;'
+        )
+
+    def _data_source_changed(
+        self,
+        _event=None,
+        *,
+        access: dict[str, object] | None = None,
+    ) -> None:
         archive = self._checked_data_archive()
         source = self._selected_data_source()
         if archive is None or source is None:
             return
+        self._render_data_result(None)
+        self.data_result_count.set("No query run")
+        if access is None:
+            access = self._archive_access(
+                archive,
+                action="Opening this Vault table",
+            )
+            if access is None:
+                return
+        source_label = self.data_source_label.get()
+        search = self.data_search.get().strip()
+        descending = self.data_descending.get()
+        encrypted_source = secure_engine.is_encrypted_archive(archive)
 
         def work():
-            return gmw_tool.list_structured_columns(archive, source.id)
-
-        def done(columns) -> None:
-            self.data_column_map = {"All columns": ""}
-            self.data_sort_map = {"Original row order": ""}
-            for item in columns:
-                label = f"{item.source_name}  [{item.declared_type}]"
-                if label in self.data_column_map:
-                    label = f"{label}  ({item.column_name})"
-                self.data_column_map[label] = item.column_name
-                self.data_sort_map[label] = item.column_name
-            self.data_column_box.configure(values=tuple(self.data_column_map))
-            self.data_sort_box.configure(values=tuple(self.data_sort_map))
-            self.data_column_label.set("All columns")
-            self.data_sort_label.set("Original row order")
-            self.data_sql.delete("1.0", tk.END)
-            self.data_sql.insert(
-                "1.0", f'SELECT * FROM "{source.table_name}" LIMIT 1000;'
+            return _load_structured_workspace(
+                archive,
+                access=access,
+                source_id=source.id,
+                search=search,
+                descending=descending,
             )
-            self._start_data_query()
 
-        self._run_task("Loading table schema...", work, done)
+        def done(bundle) -> None:
+            current_source = self._selected_data_source()
+            if (
+                self._selected_archive_path(self.data_archive) != archive
+                or self.data_source_label.get() != source_label
+                or current_source is None
+                or current_source.id != source.id
+            ):
+                return
+            _sources, loaded_source, columns, result = bundle
+            if loaded_source is None or loaded_source.id != source.id:
+                return
+            self._apply_data_columns(loaded_source, columns)
+            self._render_data_result(
+                result,
+                archive=archive,
+                encrypted_source=encrypted_source,
+            )
+            self.status_text.set("Structured table loaded")
 
-    def _render_data_result(self, result) -> None:
+        self._run_task("Loading table schema and rows...", work, done)
+
+    def _render_data_result(
+        self,
+        result,
+        *,
+        archive: Path | None = None,
+        encrypted_source: bool | None = None,
+    ) -> None:
         for item_id in self.data_results.get_children():
             self.data_results.delete(item_id)
         if result is None:
+            self.data_results.configure(displaycolumns=())
             self.data_results.configure(columns=())
             self.data_current_result = None
+            self.data_result_archive = None
+            self.data_result_encrypted = False
             return
         columns = tuple(result.columns)
         self.data_results.configure(columns=columns, displaycolumns=columns)
@@ -1593,30 +2013,68 @@ class RatTrapApp:
             values = tuple("" if value is None else value for value in row)
             self.data_results.insert("", tk.END, values=values)
         self.data_current_result = result
+        self.data_result_archive = (
+            Path(archive).resolve() if archive is not None else None
+        )
+        self.data_result_encrypted = bool(
+            archive is not None
+            and (
+                secure_engine.is_encrypted_archive(Path(archive))
+                if encrypted_source is None
+                else encrypted_source
+            )
+        )
         limited = " (more rows available)" if result.truncated else ""
         self.data_result_count.set(f"{len(result.rows):,} result row(s){limited}")
 
-    def _start_data_query(self) -> None:
+    def _start_data_query(
+        self,
+        access: dict[str, object] | None = None,
+    ) -> None:
         archive = self._checked_data_archive()
         source = self._selected_data_source()
         if archive is None or source is None:
             return
+        if access is None:
+            access = self._archive_access(
+                archive,
+                action="Querying this encrypted Vault",
+            )
+            if access is None:
+                return
+        source_label = self.data_source_label.get()
         column = self.data_column_map.get(self.data_column_label.get(), "")
         sort_by = self.data_sort_map.get(self.data_sort_label.get(), "")
+        search = self.data_search.get().strip()
+        descending = self.data_descending.get()
+        encrypted_source = secure_engine.is_encrypted_archive(archive)
 
         def work():
             return gmw_tool.query_structured_source(
                 archive,
                 source.id,
-                search=self.data_search.get().strip(),
+                search=search,
                 column=column,
                 sort_by=sort_by,
-                descending=self.data_descending.get(),
+                descending=descending,
                 limit=5000,
+                **access,
             )
 
         def done(result) -> None:
-            self._render_data_result(result)
+            current_source = self._selected_data_source()
+            if (
+                self._selected_archive_path(self.data_archive) != archive
+                or self.data_source_label.get() != source_label
+                or current_source is None
+                or current_source.id != source.id
+            ):
+                return
+            self._render_data_result(
+                result,
+                archive=archive,
+                encrypted_source=encrypted_source,
+            )
             self.status_text.set("Structured query complete")
 
         self._run_task("Querying structured rows...", work, done)
@@ -1629,12 +2087,33 @@ class RatTrapApp:
         if not sql:
             messagebox.showwarning(APP_NAME, "Enter a SELECT query first.")
             return
+        access = self._archive_access(
+            archive,
+            action="Running SQL against this encrypted Vault",
+        )
+        if access is None:
+            return
+        encrypted_source = secure_engine.is_encrypted_archive(archive)
 
         def work():
-            return gmw_tool.execute_structured_sql(archive, sql, limit=5000)
+            return gmw_tool.execute_structured_sql(
+                archive,
+                sql,
+                limit=5000,
+                **access,
+            )
 
         def done(result) -> None:
-            self._render_data_result(result)
+            if (
+                self._selected_archive_path(self.data_archive) != archive
+                or self.data_loaded_archive != archive
+            ):
+                return
+            self._render_data_result(
+                result,
+                archive=archive,
+                encrypted_source=encrypted_source,
+            )
             self.status_text.set("SQL query complete")
 
         self._run_task("Running read-only SQL...", work, done)
@@ -1643,6 +2122,27 @@ class RatTrapApp:
         result = self.data_current_result
         if result is None:
             messagebox.showwarning(APP_NAME, "Run a structured-data query before exporting.")
+            return
+        current_archive = self._selected_archive_path(self.data_archive)
+        if (
+            current_archive is None
+            or self.data_result_archive != current_archive
+        ):
+            self._render_data_result(None)
+            self.data_result_count.set("No query run")
+            messagebox.showwarning(
+                APP_NAME,
+                "The selected Vault changed after this query. Run the query "
+                "again before exporting.",
+            )
+            return
+        if self.data_result_encrypted and not messagebox.askyesno(
+            APP_NAME,
+            "These results came from an encrypted Vault.\n\n"
+            "CSV, TSV, and JSON exports are ordinary unencrypted plaintext. "
+            "The destination, Windows, synchronization tools, or backup "
+            "software may retain copies.\n\nExport plaintext results?",
+        ):
             return
         source = self._selected_data_source()
         default_name = f"{source.name}-results.csv" if source is not None else "query-results.csv"
@@ -1659,13 +2159,24 @@ class RatTrapApp:
         if not selected:
             return
         output = Path(selected)
+        if gmw_tool._paths_alias(output, current_archive):
+            messagebox.showwarning(
+                APP_NAME,
+                "Query results cannot replace the Vault they came from. "
+                "Choose a different output file.",
+            )
+            return
         if output.exists() and not messagebox.askyesno(
             APP_NAME, f"Replace this result file?\n\n{output}"
         ):
             return
 
         def work():
-            gmw_tool.export_structured_result(result, output)
+            gmw_tool.export_structured_result(
+                result,
+                output,
+                source_archive=current_archive,
+            )
             return output
 
         def done(saved: Path) -> None:
@@ -1684,21 +2195,40 @@ class RatTrapApp:
         if not self.vault_archive.get().strip() or not archive.is_file():
             messagebox.showwarning(APP_NAME, "Choose an existing queryable Vault first.")
             return
-        if not gmw_tool.is_vault_archive(archive):
+        archive = archive.resolve()
+        if (
+            not secure_engine.is_encrypted_archive(archive)
+            and not gmw_tool.is_vault_archive(archive)
+        ):
             messagebox.showwarning(
                 APP_NAME,
                 "This is a normal archive, not a queryable Vault. Create or choose a Vault first.",
             )
+            return
+        # Clear before unlock so cancellation or authentication failure cannot
+        # leave another Vault's paths displayed under this archive.
+        self._clear_vault_state()
+        access = self._archive_access(
+            archive,
+            action="Searching this encrypted Vault",
+        )
+        if access is None:
             return
         query = self.vault_query.get().strip()
         extension = self.vault_extension.get().strip()
 
         def work():
             return gmw_tool.search_vault(
-                archive, query, extension=extension, limit=1000
+                archive,
+                query,
+                extension=extension,
+                limit=1000,
+                **access,
             )
 
         def done(results) -> None:
+            if self._selected_archive_path(self.vault_archive) != archive:
+                return
             for item_id in self.vault_results.get_children():
                 self.vault_results.delete(item_id)
             for result in results:
@@ -1713,12 +2243,19 @@ class RatTrapApp:
                         "Yes" if result.indexed else "No",
                     ),
                 )
+            self.vault_results_archive = archive
             self.vault_result_count.set(f"{len(results):,} result(s)")
             self.status_text.set("Vault search complete")
 
         self._run_task("Searching Vault...", work, done)
 
     def _selected_vault_paths(self) -> list[str]:
+        if (
+            self.vault_results_archive is None
+            or self._selected_archive_path(self.vault_archive)
+            != self.vault_results_archive
+        ):
+            return []
         paths: list[str] = []
         for item_id in self.vault_results.selection():
             values = self.vault_results.item(item_id, "values")
@@ -1731,13 +2268,30 @@ class RatTrapApp:
         if len(paths) != 1:
             messagebox.showwarning(APP_NAME, "Select one Vault result to preview.")
             return
-        archive = Path(self.vault_archive.get().strip())
+        archive = self.vault_results_archive
+        if archive is None:
+            return
         stored_path = paths[0]
+        access = self._archive_access(
+            archive,
+            action="Previewing this encrypted Vault file",
+        )
+        if access is None:
+            return
 
         def work():
-            return gmw_tool.preview_vault_file(archive, stored_path)
+            return gmw_tool.preview_vault_file(
+                archive,
+                stored_path,
+                **access,
+            )
 
         def done(text: str) -> None:
+            if (
+                self._selected_archive_path(self.vault_archive) != archive
+                or self.vault_results_archive != archive
+            ):
+                return
             self.vault_preview.config(state=tk.NORMAL)
             self.vault_preview.delete("1.0", tk.END)
             self.vault_preview.insert("1.0", text)
@@ -1760,10 +2314,24 @@ class RatTrapApp:
             "The destination is not empty. Matching selected files will be replaced. Continue?",
         ):
             return
-        archive = Path(self.vault_archive.get().strip())
+        archive = self.vault_results_archive
+        if archive is None:
+            return
+        access = self._archive_access(
+            archive,
+            action="Exporting selected Vault files",
+            plaintext_output=True,
+        )
+        if access is None:
+            return
 
         def work():
-            return gmw_tool.extract_vault_files(archive, destination, paths)
+            return gmw_tool.extract_vault_files(
+                archive,
+                destination,
+                paths,
+                **access,
+            )
 
         def done(_metadata: gmw_tool.Metadata) -> None:
             messagebox.showinfo(
@@ -1786,15 +2354,58 @@ class RatTrapApp:
             APP_NAME, f"Replace the existing archive?\n\n{output}"
         ):
             return
+        removing_encryption = (
+            output.exists()
+            and secure_engine.is_encrypted_archive(output)
+            and not self.encrypt_created_archive.get()
+        )
+        if (
+            removing_encryption
+            and not messagebox.askyesno(
+                APP_NAME,
+                "Remove encryption from this archive?\n\n"
+                "The existing output is encrypted, but encryption is switched "
+                "off for the replacement. Continuing will replace it with a "
+                "plaintext, unencrypted .gmw archive that can be restored "
+                "without a password. Its existing recovery key will not "
+                "protect the replacement.\n\n"
+                "Continue and remove encryption?",
+            )
+        ):
+            return
         profile = PROFILE_OPTIONS[self.profile_label.get()]
+        encryption: dict[str, object] = {}
+        if self.encrypt_created_archive.get():
+            selected_encryption = self._new_encryption_options(
+                output,
+                action="Creating this encrypted archive",
+            )
+            if selected_encryption is None:
+                return
+            encryption = selected_encryption
+            if output.exists():
+                encryption["replace_encrypted"] = True
 
         def work():
-            return gmw_tool.compress_folder(source, output, profile=profile)
+            return gmw_tool.compress_folder(
+                source,
+                output,
+                profile=profile,
+                allow_remove_encryption=removing_encryption,
+                **encryption,
+            )
 
         def done(meta: gmw_tool.Metadata) -> None:
             archive_size = output.stat().st_size
             saved = 0.0 if not meta.total_bytes else (1 - archive_size / meta.total_bytes) * 100
             if meta.format == "GMW-VAULT-1":
+                secure_note = (
+                    "\nAuthenticated encryption: AES-256-GCM-SIV"
+                    f"\nRecovery key: {encryption['recovery_key_output']}"
+                    "\nStore the recovery key separately from the archive."
+                    if meta.encrypted
+                    else ""
+                )
                 messagebox.showinfo(
                     APP_NAME,
                     "Queryable Vault created successfully.\n\n"
@@ -1807,7 +2418,8 @@ class RatTrapApp:
                     f"Unique compressed objects: {meta.object_count:,}\n"
                     f"Exact duplicate files: {meta.duplicate_file_count:,}\n"
                     f"Duplicate data reused: {_format_size(meta.deduplicated_bytes)}\n\n"
-                    "Open Search Vault for files or Data Tables for rows and columns.\n\n"
+                    "Open Search Vault for files or Data Tables for rows and columns."
+                    f"{secure_note}\n\n"
                     f"{output}",
                 )
                 return
@@ -1822,6 +2434,13 @@ class RatTrapApp:
                 duplicate_note = (
                     f"\nExact duplicates stored once: {meta.duplicate_file_count:,}"
                 )
+            secure_note = (
+                "\nAuthenticated encryption: AES-256-GCM-SIV"
+                f"\nRecovery key: {encryption['recovery_key_output']}"
+                "\nStore the recovery key separately from the archive."
+                if meta.encrypted
+                else ""
+            )
             messagebox.showinfo(
                 APP_NAME,
                 "Archive created successfully.\n\n"
@@ -1830,6 +2449,7 @@ class RatTrapApp:
                 f"Archive size: {_format_size(archive_size)}\n"
                 f"Space saved: {saved:.1f}%"
                 f"{duplicate_note}"
+                f"{secure_note}"
                 f"{media_note}\n\n{output}",
             )
 
@@ -1849,9 +2469,20 @@ class RatTrapApp:
             "The destination is not empty. Files with matching names will be replaced. Continue?",
         ):
             return
+        access = self._archive_access(
+            archive,
+            action="Extracting files",
+            plaintext_output=True,
+        )
+        if access is None:
+            return
 
         def work():
-            return gmw_tool.extract_archive(archive, destination)
+            return gmw_tool.extract_archive(
+                archive,
+                destination,
+                **access,
+            )
 
         def done(meta: gmw_tool.Metadata) -> None:
             messagebox.showinfo(
@@ -1862,12 +2493,27 @@ class RatTrapApp:
         self._run_task("Extracting files...", work, done)
 
     def _load_details(self) -> None:
-        archive = Path(self.inspect_archive.get().strip())
-        if not self.inspect_archive.get().strip() or not archive.is_file():
+        archive = self._selected_archive_path(self.inspect_archive)
+        if archive is None or not archive.is_file():
             messagebox.showwarning(APP_NAME, "Choose an existing GMW archive first.")
             return
-        try:
-            meta = gmw_tool.read_metadata(archive)
+        self._clear_inspect_state()
+        access = self._archive_access(
+            archive,
+            action="Inspecting protected archive details",
+        )
+        if access is None:
+            return
+
+        def work():
+            return gmw_tool.read_metadata(archive, **access)
+
+        def done(meta: gmw_tool.Metadata) -> None:
+            if (
+                self._selected_archive_path(self.inspect_archive) != archive
+                or not archive.is_file()
+            ):
+                return
             archive_size = archive.stat().st_size
             created = dt.datetime.fromtimestamp(meta.created_at).strftime("%d %b %Y, %H:%M:%S")
             saved = 0.0 if not meta.total_bytes else (1 - archive_size / meta.total_bytes) * 100
@@ -1894,6 +2540,7 @@ class RatTrapApp:
             text = (
                 f"Archive       {archive.name}\n"
                 f"Format        {meta.format}\n"
+                f"Encrypted     {'Yes — ' + meta.encryption_cipher if meta.encrypted else 'No'}\n"
                 f"Files         {meta.file_count:,}\n"
                 f"Original      {_format_size(meta.total_bytes)}\n"
                 f"Archive size  {_format_size(archive_size)}\n"
@@ -1911,8 +2558,136 @@ class RatTrapApp:
             self.details.insert("1.0", text)
             self.details.config(state=tk.DISABLED)
             self.status_text.set("Archive details loaded")
-        except Exception as exc:
-            messagebox.showerror(APP_NAME, f"Could not read this archive.\n\n{exc}")
+
+        self._run_task("Reading and authenticating archive...", work, done)
+
+    def _start_change_password(self) -> None:
+        archive = Path(self.inspect_archive.get().strip())
+        if (
+            not self.inspect_archive.get().strip()
+            or not archive.is_file()
+            or not secure_engine.is_encrypted_archive(archive)
+        ):
+            messagebox.showwarning(
+                APP_NAME,
+                "Choose an encrypted Rat-Trap archive first.",
+            )
+            return
+        credential = self._unlock_credential(
+            archive,
+            action="Authorize password replacement",
+        )
+        if credential is None:
+            return
+        password = simpledialog.askstring(
+            APP_NAME,
+            "New password or passphrase (at least 15 characters):",
+            show="*",
+            parent=self.root,
+        )
+        if password is None:
+            return
+        if len(unicodedata.normalize("NFC", password)) < 15:
+            messagebox.showwarning(
+                APP_NAME,
+                "Use a password or passphrase containing at least 15 characters.",
+            )
+            return
+        confirmation = simpledialog.askstring(
+            APP_NAME,
+            "Enter the new password again:",
+            show="*",
+            parent=self.root,
+        )
+        if confirmation is None:
+            return
+        if password != confirmation:
+            messagebox.showwarning(APP_NAME, "The two passwords did not match.")
+            return
+
+        def work():
+            return secure_engine.change_password(
+                archive,
+                new_password=password,
+                current_password=credential.get("password"),
+                recovery_key=credential.get("recovery_key"),
+            )
+
+        def done(info: secure_engine.SecureFileInfo) -> None:
+            messagebox.showinfo(
+                APP_NAME,
+                "Password replaced and verified successfully.\n\n"
+                "The existing recovery key is still valid.\n\n"
+                f"{info.path}",
+            )
+
+        self._run_task("Replacing and verifying password...", work, done)
+
+    def _start_rotate_recovery(self) -> None:
+        archive = Path(self.inspect_archive.get().strip())
+        if (
+            not self.inspect_archive.get().strip()
+            or not archive.is_file()
+            or not secure_engine.is_encrypted_archive(archive)
+        ):
+            messagebox.showwarning(
+                APP_NAME,
+                "Choose an encrypted Rat-Trap archive first.",
+            )
+            return
+        credential = self._unlock_credential(
+            archive,
+            action="Authorize recovery-key replacement",
+        )
+        if credential is None:
+            return
+        selected = filedialog.asksaveasfilename(
+            title="Save the replacement Rat-Trap recovery key",
+            initialdir=str(_preferred_recovery_directory(archive)),
+            initialfile=f"{archive.stem}-new-recovery.rtrk",
+            defaultextension=".rtrk",
+            filetypes=[
+                ("Rat-Trap recovery keys", "*.rtrk"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not selected:
+            return
+        recovery = Path(selected).resolve()
+        if recovery.exists():
+            messagebox.showwarning(
+                APP_NAME,
+                "Recovery keys are never overwritten. Choose a new filename.",
+            )
+            return
+        if _same_parent(recovery, archive) and not messagebox.askyesno(
+            APP_NAME,
+            "This replacement recovery key is in the same folder as the "
+            "archive.\n\nA disk failure, ransomware incident, or "
+            "synchronized-folder problem could affect both files. Store the "
+            "key separately, ideally on another drive or storage account.\n\n"
+            "Save it beside the archive anyway?",
+        ):
+            return
+
+        def work():
+            return secure_engine.rotate_recovery_key(
+                archive,
+                recovery,
+                password=credential.get("password"),
+                current_recovery_key=credential.get("recovery_key"),
+            )
+
+        def done(result: secure_engine.RecoveryRotationResult) -> None:
+            messagebox.showinfo(
+                APP_NAME,
+                "Replacement recovery key saved and verified.\n\n"
+                "The previous recovery key has been revoked. Store this new "
+                "file separately from the archive.\n\n"
+                f"{result.recovery_key_path}",
+            )
+
+        self._run_task("Replacing and verifying recovery key...", work, done)
 
     def _start_export(self) -> None:
         archive = Path(self.inspect_archive.get().strip())
@@ -1929,11 +2704,25 @@ class RatTrapApp:
         if not selected:
             return
         output = Path(selected)
+        if gmw_tool._paths_alias(output, archive):
+            messagebox.showwarning(
+                APP_NAME,
+                "ZIP export cannot replace the archive it came from. "
+                "Choose a different output file.",
+            )
+            return
         if output.exists() and not messagebox.askyesno(APP_NAME, f"Replace this ZIP file?\n\n{output}"):
+            return
+        access = self._archive_access(
+            archive,
+            action="Exporting a standard ZIP",
+            plaintext_output=True,
+        )
+        if access is None:
             return
 
         def work():
-            return gmw_tool.export_zip(archive, output)
+            return gmw_tool.export_zip(archive, output, **access)
 
         def done(meta: gmw_tool.Metadata) -> None:
             messagebox.showinfo(
@@ -2043,6 +2832,80 @@ def _self_test() -> None:
         gmw_tool.extract_archive(archive, restored)
         if (restored / "sample.txt").read_bytes() != expected:
             raise RuntimeError("Packaged archive round-trip did not preserve file contents")
+        secure_password = "Rat-Trap packaged security test 2026!"
+        secure_new_password = "Rat-Trap rotated security test 2026!"
+        secure_archive = base / "sample-secure.gmw"
+        secure_recovery = base / "sample-secure.rtrk"
+        secure_restored = base / "secure-restored"
+        secure_created = gmw_tool.compress_folder(
+            source,
+            secure_archive,
+            profile="balanced",
+            encryption_password=secure_password,
+            recovery_key_output=secure_recovery,
+            allow_plaintext_temp=True,
+        )
+        if (
+            not secure_created.encrypted
+            or not secure_engine.verify_encrypted_file(
+                secure_archive, password=secure_password
+            ).verified
+            or not secure_engine.verify_encrypted_file(
+                secure_archive, recovery_key=secure_recovery
+            ).verified
+        ):
+            raise RuntimeError("Packaged authenticated encryption verification failed")
+        gmw_tool.extract_archive(
+            secure_archive,
+            secure_restored,
+            recovery_key=secure_recovery,
+            allow_plaintext_temp=True,
+        )
+        if (secure_restored / "sample.txt").read_bytes() != expected:
+            raise RuntimeError("Packaged encrypted archive round-trip failed")
+        tampered_archive = base / "sample-secure-tampered.gmw"
+        tampered = bytearray(secure_archive.read_bytes())
+        tampered[-1] ^= 1
+        tampered_archive.write_bytes(tampered)
+        try:
+            secure_engine.verify_encrypted_file(
+                tampered_archive, recovery_key=secure_recovery
+            )
+        except secure_engine.SecureArchiveError:
+            pass
+        else:
+            raise RuntimeError("Packaged encryption accepted tampered ciphertext")
+        secure_engine.change_password(
+            secure_archive,
+            current_password=secure_password,
+            new_password=secure_new_password,
+        )
+        try:
+            secure_engine.verify_encrypted_file(
+                secure_archive, password=secure_password
+            )
+        except secure_engine.UnlockError:
+            pass
+        else:
+            raise RuntimeError("Packaged password rotation did not revoke the old password")
+        rotated_recovery = base / "sample-secure-rotated.rtrk"
+        secure_engine.rotate_recovery_key(
+            secure_archive,
+            rotated_recovery,
+            password=secure_new_password,
+        )
+        try:
+            secure_engine.verify_encrypted_file(
+                secure_archive, recovery_key=secure_recovery
+            )
+        except secure_engine.UnlockError:
+            pass
+        else:
+            raise RuntimeError("Packaged recovery rotation did not revoke the old key")
+        if not secure_engine.verify_encrypted_file(
+            secure_archive, recovery_key=rotated_recovery
+        ).verified:
+            raise RuntimeError("Packaged rotated recovery key failed")
         repository = base / "repository"
         repository_restored = base / "repository-restored"
         repository_engine.init_repository(repository)
@@ -2062,6 +2925,24 @@ def _self_test() -> None:
             raise RuntimeError(
                 "Packaged repository round-trip did not preserve file contents"
             )
+        secure_export = base / "repository-secure.gmw"
+        secure_export_recovery = base / "repository-secure.rtrk"
+        exported = repository_engine.export_snapshot(
+            repository,
+            snapshot.snapshot_id,
+            secure_export,
+            profile="balanced",
+            encryption_password=secure_password,
+            recovery_key_output=secure_export_recovery,
+            allow_plaintext_temp=True,
+        )
+        if (
+            not exported.encrypted
+            or not secure_engine.verify_encrypted_file(
+                secure_export, recovery_key=secure_export_recovery
+            ).verified
+        ):
+            raise RuntimeError("Packaged encrypted repository export failed")
         vault = base / "sample.vault.gmw"
         vault_restored = base / "vault-restored"
         gmw_tool.compress_folder(source, vault, profile="vault")
@@ -2117,6 +2998,33 @@ def _folder_self_test(source: Path) -> None:
             gmw_tool.extract_archive(archive, restored)
             if _tree_digest(restored) != expected:
                 raise RuntimeError(f"Packaged {profile} round-trip failed")
+        secure_password = "Rat-Trap canonical folder security test 2026!"
+        secure_archive = root / "balanced-secure.gmw"
+        secure_recovery = root / "balanced-secure.rtrk"
+        secure_restored = root / "balanced-secure-restored"
+        secure_metadata = gmw_tool.compress_folder(
+            source,
+            secure_archive,
+            profile="balanced",
+            encryption_password=secure_password,
+            recovery_key_output=secure_recovery,
+            allow_plaintext_temp=True,
+        )
+        if (
+            not secure_metadata.encrypted
+            or not secure_engine.verify_encrypted_file(
+                secure_archive, password=secure_password
+            ).verified
+        ):
+            raise RuntimeError("Packaged encrypted folder verification failed")
+        gmw_tool.extract_archive(
+            secure_archive,
+            secure_restored,
+            recovery_key=secure_recovery,
+            allow_plaintext_temp=True,
+        )
+        if _tree_digest(secure_restored) != expected:
+            raise RuntimeError("Packaged encrypted folder round-trip failed")
         repository = root / "repository"
         repository_restored = root / "repository-restored"
         repository_engine.init_repository(repository)

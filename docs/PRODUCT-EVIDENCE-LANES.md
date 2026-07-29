@@ -15,15 +15,17 @@ Use:
 - screenshots and simple workflows;
 - direct calls to download, try, or license.
 
-The lead proposition for the 5.2 product is:
+The lead proposition for the 5.3 product is:
 
-> Compressed backup history, portable archives and queryable local vaults in
-> one Windows application.
+> Compressed backup history, authenticated encrypted portable archives and
+> queryable local vaults in one Windows application.
 
 Supporting propositions are:
 
 - recurring snapshots reuse matching content across time;
 - any verified snapshot can become one portable `.gmw`;
+- a portable archive can use tamper-detecting encryption with a separate
+  recovery key;
 - Queryable Vaults search supported files and structured data without first
   unpacking the collection.
 
@@ -56,8 +58,9 @@ make serious claims inspectable and reduce technical due-diligence risk.
    semantic difference.
 3. Never present a historical unvalidated result as a current rerun.
 4. Never hide a failed or losing row from the backend matrix.
-5. Never imply encryption, signing, cloud backup, or content-defined
-   deduplication before the shipped version provides it.
+5. Never broaden the shipped portable-archive encryption into claims of an
+   encrypted live repository, secure deletion, signing, cloud backup, or
+   independent security certification.
 6. Never use an arbitrary personal folder as a representative benchmark.
 7. Keep project history and credits intact without treating a benchmark as
    proof of a physics theory.

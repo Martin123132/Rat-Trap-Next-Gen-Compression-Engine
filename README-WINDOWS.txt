@@ -1,4 +1,4 @@
-RAT-TRAP 5.2.0 FOR WINDOWS
+RAT-TRAP 5.3.0 FOR WINDOWS
 ==========================
 
 Quick start
@@ -7,6 +7,19 @@ Quick start
 2. Double-click Rat-Trap.exe. No Python installation is required.
 3. Use Backups & history for recurring snapshots, or the other tabs for
    portable archives and Queryable Vaults.
+
+Encrypted portable archives
+---------------------------
+1. On Create, turn on authenticated encryption.
+2. Enter and confirm a password or passphrase of at least 15 characters.
+3. Choose a new .rtrk recovery-key file. Rat-Trap will not overwrite one.
+4. Keep the recovery file somewhere separate from the archive and computer it
+   protects. Either the password or recovery file can unlock the archive.
+5. Losing both credentials makes the archive unrecoverable.
+
+Encryption covers the complete inner archive, including filenames, Vault
+indexes and structured tables. Rat-Trap detects tampering, truncation and
+trailing data before it publishes decrypted output.
 
 Backups & history
 -----------------
@@ -19,7 +32,7 @@ Backups & history
 5. Search finds stored filenames, paths and snapshot labels across history.
 6. Quick verify checks repository structure and references. Full verify reads
    every object and reconstructs every file checksum.
-7. Cleanup always previews first. Version 5.2 moves eligible data to
+7. Cleanup always previews first. Version 5.3 moves eligible data to
    recoverable repository trash; it does not yet free that disk space.
 
 Available formats
@@ -60,9 +73,9 @@ Notes
 -----
 - Save every new .gmw file outside the folder being ingested.
 - Keep a backup repository outside the folder it protects.
-- Version 5.2.0 reads 5.0 searchable Vaults, 4.4 hybrid archives, earlier solid
+- Version 5.3.0 reads encrypted 5.3 archives, 5.0 searchable Vaults, 4.4 hybrid archives, earlier solid
   archives, and existing v4.2 SQLite block archives.
-- Version 5.2.0 validates the archive family and required database schema
+- Version 5.3.0 validates the encrypted outer family, inner archive family and required database schema
   before reading. Unknown, incomplete, or ambiguous SQLite files are rejected.
 - Repository schema 1 rejects symbolic links, junctions, alternate data
   streams, sparse files, hard links, NTFS-compressed items and EFS-encrypted
@@ -72,11 +85,22 @@ Notes
 - Backups read a live folder file by file, then atomically publish the complete
   capture. Without VSS they are not a filesystem-wide point-in-time view while
   applications are actively changing multiple files.
-- Repository snapshots are checksum-verified but are not encrypted.
+- Portable .gmw archives and Vaults can be encrypted. The live backup
+  repository remains checksum-verified but unencrypted.
+- Encrypted creation, inspection and Vault queries currently use an isolated
+  plaintext temporary inner archive. It is removed best-effort, but Windows,
+  SSDs, backup tools or malware may retain traces. Secure deletion is not
+  claimed.
+- Anyone holding the .rtrk recovery file can read its matching archive. Store
+  it separately and do not email or upload it beside the archive.
+- Replacing an encrypted output with a plaintext archive requires a separate
+  warning and explicit confirmation; the shared API and command line also
+  refuse that downgrade by default.
 - Inspect / export can convert a normal archive or Vault to a conventional ZIP.
 - The executable is not digitally signed. Windows may show an
   unknown-publisher warning. Verify the supplied SHA-256 value before running.
-- See REPOSITORY-FORMAT.md, BENCHMARK-AUDIT.md and VAULT-README.md for evidence,
+- See SECURE-ARCHIVE-FORMAT.md, SECURE-ARCHIVE-GATE-5.3.0.md,
+  REPOSITORY-FORMAT.md, BENCHMARK-AUDIT.md and VAULT-README.md for evidence,
   formats and technical limits.
 
 License

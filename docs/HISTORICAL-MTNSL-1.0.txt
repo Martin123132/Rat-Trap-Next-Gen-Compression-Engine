@@ -1,7 +1,7 @@
 HISTORICAL LICENSE RECORD — SUPERSEDED
 
 This file preserves the project's former MTNSL-1.0 text for provenance only.
-It is not the licence for the current repository or Rat-Trap 5.2.0. Current
+It is not the licence for the current repository or current Rat-Trap release. Current
 terms are in the root LICENSE.md file.
 
 Motion-TimeSpace Non-Commercial License (MTNSL-1.0)

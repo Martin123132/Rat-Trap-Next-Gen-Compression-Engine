@@ -1,6 +1,6 @@
 {
   "schema": "rat-trap-format-fixtures/v1",
-  "created_on": "2026-07-28",
+  "created_on": "2026-07-29",
   "classification": "deterministic_compatibility_reconstruction",
   "original_writer_executables_used": false,
   "generator": {
@@ -10,6 +10,8 @@
     "sqlite": "3.50.4",
     "zstandard": "0.25.0",
     "fixed_timestamp": 1700000000.0,
+    "fixed_secure_timestamp_ns": 1700000000123456789,
+    "secure_source_baseline": "v5.3.0",
     "byte_determinism_verified": true
   },
   "source_tree": {
@@ -139,6 +141,44 @@
         "structured_row_count": 2
       },
       "construction": "Reconstructed with the maintained schema-2 writer; only volatile timing metadata was normalized."
+    }
+  ],
+  "secure_fixtures": [
+    {
+      "name": "rat-trap-encrypted-1-5.3.gmw",
+      "family": "RAT-TRAP-ENCRYPTED-1",
+      "schema_version": 1,
+      "release_shape": "5.3-schema-1",
+      "bytes": 2699,
+      "sha256": "0f88b1202bced1ea1c86157b6f0fbf9b92062f1ed353a6d2907ae6b35510381d",
+      "inner_fixture": {
+        "name": "gmw-solid-2-4.3.gmw",
+        "bytes": 1324,
+        "sha256": "458ad4b765f45df79537f3695c26ed1bfc6a45015e6dece3463b36a5030e1e78"
+      },
+      "recovery_file": {
+        "name": "rat-trap-encrypted-1-5.3.rtrk",
+        "bytes": 233,
+        "sha256": "19c07a11e01db329c15599974aac175baba63c3913c713ec290a60a18ba17b53"
+      },
+      "interoperability_vector": {
+        "name": "rat-trap-encrypted-1-5.3-vector.json",
+        "bytes": 16957,
+        "sha256": "1693fa94c425d84ce297fcde7478c7694bac191692fca89996bc3bb1c3ccfa40"
+      },
+      "test_password_nfc": "Café Rat-Trap public fixture",
+      "expected": {
+        "writer_version": "5.3.0",
+        "file_id": "00112233445566778899aabbccddeeff",
+        "created_at_ns": 1700000000123456789,
+        "cipher": "AES-256-GCM-SIV",
+        "chunk_size": 65536,
+        "chunk_count": 1,
+        "plaintext_size": 1324,
+        "password_slot_count": 1,
+        "recovery_slot_count": 1
+      },
+      "construction": "Deterministic public-test-credential schema-1 envelope over the committed 4.3 solid fixture. All keys, salts, identifiers, nonces, canonical JSON values, derived keys, AAD values, ciphertext and hashes are published in the interoperability vector. Never use these credentials for private data."
     }
   ],
   "original_writer_references": [

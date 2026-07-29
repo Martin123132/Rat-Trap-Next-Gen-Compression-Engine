@@ -17,24 +17,55 @@ import sqlite3
 import struct
 import sys
 import tempfile
+import unicodedata
+import uuid
 from contextlib import closing
 from pathlib import Path
+from unittest import mock
 
 
 FIXTURE_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = FIXTURE_DIR.parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from rat_trap import gmw_tool, solid_engine, vault_engine  # noqa: E402
+from rat_trap import (  # noqa: E402
+    gmw_tool,
+    secure_engine,
+    solid_engine,
+    vault_engine,
+)
 
 
 FIXED_TIMESTAMP = 1_700_000_000.0
+FIXED_TIMESTAMP_NS = 1_700_000_000_123_456_789
 TARGETS = (
     "gmw-sqlite-1-4.2.gmw",
     "gmw-solid-2-4.3.gmw",
     "gmw-solid-2-4.4-dedup.gmw",
     "gmw-vault-1-schema-1.gmw",
     "gmw-vault-1-schema-2.gmw",
+)
+SECURE_TARGETS = (
+    "rat-trap-encrypted-1-5.3.gmw",
+    "rat-trap-encrypted-1-5.3.rtrk",
+    "rat-trap-encrypted-1-5.3-vector.json",
+)
+SECURE_PASSWORD = "Cafe\u0301 Rat-Trap public fixture"
+SECURE_DATA_KEY = bytes(range(0x00, 0x20))
+SECURE_UUIDS = (
+    "00112233445566778899aabbccddeeff",
+    "102132435465768798a9bacbdcedfe0f",
+    "ffeeddccbbaa99887766554433221100",
+)
+SECURE_RANDOM_INPUTS = (
+    ("recovery_key", bytes(range(0x20, 0x40))),
+    ("sealed_metadata_nonce", bytes(range(0x40, 0x4C))),
+    ("password_salt", bytes(range(0x50, 0x60))),
+    ("password_wrap_nonce", bytes(range(0x60, 0x6C))),
+    ("recovery_salt", bytes(range(0x70, 0x90))),
+    ("recovery_wrap_nonce", bytes(range(0x90, 0x9C))),
+    ("header_auth_nonce", bytes(range(0xA0, 0xAC))),
+    ("chunk_0_nonce", bytes(range(0xB0, 0xBC))),
 )
 LEGACY_METADATA_KEYS = (
     "format",
@@ -168,6 +199,287 @@ def _verify(source: Path, paths: list[Path]) -> None:
                 vault_engine.verify_vault(archive)
 
 
+class _FixedRandom:
+    def __init__(self) -> None:
+        self._remaining = list(SECURE_RANDOM_INPUTS)
+
+    def __call__(self, size: int) -> bytes:
+        if not self._remaining:
+            raise RuntimeError(
+                f"Unexpected secure-fixture random request for {size} bytes"
+            )
+        name, value = self._remaining.pop(0)
+        if len(value) != size:
+            raise RuntimeError(
+                f"Secure-fixture random request for {name} expected "
+                f"{len(value)} bytes, got {size}"
+            )
+        return value
+
+    def verify_consumed(self) -> None:
+        if self._remaining:
+            names = ", ".join(name for name, _value in self._remaining)
+            raise RuntimeError(
+                f"Secure-fixture random inputs were not consumed: {names}"
+            )
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _build_secure_vector(
+    archive: Path,
+    recovery_file: Path,
+    inner: Path,
+) -> dict[str, object]:
+    header, header_bytes, data_offset, encrypted_size = (
+        secure_engine._read_header(archive)
+    )
+    data_context = secure_engine._data_context(header)
+    slots = list(header["key_slots"])
+    password_slot = next(
+        slot for slot in slots if slot["type"] == "password"
+    )
+    recovery_slot = next(
+        slot for slot in slots if slot["type"] == "recovery"
+    )
+    password_bytes = unicodedata.normalize(
+        "NFC",
+        SECURE_PASSWORD,
+    ).encode("utf-8")
+    password_salt = secure_engine._unb64(
+        password_slot["kdf"]["salt"],
+        label="fixture password salt",
+        expected=16,
+    )
+    recovery_salt = secure_engine._unb64(
+        recovery_slot["kdf"]["salt"],
+        label="fixture recovery salt",
+        expected=32,
+    )
+    recovery_key = dict(SECURE_RANDOM_INPUTS)["recovery_key"]
+    password_kek = secure_engine._argon2_key(
+        password_bytes,
+        password_salt,
+        str(header["file_id"]),
+    )
+    recovery_kek = secure_engine._recovery_kek(
+        recovery_key,
+        recovery_salt,
+    )
+    sealed_plaintext = secure_engine._canonical_json(
+        {
+            "format": secure_engine.SEALED_METADATA_FORMAT,
+            "plaintext_sha256": _sha256(inner),
+        }
+    )
+    header_without_auth = secure_engine._header_without_auth(header)
+    raw = archive.read_bytes()
+    chunk = raw[data_offset:]
+    recovery_payload = json.loads(
+        recovery_file.read_text(encoding="utf-8")
+    )
+    return {
+        "schema": "rat-trap-secure-interoperability-vector/v1",
+        "warning": (
+            "Public test credentials only. Never reuse these keys or this "
+            "password for private data."
+        ),
+        "format": secure_engine.SECURE_FORMAT,
+        "schema_version": secure_engine.SECURE_SCHEMA_VERSION,
+        "writer_version": secure_engine.WRITER_VERSION,
+        "source_inner": {
+            "name": inner.name,
+            "bytes": inner.stat().st_size,
+            "sha256": _sha256(inner),
+        },
+        "credentials": {
+            "password_input": SECURE_PASSWORD,
+            "password_nfc": unicodedata.normalize("NFC", SECURE_PASSWORD),
+            "password_nfc_utf8_hex": password_bytes.hex(),
+            "recovery_key_hex": recovery_key.hex(),
+            "recovery_code": recovery_payload["recovery_key"],
+        },
+        "fixed_inputs": {
+            "created_at_ns": FIXED_TIMESTAMP_NS,
+            "file_id": SECURE_UUIDS[0],
+            "password_slot_id": SECURE_UUIDS[1],
+            "recovery_slot_id": SECURE_UUIDS[2],
+            "data_key_hex": SECURE_DATA_KEY.hex(),
+            **{
+                f"{name}_hex": value.hex()
+                for name, value in SECURE_RANDOM_INPUTS
+            },
+        },
+        "derived_values": {
+            "password_kek_hex": password_kek.hex(),
+            "recovery_kek_hex": recovery_kek.hex(),
+            "data_context_hex": data_context.hex(),
+        },
+        "canonical_json_hex": {
+            "base_descriptor": secure_engine._canonical_json(
+                secure_engine._base_descriptor(header)
+            ).hex(),
+            "password_slot_descriptor": secure_engine._canonical_json(
+                secure_engine._slot_descriptor(password_slot)
+            ).hex(),
+            "recovery_slot_descriptor": secure_engine._canonical_json(
+                secure_engine._slot_descriptor(recovery_slot)
+            ).hex(),
+            "sealed_plaintext": sealed_plaintext.hex(),
+            "header_without_auth": secure_engine._canonical_json(
+                header_without_auth
+            ).hex(),
+            "header": header_bytes.hex(),
+        },
+        "associated_data_hex": {
+            "password_argon2": (
+                secure_engine._PASSWORD_AD_PREFIX
+                + bytes.fromhex(str(header["file_id"]))
+            ).hex(),
+            "password_slot": secure_engine._slot_aad(
+                password_slot,
+                data_context,
+            ).hex(),
+            "recovery_slot": secure_engine._slot_aad(
+                recovery_slot,
+                data_context,
+            ).hex(),
+            "sealed_metadata": (
+                secure_engine._METADATA_AAD_PREFIX + data_context
+            ).hex(),
+            "header_auth": (
+                secure_engine._HEADER_AAD_PREFIX
+                + secure_engine._canonical_json(header_without_auth)
+            ).hex(),
+            "chunk_0": secure_engine._chunk_aad(
+                data_context,
+                0,
+                inner.stat().st_size,
+            ).hex(),
+        },
+        "stored_values": {
+            "sealed_metadata": header["sealed_metadata"],
+            "password_wrap": password_slot["wrap"],
+            "recovery_wrap": recovery_slot["wrap"],
+            "header_auth": header["header_auth"],
+            "chunk_0_nonce_hex": chunk[:12].hex(),
+            "chunk_0_ciphertext_and_tag_hex": chunk[12:].hex(),
+        },
+        "outputs": {
+            "archive": {
+                "name": archive.name,
+                "bytes": encrypted_size,
+                "sha256": _sha256(archive),
+                "header_bytes": len(header_bytes),
+                "data_offset": data_offset,
+            },
+            "recovery_file": {
+                "name": recovery_file.name,
+                "bytes": recovery_file.stat().st_size,
+                "sha256": _sha256(recovery_file),
+            },
+        },
+    }
+
+
+def generate_secure(replace: bool) -> None:
+    destinations = [FIXTURE_DIR / name for name in SECURE_TARGETS]
+    existing = [path for path in destinations if path.exists()]
+    if existing and not replace:
+        names = ", ".join(path.name for path in existing)
+        raise SystemExit(
+            "Refusing to replace golden secure fixtures without --replace: "
+            f"{names}"
+        )
+
+    inner = FIXTURE_DIR / "gmw-solid-2-4.3.gmw"
+    with tempfile.TemporaryDirectory(
+        prefix="rat-trap-secure-fixture-build-"
+    ) as temporary:
+        root = Path(temporary)
+        archive = root / SECURE_TARGETS[0]
+        recovery = root / SECURE_TARGETS[1]
+        vector_path = root / SECURE_TARGETS[2]
+        fixed_random = _FixedRandom()
+        fixed_uuids = [
+            uuid.UUID(hex=value)
+            for value in SECURE_UUIDS
+        ]
+        with (
+            mock.patch.object(
+                secure_engine.AESGCMSIV,
+                "generate_key",
+                return_value=SECURE_DATA_KEY,
+            ),
+            mock.patch.object(
+                secure_engine.os,
+                "urandom",
+                side_effect=fixed_random,
+            ),
+            mock.patch.object(
+                secure_engine.uuid,
+                "uuid4",
+                side_effect=fixed_uuids,
+            ),
+            mock.patch.object(
+                secure_engine.time,
+                "time_ns",
+                return_value=FIXED_TIMESTAMP_NS,
+            ),
+        ):
+            secure_engine.encrypt_file(
+                inner,
+                archive,
+                password=SECURE_PASSWORD,
+                recovery_key_output=recovery,
+                chunk_size=64 * 1024,
+            )
+        fixed_random.verify_consumed()
+
+        password_output = root / "password-output.gmw"
+        secure_engine.decrypt_file(
+            archive,
+            password_output,
+            password=unicodedata.normalize("NFC", SECURE_PASSWORD),
+        )
+        recovery_output = root / "recovery-output.gmw"
+        secure_engine.decrypt_file(
+            archive,
+            recovery_output,
+            recovery_key=recovery,
+        )
+        expected = inner.read_bytes()
+        if (
+            password_output.read_bytes() != expected
+            or recovery_output.read_bytes() != expected
+        ):
+            raise RuntimeError("Secure fixture round trip failed")
+
+        vector = _build_secure_vector(archive, recovery, inner)
+        vector_path.write_text(
+            json.dumps(
+                vector,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        for source_path, destination in zip(
+            (archive, recovery, vector_path),
+            destinations,
+        ):
+            shutil.copyfile(source_path, destination)
+            print(
+                f"{destination.name} {destination.stat().st_size} "
+                f"{_sha256(destination)}"
+            )
+
+
 def generate(replace: bool) -> None:
     destinations = [FIXTURE_DIR / name for name in TARGETS]
     existing = [path for path in destinations if path.exists()]
@@ -237,8 +549,16 @@ def main() -> None:
         action="store_true",
         help="replace already committed golden fixtures",
     )
+    parser.add_argument(
+        "--secure-only",
+        action="store_true",
+        help="generate only the deterministic schema-1 encrypted fixture",
+    )
     args = parser.parse_args()
-    generate(args.replace)
+    if args.secure_only:
+        generate_secure(args.replace)
+    else:
+        generate(args.replace)
 
 
 if __name__ == "__main__":

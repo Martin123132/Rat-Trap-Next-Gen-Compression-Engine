@@ -21,23 +21,32 @@ This notice does not limit rights you may have under fair use, fair dealing, or 
 
 ## Frozen Windows runtime inventory
 
-The Rat-Trap 5.2.0 Windows executable also contains separately licensed
+The Rat-Trap 5.3.0 Windows executable also contains separately licensed
 components. The release ZIP includes their complete upstream licence files in
 `THIRD-PARTY-LICENSES`:
 
 - Python 3.13.13;
 - Tcl/Tk 8.6;
 - PyInstaller 6.21.0 bootloader and run-time hooks;
+- PyInstaller Hooks Contrib 2026.6;
 - PyFastCDC 0.2.1;
 - typing_extensions 4.15.0;
-- python-zstandard 0.25.0.
+- python-zstandard 0.25.0;
+- cryptography 49.0.0;
+- OpenSSL 4.0.1, statically linked by the cryptography Windows wheel;
+- CFFI 2.1.0 and its pycparser 3.0 dependency.
 
 Those upstream licences apply only to their respective components and do not
 replace Rat-Trap's licence.
 
+Cryptography is available under Apache-2.0 or BSD-3-Clause. OpenSSL 4.0.1 is
+available under Apache-2.0. CFFI is MIT-0, pycparser is BSD-3-Clause, and
+PyInstaller Hooks Contrib is Apache-2.0. The release ZIP contains their exact
+licence texts plus the cryptography wheel and Rust component SBOMs.
+
 ## Bundled third-party component: PyFastCDC
 
-Rat-Trap 5.2 bundles PyFastCDC 0.2.1 for FastCDC 2020 content-defined
+Rat-Trap 5.3 bundles PyFastCDC 0.2.1 for FastCDC 2020 content-defined
 chunking. PyFastCDC is licensed separately under the MIT License:
 
 MIT License
@@ -64,7 +73,7 @@ SOFTWARE.
 
 ## Bundled third-party component: python-zstandard
 
-Rat-Trap 5.2 bundles python-zstandard 0.25.0 for Zstandard compression.
+Rat-Trap 5.3 bundles python-zstandard 0.25.0 for Zstandard compression.
 python-zstandard is licensed separately under the BSD 3-Clause License:
 
 Copyright (c) 2016, Gregory Szorc

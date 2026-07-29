@@ -8,12 +8,12 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = $PSScriptRoot
 $venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
-$buildRequirements = Join-Path $projectRoot "requirements-build-5.2.0.txt"
+$buildRequirements = Join-Path $projectRoot "requirements-build-5.3.0.txt"
 if ([string]::IsNullOrWhiteSpace($DistPath)) {
-    $DistPath = Join-Path $projectRoot "dist\5.2.0"
+    $DistPath = Join-Path $projectRoot "dist\5.3.0"
 }
 if ([string]::IsNullOrWhiteSpace($WorkPath)) {
-    $WorkPath = Join-Path $projectRoot "build\pyinstaller-5.2.0"
+    $WorkPath = Join-Path $projectRoot "build\pyinstaller-5.3.0"
 }
 $DistPath = [IO.Path]::GetFullPath($DistPath)
 $WorkPath = [IO.Path]::GetFullPath($WorkPath)

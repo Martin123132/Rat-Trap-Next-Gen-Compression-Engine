@@ -1,6 +1,6 @@
 # Rat-Trap snapshot repository format
 
-Status: normative for the Rat-Trap 5.2 repository writer and reader.
+Status: normative for the Rat-Trap 5.3 repository writer and reader.
 
 ## Purpose
 
@@ -12,6 +12,9 @@ product lane from portable `.gmw` files:
 - a `.gmw` file is a portable archive used for sharing, moving or long-term
   standalone storage;
 - any verified repository snapshot can be exported as a Balanced `.gmw`.
+- an exported `.gmw` can be wrapped with the separate authenticated format
+  documented in
+  [`SECURE-ARCHIVE-FORMAT.md`](SECURE-ARCHIVE-FORMAT.md).
 
 The first repository schema is local-storage focused. It is not encrypted and
 is not yet a cloud synchronization protocol.
@@ -52,7 +55,7 @@ silently.
 ## Objects and packs
 
 Files are divided with deterministic `fastcdc-2020-hybrid-1` content-defined
-chunking. Rat-Trap 5.2 pins PyFastCDC 0.2.1, normalized chunking 1 and seed 0:
+chunking. Rat-Trap 5.3 pins PyFastCDC 0.2.1, normalized chunking 1 and seed 0:
 
 | Setting | 5.2 default |
 |---|---:|

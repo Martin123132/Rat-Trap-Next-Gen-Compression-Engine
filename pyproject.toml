@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rat-trap"
-version = "5.2.0"
-description = "Windows-first compressed snapshots, portable GMW archives, and queryable Vaults"
+version = "5.3.0"
+description = "Windows-first compressed snapshots, encrypted portable GMW archives, and queryable Vaults"
 readme = "README.md"
 license = { file = "LICENSE.md" }
 authors = [
     { name = "Glyn Evans" },
     { name = "Martin Ollett" }
 ]
-keywords = ["compression", "search", "sqlite", "vault", "csv", "json", "zstandard", "cli"]
+keywords = ["compression", "encryption", "recovery", "search", "sqlite", "vault", "csv", "json", "zstandard", "cli"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: Other/Proprietary License",
@@ -22,12 +22,13 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 dependencies = [
+    "cryptography>=49.0.0,<50",
     "pyfastcdc>=0.2.1,<0.3",
     "zstandard>=0.21.0",
 ]
 
 [project.optional-dependencies]
-crypto = ["cryptography>=41.0.0", "xxhash>=3.0.0"]
+legacy = ["xxhash>=3.0.0"]
 
 [project.scripts]
 rat-trap = "rat_trap.cli:main"

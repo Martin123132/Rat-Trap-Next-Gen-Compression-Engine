@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import getpass
 import hashlib
 import http.server
 import json
@@ -34,15 +35,18 @@ import sqlite3
 import stat
 import tempfile
 import time
+import warnings
 from contextlib import closing
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Dict, Iterator, List, Optional
 
 try:
-    from . import repository_engine, solid_engine, vault_engine
+    from . import repository_engine, secure_engine, solid_engine, vault_engine
 except ImportError:  # Allows direct execution while developing.
     import repository_engine  # type: ignore
+    import secure_engine  # type: ignore
     import solid_engine  # type: ignore
     import vault_engine  # type: ignore
 
@@ -69,6 +73,15 @@ _LEGACY_SQLITE_SCHEMA = {
         {"path", "size", "mtime", "mode", "ordering", "chunk_ids", "chunk_sizes"}
     ),
 }
+
+PLAINTEXT_TEMP_WARNING = (
+    "This encrypted portable-archive operation creates an isolated plaintext "
+    "working copy in operating-system temporary storage and removes it on a "
+    "best-effort basis. Backup-history export may also stage only the encrypted "
+    "archive beside the selected destination. Windows, SSDs, sync or backup "
+    "software, and malware may retain traces; Rat-Trap does not claim secure "
+    "deletion."
+)
 
 
 @dataclass
@@ -97,6 +110,9 @@ class Metadata:
     deduplicated_bytes: int = 0
     structured_source_count: int = 0
     structured_row_count: int = 0
+    encrypted: bool = False
+    encryption_format: str = ""
+    encryption_cipher: str = ""
 
     def as_dict(self) -> Dict[str, object]:
         return dataclasses.asdict(self)
@@ -168,6 +184,52 @@ def _safe_destination(output_dir: Path, stored_path: str) -> Path:
     except ValueError as exc:
         raise ValueError(f"Archive path escapes the destination: {stored_path!r}") from exc
     return destination
+
+
+def _path_is_within(path: Path, root: Path) -> bool:
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _paths_alias(first: Path, second: Path) -> bool:
+    first = Path(first)
+    second = Path(second)
+    if first.resolve() == second.resolve():
+        return True
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
+
+
+def _refuse_archive_output_alias(
+    archive: Path,
+    output: Path,
+    *,
+    label: str,
+) -> None:
+    if _paths_alias(Path(archive), Path(output)):
+        raise secure_engine.SecureArchiveError(
+            f"{label} must not replace the source archive"
+        )
+
+
+def _refuse_encrypted_extraction_alias(
+    archive: Path,
+    output_dir: Path,
+) -> None:
+    archive = Path(archive).resolve()
+    if (
+        secure_engine.is_encrypted_archive(archive)
+        and _path_is_within(archive, Path(output_dir))
+    ):
+        raise secure_engine.SecureArchiveError(
+            "An encrypted archive cannot be extracted into a destination "
+            "tree that contains the archive itself. Choose a separate folder."
+        )
 
 
 def _ensure_db(conn: sqlite3.Connection) -> None:
@@ -657,6 +719,94 @@ def _vault_metadata(metadata: "vault_engine.VaultMetadata") -> Metadata:
     )
 
 
+def _mark_encrypted(metadata: Metadata, archive: Path) -> Metadata:
+    info = secure_engine.read_secure_info(Path(archive))
+    return dataclasses.replace(
+        metadata,
+        encrypted=True,
+        encryption_format=info.format,
+        encryption_cipher=info.cipher,
+    )
+
+
+def _require_plaintext_temp_acknowledgement(allowed: bool) -> None:
+    if not allowed:
+        raise secure_engine.SecureArchiveError(
+            f"{PLAINTEXT_TEMP_WARNING} Re-run with explicit acknowledgement."
+        )
+
+
+@contextmanager
+def _materialized_archive(
+    archive: Path,
+    *,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
+) -> Iterator[tuple[Path, bool]]:
+    """Yield a normal inner archive path, decrypting a secure envelope if needed."""
+    archive = Path(archive).resolve()
+    if not secure_engine.is_encrypted_archive(archive):
+        yield archive, False
+        return
+    _require_plaintext_temp_acknowledgement(allow_plaintext_temp)
+    with tempfile.TemporaryDirectory(prefix="rat-trap-unlocked-") as temporary:
+        inner = Path(temporary) / "archive.gmw"
+        secure_engine.decrypt_file(
+            archive,
+            inner,
+            password=password,
+            recovery_key=recovery_key,
+        )
+        try:
+            yield inner, True
+        finally:
+            # TemporaryDirectory performs best-effort removal. This is cleanup,
+            # not a secure-delete guarantee on modern Windows storage.
+            try:
+                inner.unlink()
+            except OSError:
+                pass
+
+
+def _plain_extract_archive(archive: Path, output_dir: Path) -> Metadata:
+    if solid_engine.is_solid_archive(Path(archive)):
+        return _solid_metadata(
+            solid_engine.extract_archive(Path(archive), Path(output_dir))
+        )
+    if vault_engine.is_vault_archive(Path(archive)):
+        return _vault_metadata(
+            vault_engine.extract_vault(Path(archive), Path(output_dir))
+        )
+    if is_chunked_archive(Path(archive)):
+        return _extract_chunked_archive(Path(archive), Path(output_dir))
+    raise _unsupported_archive(Path(archive))
+
+
+def _plain_export_zip(archive: Path, output_zip: Path) -> Metadata:
+    if solid_engine.is_solid_archive(Path(archive)):
+        return _solid_metadata(
+            solid_engine.export_zip(Path(archive), Path(output_zip))
+        )
+    if vault_engine.is_vault_archive(Path(archive)):
+        return _vault_metadata(
+            vault_engine.export_zip(Path(archive), Path(output_zip))
+        )
+    if is_chunked_archive(Path(archive)):
+        return _export_chunked_zip(Path(archive), Path(output_zip))
+    raise _unsupported_archive(Path(archive))
+
+
+def _plain_read_metadata(archive: Path) -> Metadata:
+    if solid_engine.is_solid_archive(Path(archive)):
+        return _solid_metadata(solid_engine.read_metadata(Path(archive)))
+    if vault_engine.is_vault_archive(Path(archive)):
+        return _vault_metadata(vault_engine.read_metadata(Path(archive)))
+    if is_chunked_archive(Path(archive)):
+        return _read_chunked_metadata(Path(archive))
+    raise _unsupported_archive(Path(archive))
+
+
 def compress_folder(
     folder: Path,
     output: Path,
@@ -673,6 +823,11 @@ def compress_folder(
     zstd_long_distance: bool = False,
     whole_file_dedup: bool = False,
     index_limit: int = vault_engine.DEFAULT_INDEX_LIMIT,
+    encryption_password: Optional[str] = None,
+    recovery_key_output: Optional[Path] = None,
+    allow_plaintext_temp: bool = False,
+    replace_encrypted: bool = False,
+    allow_remove_encryption: bool = False,
 ) -> Metadata:
     """Create a GMW archive using a named profile or explicit engine options.
 
@@ -680,6 +835,72 @@ def compress_folder(
     replacing exact duplicate files with safe archive references. Legacy
     chunked archives retain v4's fixed-block SQLite layout.
     """
+    if (encryption_password is None) != (recovery_key_output is None):
+        raise secure_engine.SecureArchiveError(
+            "Encrypted archive creation requires both a password and a new "
+            "recovery-key output path"
+        )
+    if (
+        encryption_password is None
+        and secure_engine.is_encrypted_archive(Path(output))
+        and not allow_remove_encryption
+    ):
+        raise secure_engine.SecureArchiveError(
+            "Refusing to replace an encrypted archive with plaintext without "
+            "explicit acknowledgement that encryption will be removed. Set "
+            "allow_remove_encryption=True (CLI: --allow-remove-encryption) "
+            "only for an intentional downgrade"
+        )
+    if encryption_password is not None:
+        _require_plaintext_temp_acknowledgement(allow_plaintext_temp)
+        folder_resolved = Path(folder).resolve()
+        output_resolved = Path(output).resolve()
+        recovery_resolved = Path(recovery_key_output).resolve()
+        try:
+            output_resolved.relative_to(folder_resolved)
+        except ValueError:
+            pass
+        else:
+            raise secure_engine.SecureArchiveError(
+                "The encrypted output must be saved outside the source folder"
+            )
+        try:
+            recovery_resolved.relative_to(folder_resolved)
+        except ValueError:
+            pass
+        else:
+            raise secure_engine.SecureArchiveError(
+                "The recovery key must be saved outside the source folder"
+            )
+        with tempfile.TemporaryDirectory(
+            prefix="rat-trap-encrypted-build-"
+        ) as temporary:
+            inner_archive = Path(temporary) / "archive.gmw"
+            metadata = compress_folder(
+                folder,
+                inner_archive,
+                chunk_size=chunk_size,
+                compressor=compressor,
+                zstd_level=zstd_level,
+                checksum_algorithm=checksum_algorithm,
+                archive_mode=archive_mode,
+                profile=profile,
+                threads=threads,
+                entry_order=entry_order,
+                zstd_window_log=zstd_window_log,
+                zstd_long_distance=zstd_long_distance,
+                whole_file_dedup=whole_file_dedup,
+                index_limit=index_limit,
+            )
+            secure_engine.encrypt_file(
+                inner_archive,
+                output_resolved,
+                password=encryption_password,
+                recovery_key_output=recovery_resolved,
+                replace=replace_encrypted,
+            )
+        return _mark_encrypted(metadata, output_resolved)
+
     if profile is not None:
         try:
             selected = COMPRESSION_PROFILES[profile]
@@ -738,74 +959,196 @@ def compress_folder(
     return _solid_metadata(metadata)
 
 
-def extract_archive(archive: Path, output_dir: Path) -> Metadata:
-    if solid_engine.is_solid_archive(Path(archive)):
-        return _solid_metadata(solid_engine.extract_archive(Path(archive), Path(output_dir)))
-    if vault_engine.is_vault_archive(Path(archive)):
-        return _vault_metadata(vault_engine.extract_vault(Path(archive), Path(output_dir)))
-    if is_chunked_archive(Path(archive)):
-        return _extract_chunked_archive(Path(archive), Path(output_dir))
-    raise _unsupported_archive(Path(archive))
+def extract_archive(
+    archive: Path,
+    output_dir: Path,
+    *,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
+) -> Metadata:
+    archive = Path(archive).resolve()
+    _refuse_encrypted_extraction_alias(archive, Path(output_dir))
+    with _materialized_archive(
+        archive,
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, encrypted):
+        metadata = _plain_extract_archive(inner, Path(output_dir))
+    return _mark_encrypted(metadata, archive) if encrypted else metadata
 
 
-def export_zip(archive: Path, output_zip: Path) -> Metadata:
-    if solid_engine.is_solid_archive(Path(archive)):
-        return _solid_metadata(solid_engine.export_zip(Path(archive), Path(output_zip)))
-    if vault_engine.is_vault_archive(Path(archive)):
-        return _vault_metadata(vault_engine.export_zip(Path(archive), Path(output_zip)))
-    if is_chunked_archive(Path(archive)):
-        return _export_chunked_zip(Path(archive), Path(output_zip))
-    raise _unsupported_archive(Path(archive))
+def export_zip(
+    archive: Path,
+    output_zip: Path,
+    *,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
+) -> Metadata:
+    archive = Path(archive).resolve()
+    output_zip = Path(output_zip).resolve()
+    _refuse_archive_output_alias(
+        archive,
+        output_zip,
+        label="ZIP output",
+    )
+    with _materialized_archive(
+        archive,
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, encrypted):
+        metadata = _plain_export_zip(inner, output_zip)
+    return _mark_encrypted(metadata, archive) if encrypted else metadata
 
 
-def read_metadata(archive: Path) -> Metadata:
-    if solid_engine.is_solid_archive(Path(archive)):
-        return _solid_metadata(solid_engine.read_metadata(Path(archive)))
-    if vault_engine.is_vault_archive(Path(archive)):
-        return _vault_metadata(vault_engine.read_metadata(Path(archive)))
-    if is_chunked_archive(Path(archive)):
-        return _read_chunked_metadata(Path(archive))
-    raise _unsupported_archive(Path(archive))
+def read_metadata(
+    archive: Path,
+    *,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
+) -> Metadata:
+    archive = Path(archive).resolve()
+    with _materialized_archive(
+        archive,
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, encrypted):
+        metadata = _plain_read_metadata(inner)
+    return _mark_encrypted(metadata, archive) if encrypted else metadata
 
 
-def is_vault_archive(archive: Path) -> bool:
-    return vault_engine.is_vault_archive(Path(archive))
+def is_vault_archive(
+    archive: Path,
+    *,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
+) -> bool:
+    with _materialized_archive(
+        Path(archive),
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, _encrypted):
+        return vault_engine.is_vault_archive(inner)
 
 
 def search_vault(
-    archive: Path, query: str = "", *, extension: str = "", limit: int = 200
+    archive: Path,
+    query: str = "",
+    *,
+    extension: str = "",
+    limit: int = 200,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
 ) -> list["vault_engine.VaultFile"]:
-    return vault_engine.search_vault(
-        Path(archive), query, extension=extension, limit=limit
-    )
+    with _materialized_archive(
+        Path(archive),
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, _encrypted):
+        return vault_engine.search_vault(
+            inner, query, extension=extension, limit=limit
+        )
 
 
-def preview_vault_file(archive: Path, stored_path: str, *, limit: int = 256 * 1024) -> str:
-    return vault_engine.preview_text(Path(archive), stored_path, limit=limit)
+def preview_vault_file(
+    archive: Path,
+    stored_path: str,
+    *,
+    limit: int = 256 * 1024,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
+) -> str:
+    with _materialized_archive(
+        Path(archive),
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, _encrypted):
+        return vault_engine.preview_text(inner, stored_path, limit=limit)
 
 
 def extract_vault_files(
-    archive: Path, output_dir: Path, paths: List[str]
+    archive: Path,
+    output_dir: Path,
+    paths: Optional[List[str]],
+    *,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
 ) -> Metadata:
-    return _vault_metadata(
-        vault_engine.extract_vault(Path(archive), Path(output_dir), paths=paths)
-    )
+    archive = Path(archive).resolve()
+    _refuse_encrypted_extraction_alias(archive, Path(output_dir))
+    with _materialized_archive(
+        archive,
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, encrypted):
+        metadata = _vault_metadata(
+            vault_engine.extract_vault(inner, Path(output_dir), paths=paths)
+        )
+    return _mark_encrypted(metadata, archive) if encrypted else metadata
 
 
-def verify_vault(archive: Path) -> Metadata:
-    return _vault_metadata(vault_engine.verify_vault(Path(archive)))
+def verify_vault(
+    archive: Path,
+    *,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
+) -> Metadata:
+    archive = Path(archive).resolve()
+    with _materialized_archive(
+        archive,
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, encrypted):
+        metadata = _vault_metadata(vault_engine.verify_vault(inner))
+    return _mark_encrypted(metadata, archive) if encrypted else metadata
 
 
 def list_structured_sources(
     archive: Path,
+    *,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
 ) -> list["vault_engine.structured_data.StructuredSource"]:
-    return vault_engine.list_structured_sources(Path(archive))
+    with _materialized_archive(
+        Path(archive),
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, _encrypted):
+        return vault_engine.list_structured_sources(inner)
 
 
 def list_structured_columns(
-    archive: Path, source_id: int
+    archive: Path,
+    source_id: int,
+    *,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
 ) -> list["vault_engine.structured_data.StructuredColumn"]:
-    return vault_engine.list_structured_columns(Path(archive), source_id)
+    with _materialized_archive(
+        Path(archive),
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, _encrypted):
+        return vault_engine.list_structured_columns(inner, source_id)
 
 
 def query_structured_source(
@@ -818,27 +1161,189 @@ def query_structured_source(
     descending: bool = False,
     limit: int = 1000,
     offset: int = 0,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
 ) -> "vault_engine.structured_data.StructuredQueryResult":
-    return vault_engine.query_structured_source(
+    with _materialized_archive(
         Path(archive),
-        source_id,
-        search=search,
-        column=column,
-        sort_by=sort_by,
-        descending=descending,
-        limit=limit,
-        offset=offset,
-    )
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, _encrypted):
+        return vault_engine.query_structured_source(
+            inner,
+            source_id,
+            search=search,
+            column=column,
+            sort_by=sort_by,
+            descending=descending,
+            limit=limit,
+            offset=offset,
+        )
 
 
 def execute_structured_sql(
-    archive: Path, sql: str, *, limit: int = 1000
+    archive: Path,
+    sql: str,
+    *,
+    limit: int = 1000,
+    password: Optional[str] = None,
+    recovery_key: Optional[str | bytes | Path] = None,
+    allow_plaintext_temp: bool = False,
 ) -> "vault_engine.structured_data.StructuredQueryResult":
-    return vault_engine.execute_structured_sql(Path(archive), sql, limit=limit)
+    with _materialized_archive(
+        Path(archive),
+        password=password,
+        recovery_key=recovery_key,
+        allow_plaintext_temp=allow_plaintext_temp,
+    ) as (inner, _encrypted):
+        return vault_engine.execute_structured_sql(inner, sql, limit=limit)
 
 
-def export_structured_result(result, output: Path) -> None:
+def export_structured_result(
+    result,
+    output: Path,
+    *,
+    source_archive: Optional[Path] = None,
+) -> None:
+    if source_archive is not None:
+        _refuse_archive_output_alias(
+            Path(source_archive),
+            Path(output),
+            label="Structured-result output",
+        )
     vault_engine.export_structured_result(result, Path(output))
+
+
+def _prompt_password(
+    prompt: str,
+    *,
+    confirm: bool = False,
+) -> str:
+    if not sys.stdin.isatty():
+        raise secure_engine.SecureArchiveError(
+            "Password entry requires an interactive terminal with hidden "
+            "input. Use a recovery-key file for non-interactive unlocks."
+        )
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            password = getpass.getpass(prompt)
+            if confirm:
+                repeated = getpass.getpass("Confirm password: ")
+    except getpass.GetPassWarning as exc:
+        raise secure_engine.SecureArchiveError(
+            "This terminal cannot hide password input; encrypted operation "
+            "was cancelled"
+        ) from exc
+    if confirm and password != repeated:
+        raise secure_engine.SecureArchiveError("Passwords did not match")
+    return password
+
+
+def _archive_credentials(
+    args: argparse.Namespace,
+    *,
+    acknowledgement_attribute: Optional[str] = None,
+) -> Dict[str, object]:
+    archive = Path(args.archive)
+    if not secure_engine.is_encrypted_archive(archive):
+        return {}
+    if (
+        acknowledgement_attribute is not None
+        and not bool(getattr(args, acknowledgement_attribute))
+    ):
+        _require_plaintext_temp_acknowledgement(False)
+    recovery = getattr(args, "recovery_key_file", None)
+    if recovery:
+        return {"recovery_key": Path(recovery)}
+    return {"password": _prompt_password("Archive password: ")}
+
+
+def _creation_credentials(args: argparse.Namespace) -> Dict[str, object]:
+    if not getattr(args, "encrypt", False):
+        return {}
+    recovery_output = getattr(args, "recovery_key_out", None)
+    if not recovery_output:
+        raise secure_engine.SecureArchiveError(
+            "--recovery-key-out is required with --encrypt"
+        )
+    _require_plaintext_temp_acknowledgement(
+        bool(args.allow_plaintext_temp)
+    )
+    return {
+        "encryption_password": _prompt_password(
+            "New archive password: ", confirm=True
+        ),
+        "recovery_key_output": Path(recovery_output),
+        "allow_plaintext_temp": bool(args.allow_plaintext_temp),
+    }
+
+
+def _add_encrypted_access_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    plaintext_flag: str = "--allow-plaintext-temp",
+) -> None:
+    parser.add_argument(
+        "--recovery-key-file",
+        help="Unlock an encrypted archive with its .rtrk file instead of a password",
+    )
+    parser.add_argument(
+        plaintext_flag,
+        action="store_true",
+        help=(
+            "Acknowledge that this operation creates plaintext output or an "
+            "isolated plaintext temporary working copy without secure deletion"
+        ),
+    )
+
+
+def _add_encrypted_creation_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    allow_remove_encryption: bool = False,
+) -> None:
+    parser.add_argument(
+        "--encrypt",
+        action="store_true",
+        help="Wrap the completed archive with authenticated encryption",
+    )
+    parser.add_argument(
+        "--recovery-key-out",
+        help="New .rtrk recovery-key file (required with --encrypt; never overwritten)",
+    )
+    parser.add_argument(
+        "--allow-plaintext-temp",
+        action="store_true",
+        help=(
+            "Acknowledge temporary plaintext archive staging without a "
+            "secure-delete guarantee"
+        ),
+    )
+    if allow_remove_encryption:
+        parser.add_argument(
+            "--allow-remove-encryption",
+            action="store_true",
+            help=(
+                "Explicitly allow a plaintext creation command to replace an "
+                "existing encrypted archive"
+            ),
+        )
+
+
+def _add_plaintext_result_output_argument(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument(
+        "--allow-plaintext-output",
+        action="store_true",
+        help=(
+            "Acknowledge that --output publishes ordinary unencrypted "
+            "CSV, TSV, or JSON and permits the temporary plaintext working copy"
+        ),
+    )
 
 
 def _cmd_compress(args: argparse.Namespace) -> None:
@@ -849,6 +1354,7 @@ def _cmd_compress(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         compressor = "zlib"
+    encryption = _creation_credentials(args)
     meta = compress_folder(
         Path(args.folder),
         Path(args.output),
@@ -857,39 +1363,70 @@ def _cmd_compress(args: argparse.Namespace) -> None:
         zstd_level=args.zstd_level,
         checksum_algorithm=args.checksum,
         profile=None if args.no_zstd else args.profile,
+        allow_remove_encryption=bool(args.allow_remove_encryption),
+        **encryption,
     )
     print(json.dumps(meta.as_dict(), indent=2))
 
 
 def _cmd_vault_create(args: argparse.Namespace) -> None:
-    metadata = vault_engine.create_vault(
+    encryption = _creation_credentials(args)
+    metadata = compress_folder(
         Path(args.folder),
         Path(args.output),
-        level=args.zstd_level,
+        profile="vault",
+        zstd_level=args.zstd_level,
         chunk_size=args.chunk_size,
         index_limit=args.index_limit,
-        profile="vault",
+        allow_remove_encryption=bool(args.allow_remove_encryption),
+        **encryption,
     )
     print(json.dumps(metadata.as_dict(), indent=2))
 
 
 def _cmd_vault_search(args: argparse.Namespace) -> None:
+    credentials = _archive_credentials(
+        args, acknowledgement_attribute="allow_plaintext_temp"
+    )
     results = search_vault(
-        Path(args.archive), args.query, extension=args.extension, limit=args.limit
+        Path(args.archive),
+        args.query,
+        extension=args.extension,
+        limit=args.limit,
+        allow_plaintext_temp=args.allow_plaintext_temp,
+        **credentials,
     )
     print(json.dumps([dataclasses.asdict(result) for result in results], indent=2))
 
 
 def _cmd_vault_extract(args: argparse.Namespace) -> None:
+    _refuse_encrypted_extraction_alias(
+        Path(args.archive),
+        Path(args.output),
+    )
+    credentials = _archive_credentials(
+        args, acknowledgement_attribute="allow_plaintext_output"
+    )
     paths = args.paths or None
-    metadata = vault_engine.extract_vault(
-        Path(args.archive), Path(args.output), paths=paths
+    metadata = extract_vault_files(
+        Path(args.archive),
+        Path(args.output),
+        paths,
+        allow_plaintext_temp=args.allow_plaintext_output,
+        **credentials,
     )
     print(json.dumps(metadata.as_dict(), indent=2))
 
 
 def _cmd_vault_verify(args: argparse.Namespace) -> None:
-    metadata = vault_engine.verify_vault(Path(args.archive))
+    credentials = _archive_credentials(
+        args, acknowledgement_attribute="allow_plaintext_temp"
+    )
+    metadata = verify_vault(
+        Path(args.archive),
+        allow_plaintext_temp=args.allow_plaintext_temp,
+        **credentials,
+    )
     print(json.dumps(metadata.as_dict(), indent=2))
 
 
@@ -903,55 +1440,208 @@ def _structured_result_payload(result) -> Dict[str, object]:
 
 
 def _cmd_vault_tables(args: argparse.Namespace) -> None:
-    sources = list_structured_sources(Path(args.archive))
-    payload = []
-    for source in sources:
-        item = dataclasses.asdict(source)
-        item["columns"] = [
-            dataclasses.asdict(column)
-            for column in list_structured_columns(Path(args.archive), source.id)
-        ]
-        payload.append(item)
+    credentials = _archive_credentials(
+        args, acknowledgement_attribute="allow_plaintext_temp"
+    )
+    with _materialized_archive(
+        Path(args.archive),
+        allow_plaintext_temp=args.allow_plaintext_temp,
+        **credentials,
+    ) as (inner, _encrypted):
+        sources = vault_engine.list_structured_sources(inner)
+        payload = []
+        for source in sources:
+            item = dataclasses.asdict(source)
+            item["columns"] = [
+                dataclasses.asdict(column)
+                for column in vault_engine.list_structured_columns(
+                    inner, source.id
+                )
+            ]
+            payload.append(item)
     print(json.dumps(payload, indent=2))
 
 
 def _cmd_vault_query(args: argparse.Namespace) -> None:
+    archive = Path(args.archive)
+    if args.output:
+        _refuse_archive_output_alias(
+            archive,
+            Path(args.output),
+            label="Structured-result output",
+        )
+    acknowledgement = (
+        "allow_plaintext_output" if args.output else "allow_plaintext_temp"
+    )
+    credentials = _archive_credentials(
+        args, acknowledgement_attribute=acknowledgement
+    )
+    allow_plaintext = bool(getattr(args, acknowledgement))
     result = query_structured_source(
-        Path(args.archive),
+        archive,
         args.source_id,
         search=args.find,
         column=args.column,
         sort_by=args.sort,
         descending=args.descending,
         limit=args.limit,
+        allow_plaintext_temp=allow_plaintext,
+        **credentials,
     )
     if args.output:
-        export_structured_result(result, Path(args.output))
+        export_structured_result(
+            result,
+            Path(args.output),
+            source_archive=archive,
+        )
     else:
         print(json.dumps(_structured_result_payload(result), indent=2))
 
 
 def _cmd_vault_sql(args: argparse.Namespace) -> None:
-    result = execute_structured_sql(Path(args.archive), args.sql, limit=args.limit)
+    archive = Path(args.archive)
     if args.output:
-        export_structured_result(result, Path(args.output))
+        _refuse_archive_output_alias(
+            archive,
+            Path(args.output),
+            label="Structured-result output",
+        )
+    acknowledgement = (
+        "allow_plaintext_output" if args.output else "allow_plaintext_temp"
+    )
+    credentials = _archive_credentials(
+        args, acknowledgement_attribute=acknowledgement
+    )
+    allow_plaintext = bool(getattr(args, acknowledgement))
+    result = execute_structured_sql(
+        archive,
+        args.sql,
+        limit=args.limit,
+        allow_plaintext_temp=allow_plaintext,
+        **credentials,
+    )
+    if args.output:
+        export_structured_result(
+            result,
+            Path(args.output),
+            source_archive=archive,
+        )
     else:
         print(json.dumps(_structured_result_payload(result), indent=2))
 
 
 def _cmd_extract(args: argparse.Namespace) -> None:
-    meta = extract_archive(Path(args.archive), Path(args.output))
+    _refuse_encrypted_extraction_alias(
+        Path(args.archive),
+        Path(args.output),
+    )
+    credentials = _archive_credentials(
+        args, acknowledgement_attribute="allow_plaintext_output"
+    )
+    meta = extract_archive(
+        Path(args.archive),
+        Path(args.output),
+        allow_plaintext_temp=args.allow_plaintext_output,
+        **credentials,
+    )
     print(json.dumps(meta.as_dict(), indent=2))
 
 
 def _cmd_info(args: argparse.Namespace) -> None:
-    meta = read_metadata(Path(args.archive))
+    archive = Path(args.archive)
+    if (
+        secure_engine.is_encrypted_archive(archive)
+        and not args.unlock
+    ):
+        print(json.dumps(secure_engine.read_secure_info(archive).as_dict(), indent=2))
+        return
+    credentials = _archive_credentials(
+        args, acknowledgement_attribute="allow_plaintext_temp"
+    )
+    meta = read_metadata(
+        archive,
+        allow_plaintext_temp=args.allow_plaintext_temp,
+        **credentials,
+    )
     print(json.dumps(meta.as_dict(), indent=2))
 
 
 def _cmd_export_zip(args: argparse.Namespace) -> None:
-    meta = export_zip(Path(args.archive), Path(args.output_zip))
+    _refuse_archive_output_alias(
+        Path(args.archive),
+        Path(args.output_zip),
+        label="ZIP output",
+    )
+    credentials = _archive_credentials(
+        args, acknowledgement_attribute="allow_plaintext_output"
+    )
+    meta = export_zip(
+        Path(args.archive),
+        Path(args.output_zip),
+        allow_plaintext_temp=args.allow_plaintext_output,
+        **credentials,
+    )
     print(json.dumps(meta.as_dict(), indent=2))
+
+
+def _cmd_secure_info(args: argparse.Namespace) -> None:
+    info = secure_engine.read_secure_info(Path(args.archive))
+    print(json.dumps(info.as_dict(), indent=2))
+
+
+def _cmd_secure_verify(args: argparse.Namespace) -> None:
+    credentials = _archive_credentials(args)
+    info = secure_engine.verify_encrypted_file(
+        Path(args.archive), **credentials
+    )
+    print(json.dumps(info.as_dict(), indent=2))
+
+
+def _cmd_secure_encrypt(args: argparse.Namespace) -> None:
+    source = Path(args.archive)
+    _plain_read_metadata(source)
+    result = secure_engine.encrypt_file(
+        source,
+        Path(args.output),
+        password=_prompt_password("New archive password: ", confirm=True),
+        recovery_key_output=Path(args.recovery_key_out),
+    )
+    print(json.dumps(result.as_dict(), indent=2))
+
+
+def _cmd_secure_decrypt(args: argparse.Namespace) -> None:
+    if not args.allow_plaintext_output:
+        raise secure_engine.SecureArchiveError(
+            "Refusing to materialize a plaintext .gmw file without "
+            "--allow-plaintext-output"
+        )
+    credentials = _archive_credentials(args)
+    result = secure_engine.decrypt_file(
+        Path(args.archive), Path(args.output), **credentials
+    )
+    print(json.dumps(result.as_dict(), indent=2))
+
+
+def _cmd_secure_change_password(args: argparse.Namespace) -> None:
+    credentials = _archive_credentials(args)
+    info = secure_engine.change_password(
+        Path(args.archive),
+        new_password=_prompt_password("New archive password: ", confirm=True),
+        current_password=credentials.get("password"),
+        recovery_key=credentials.get("recovery_key"),
+    )
+    print(json.dumps(info.as_dict(), indent=2))
+
+
+def _cmd_secure_rotate_recovery(args: argparse.Namespace) -> None:
+    credentials = _archive_credentials(args)
+    result = secure_engine.rotate_recovery_key(
+        Path(args.archive),
+        Path(args.recovery_key_out),
+        password=credentials.get("password"),
+        current_recovery_key=credentials.get("recovery_key"),
+    )
+    print(json.dumps(result.as_dict(), indent=2))
 
 
 def _repository_json(value: object) -> object:
@@ -1106,11 +1796,13 @@ def _cmd_repo_prune(args: argparse.Namespace) -> None:
 
 
 def _cmd_repo_export(args: argparse.Namespace) -> None:
+    encryption = _creation_credentials(args)
     result = repository_engine.export_snapshot(
         Path(args.repository),
         args.snapshot_id,
         Path(args.output),
         profile=args.profile,
+        **encryption,
     )
     _print_repository_json(result)
 
@@ -1194,6 +1886,11 @@ class _ChunkServer(socketserver.TCPServer):  # pragma: no cover - networking
 
 
 def serve_archive(archive: Path, host: str, port: int) -> None:
+    if secure_engine.is_encrypted_archive(Path(archive)):
+        raise secure_engine.SecureArchiveError(
+            "HTTP chunk serving is disabled for encrypted archives because "
+            "it would require a long-lived plaintext working copy"
+        )
     if solid_engine.is_solid_archive(Path(archive)):
         raise ValueError(
             "HTTP chunk serving is available only for Deduplicate (SQLite) archives"
@@ -1238,6 +1935,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Named profile; without this option, solid Zstandard level 6 is used",
     )
     p_comp.add_argument("--checksum", choices=["sha256", "none"], default="sha256", help="Checksum algorithm")
+    _add_encrypted_creation_arguments(
+        p_comp,
+        allow_remove_encryption=True,
+    )
     p_comp.set_defaults(func=_cmd_compress)
 
     p_vault = sub.add_parser("vault-create", help="Create a searchable SQLite Vault")
@@ -1256,6 +1957,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=vault_engine.DEFAULT_INDEX_LIMIT,
         help="Maximum text-like file size indexed by FTS5 (default: 16 MiB)",
     )
+    _add_encrypted_creation_arguments(
+        p_vault,
+        allow_remove_encryption=True,
+    )
     p_vault.set_defaults(func=_cmd_vault_create)
 
     p_search = sub.add_parser("vault-search", help="Search filenames and indexed text")
@@ -1263,6 +1968,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("query", nargs="?", default="", help="Words to find")
     p_search.add_argument("--extension", default="", help="Optional extension filter")
     p_search.add_argument("--limit", type=int, default=200)
+    _add_encrypted_access_arguments(p_search)
     p_search.set_defaults(func=_cmd_vault_search)
 
     p_vault_extract = sub.add_parser(
@@ -1271,14 +1977,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_vault_extract.add_argument("archive", help="Queryable Vault .gmw file")
     p_vault_extract.add_argument("output", help="Destination directory")
     p_vault_extract.add_argument("paths", nargs="*", help="Optional stored paths")
+    _add_encrypted_access_arguments(
+        p_vault_extract, plaintext_flag="--allow-plaintext-output"
+    )
     p_vault_extract.set_defaults(func=_cmd_vault_extract)
 
     p_verify = sub.add_parser("vault-verify", help="Verify SQLite and every stored object")
     p_verify.add_argument("archive", help="Queryable Vault .gmw file")
+    _add_encrypted_access_arguments(p_verify)
     p_verify.set_defaults(func=_cmd_vault_verify)
 
     p_tables = sub.add_parser("vault-tables", help="List relational tables in a Vault")
     p_tables.add_argument("archive", help="Queryable Vault .gmw file")
+    _add_encrypted_access_arguments(p_tables)
     p_tables.set_defaults(func=_cmd_vault_tables)
 
     p_query = sub.add_parser("vault-query", help="Filter rows from one Vault data table")
@@ -1290,6 +2001,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_query.add_argument("--descending", action="store_true")
     p_query.add_argument("--limit", type=int, default=1000)
     p_query.add_argument("--output", help="Optional .csv, .tsv, or .json export")
+    _add_encrypted_access_arguments(p_query)
+    _add_plaintext_result_output_argument(p_query)
     p_query.set_defaults(func=_cmd_vault_query)
 
     p_sql = sub.add_parser("vault-sql", help="Run a read-only SELECT against a Vault")
@@ -1297,6 +2010,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_sql.add_argument("sql", help="One SELECT or WITH statement")
     p_sql.add_argument("--limit", type=int, default=1000)
     p_sql.add_argument("--output", help="Optional .csv, .tsv, or .json export")
+    _add_encrypted_access_arguments(p_sql)
+    _add_plaintext_result_output_argument(p_sql)
     p_sql.set_defaults(func=_cmd_vault_sql)
 
     p_repo_init = sub.add_parser(
@@ -1475,6 +2190,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="balanced",
         help="Portable archive compression profile (default: balanced)",
     )
+    _add_encrypted_creation_arguments(p_repo_export)
     p_repo_export.set_defaults(func=_cmd_repo_export)
 
     p_repo_pin = sub.add_parser(
@@ -1492,18 +2208,98 @@ def build_parser() -> argparse.ArgumentParser:
     p_repo_unpin.set_defaults(func=_cmd_repo_unpin)
 
     p_ext = sub.add_parser("extract", help="Extract archive contents")
-    p_ext.add_argument("archive", help="SQLite archive")
+    p_ext.add_argument("archive", help="Rat-Trap archive")
     p_ext.add_argument("output", help="Destination directory")
+    _add_encrypted_access_arguments(
+        p_ext, plaintext_flag="--allow-plaintext-output"
+    )
     p_ext.set_defaults(func=_cmd_extract)
 
     p_info = sub.add_parser("info", help="Show archive metadata")
-    p_info.add_argument("archive", help="SQLite archive")
+    p_info.add_argument("archive", help="Rat-Trap archive")
+    p_info.add_argument(
+        "--unlock",
+        action="store_true",
+        help="Unlock an encrypted archive and show its protected inner metadata",
+    )
+    _add_encrypted_access_arguments(p_info)
     p_info.set_defaults(func=_cmd_info)
 
     p_zip = sub.add_parser("export-zip", help="Export a .gmw archive to a standard .zip file")
-    p_zip.add_argument("archive", help="SQLite archive")
+    p_zip.add_argument("archive", help="Rat-Trap archive")
     p_zip.add_argument("output_zip", help="Destination .zip file")
+    _add_encrypted_access_arguments(
+        p_zip, plaintext_flag="--allow-plaintext-output"
+    )
     p_zip.set_defaults(func=_cmd_export_zip)
+
+    p_secure_info = sub.add_parser(
+        "secure-info",
+        help="Show the public outer metadata of an encrypted archive",
+    )
+    p_secure_info.add_argument("archive", help="Encrypted Rat-Trap archive")
+    p_secure_info.set_defaults(func=_cmd_secure_info)
+
+    p_secure_verify = sub.add_parser(
+        "secure-verify",
+        help="Authenticate and verify every encrypted archive chunk",
+    )
+    p_secure_verify.add_argument("archive", help="Encrypted Rat-Trap archive")
+    p_secure_verify.add_argument(
+        "--recovery-key-file",
+        help="Unlock with a .rtrk file instead of a password",
+    )
+    p_secure_verify.set_defaults(func=_cmd_secure_verify)
+
+    p_secure_encrypt = sub.add_parser(
+        "secure-encrypt",
+        help="Encrypt an existing supported .gmw archive",
+    )
+    p_secure_encrypt.add_argument("archive", help="Existing plaintext .gmw archive")
+    p_secure_encrypt.add_argument("output", help="New encrypted .gmw archive")
+    p_secure_encrypt.add_argument(
+        "--recovery-key-out",
+        required=True,
+        help="New .rtrk recovery-key file (never overwritten)",
+    )
+    p_secure_encrypt.set_defaults(func=_cmd_secure_encrypt)
+
+    p_secure_decrypt = sub.add_parser(
+        "secure-decrypt",
+        help="Restore the inner plaintext .gmw archive",
+    )
+    p_secure_decrypt.add_argument("archive", help="Encrypted Rat-Trap archive")
+    p_secure_decrypt.add_argument("output", help="New plaintext .gmw archive")
+    _add_encrypted_access_arguments(
+        p_secure_decrypt, plaintext_flag="--allow-plaintext-output"
+    )
+    p_secure_decrypt.set_defaults(func=_cmd_secure_decrypt)
+
+    p_secure_password = sub.add_parser(
+        "secure-change-password",
+        help="Atomically replace an encrypted archive password",
+    )
+    p_secure_password.add_argument("archive", help="Encrypted Rat-Trap archive")
+    p_secure_password.add_argument(
+        "--recovery-key-file",
+        help="Authorize the change with a .rtrk file instead of the old password",
+    )
+    p_secure_password.set_defaults(func=_cmd_secure_change_password)
+
+    p_secure_recovery = sub.add_parser(
+        "secure-rotate-recovery",
+        help="Create and verify a replacement recovery key, then revoke the old one",
+    )
+    p_secure_recovery.add_argument("archive", help="Encrypted Rat-Trap archive")
+    p_secure_recovery.add_argument(
+        "recovery_key_out",
+        help="New .rtrk recovery-key file (never overwritten)",
+    )
+    p_secure_recovery.add_argument(
+        "--recovery-key-file",
+        help="Authorize with the current .rtrk file instead of a password",
+    )
+    p_secure_recovery.set_defaults(func=_cmd_secure_rotate_recovery)
 
     p_srv = sub.add_parser("serve", help="Expose archive over HTTP for remote streaming")
     p_srv.add_argument("archive", help="SQLite archive")
@@ -1519,6 +2315,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     args = parser.parse_args(argv)
     try:
         args.func(args)
+    except secure_engine.SecureArchiveError as exc:
+        parser.exit(2, f"Rat-Trap security error: {exc}\n")
     except repository_engine.RepositoryError as exc:
         parser.exit(2, f"Rat-Trap repository error: {exc}\n")
     except OSError as exc:

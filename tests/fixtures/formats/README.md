@@ -1,9 +1,9 @@
 # GMW compatibility fixtures
 
-These five small archives turn Rat-Trap's reader-compatibility policy into an
-executable test. Every test run checks the committed archive byte size and
-SHA-256, inspects its format metadata, restores it, and compares every output
-file with the canonical source-tree manifest.
+Five small inner archives and one encrypted schema-1 envelope turn Rat-Trap's
+reader-compatibility policy into an executable test. Every test run checks
+the committed byte size and SHA-256, inspects the format, restores it, and
+compares its output with the expected inner archive or canonical source tree.
 
 ## Provenance classification
 
@@ -19,10 +19,18 @@ supported release:
 - 4.4: `GMW-SOLID-2` with exact whole-file deduplication;
 - 5.0: the unchanged base Vault schema without schema-2 structured tables;
 - 5.1: the current Vault schema 2 with a typed CSV table.
+- 5.3: a deterministic `RAT-TRAP-ENCRYPTED-1` schema-1 envelope over the
+  committed 4.3 solid fixture.
 
-The generator ran twice with identical bytes and hashes. Its Python, SQLite,
-Zstandard, fixed timestamp, archive hashes, source bytes, and original-writer
-executable references are recorded in `manifest.json`.
+The generators ran twice with identical bytes and hashes. Their Python,
+SQLite, Zstandard, fixed timestamps, archive hashes, source bytes, and
+original-writer executable references are recorded in `manifest.json`.
+
+The encrypted fixture deliberately has public test credentials. Its `.rtrk`
+and JSON interoperability vector publish every key, salt, nonce, identifier,
+canonical JSON value, derived key, AAD value, ciphertext, and output hash
+needed for an independent implementation check. Never use those credentials
+for private data.
 
 The workspace also retains authentic large schema-1 and schema-2 beta Vaults.
 Their hashes are recorded in the manifest as external empirical evidence, but
@@ -34,6 +42,7 @@ Normal tests never regenerate fixtures. To reconstruct them deliberately:
 
 ```powershell
 python tests\fixtures\formats\generate_fixtures.py --replace
+python tests\fixtures\formats\generate_fixtures.py --secure-only --replace
 ```
 
 `--replace` is mandatory when golden files already exist. A regenerated

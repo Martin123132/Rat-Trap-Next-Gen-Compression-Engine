@@ -9,7 +9,7 @@ import zlib
 from contextlib import closing
 from pathlib import Path
 
-from rat_trap import gmw_tool, solid_engine, vault_engine
+from rat_trap import gmw_tool, secure_engine, solid_engine, vault_engine
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "formats"
@@ -133,6 +133,113 @@ class FormatCompatibilityTests(unittest.TestCase):
         self.assertEqual([(item.path, item.row_count) for item in sources], [("people.csv", 2)])
         result = vault_engine.query_structured_source(schema_2, sources[0].id)
         self.assertEqual(result.rows, ((1, "Alice", 31, 1), (2, "Bob", 27, 0)))
+
+    def test_secure_golden_fixture_and_interoperability_vector(self) -> None:
+        fixture = MANIFEST["secure_fixtures"][0]
+        archive = FIXTURE_ROOT / fixture["name"]
+        recovery = FIXTURE_ROOT / fixture["recovery_file"]["name"]
+        vector_path = (
+            FIXTURE_ROOT
+            / fixture["interoperability_vector"]["name"]
+        )
+        inner = FIXTURE_ROOT / fixture["inner_fixture"]["name"]
+        for path, expected in (
+            (archive, fixture),
+            (recovery, fixture["recovery_file"]),
+            (vector_path, fixture["interoperability_vector"]),
+            (inner, fixture["inner_fixture"]),
+        ):
+            with self.subTest(path=path.name):
+                self.assertEqual(path.stat().st_size, expected["bytes"])
+                self.assertEqual(
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                    expected["sha256"],
+                )
+
+        vector = json.loads(vector_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            vector["outputs"]["archive"]["sha256"],
+            fixture["sha256"],
+        )
+        self.assertEqual(
+            vector["outputs"]["recovery_file"]["sha256"],
+            fixture["recovery_file"]["sha256"],
+        )
+        info = secure_engine.read_secure_info(archive)
+        self.assertEqual(info.format, fixture["family"])
+        self.assertEqual(info.schema_version, fixture["schema_version"])
+        for key, value in fixture["expected"].items():
+            self.assertEqual(getattr(info, key), value)
+
+        password = fixture["test_password_nfc"]
+        self.assertTrue(
+            secure_engine.verify_encrypted_file(
+                archive,
+                password=password,
+            ).verified
+        )
+        self.assertTrue(
+            secure_engine.verify_encrypted_file(
+                archive,
+                recovery_key=recovery,
+            ).verified
+        )
+        with self.assertRaises(secure_engine.UnlockError):
+            secure_engine.verify_encrypted_file(
+                archive,
+                password="wrong public fixture password",
+            )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            password_output = root / "password-inner.gmw"
+            recovery_output = root / "recovery-inner.gmw"
+            secure_engine.decrypt_file(
+                archive,
+                password_output,
+                password=password,
+            )
+            secure_engine.decrypt_file(
+                archive,
+                recovery_output,
+                recovery_key=recovery,
+            )
+            self.assertEqual(password_output.read_bytes(), inner.read_bytes())
+            self.assertEqual(recovery_output.read_bytes(), inner.read_bytes())
+
+            restored = root / "restored"
+            metadata = gmw_tool.extract_archive(
+                archive,
+                restored,
+                recovery_key=recovery,
+                allow_plaintext_temp=True,
+            )
+            self.assertTrue(metadata.encrypted)
+            self.assertEqual(file_manifest(restored), self.expected_files)
+
+            exported = root / "export.zip"
+            gmw_tool.export_zip(
+                archive,
+                exported,
+                password=password,
+                allow_plaintext_temp=True,
+            )
+            with zipfile.ZipFile(exported) as output:
+                self.assertIsNone(output.testzip())
+                self.assertEqual(
+                    sorted(output.namelist()),
+                    sorted(self.expected_files),
+                )
+
+            corrupt = root / "corrupt-secure.gmw"
+            damaged = bytearray(archive.read_bytes())
+            damaged[-1] ^= 0x01
+            corrupt.write_bytes(damaged)
+            with self.assertRaises(secure_engine.SecureArchiveError):
+                secure_engine.verify_encrypted_file(
+                    corrupt,
+                    recovery_key=recovery,
+                )
 
     def test_future_vault_schema_fails_closed_without_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

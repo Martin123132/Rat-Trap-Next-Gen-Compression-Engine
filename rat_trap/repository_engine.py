@@ -37,7 +37,7 @@ SNAPSHOT_FORMAT = "RAT-TRAP-SNAPSHOT-1"
 SNAPSHOT_SCHEMA_VERSION = 1
 CATALOG_FORMAT = "RAT-TRAP-CATALOG-1"
 CATALOG_SCHEMA_VERSION = 2
-WRITER_VERSION = "5.2.0"
+WRITER_VERSION = "5.3.0"
 
 DEFAULT_CHUNK_MIN = 256 * 1024
 DEFAULT_CHUNK_AVG = 1024 * 1024
@@ -232,6 +232,9 @@ class ExportResult(_JsonDataclass):
     profile: str
     archive_bytes: int
     archive_sha256: str
+    encrypted: bool = False
+    encryption_format: str = ""
+    recovery_key_path: Optional[str] = None
 
 
 def _canonical_json(value: object) -> bytes:
@@ -2548,7 +2551,11 @@ def _repository_info_locked(
     )
 
 
-def _is_partial_repository_skeleton(root: Path) -> bool:
+def _is_partial_repository_skeleton(
+    root: Path,
+    *,
+    allow_config_write_staging: bool = False,
+) -> bool:
     allowed_directories = {
         "manifests",
         "packs",
@@ -2561,6 +2568,25 @@ def _is_partial_repository_skeleton(root: Path) -> bool:
     }
     for path in root.rglob("*"):
         relative = path.relative_to(root).as_posix()
+        if allow_config_write_staging and relative == _CONFIG_NAME:
+            if _is_link_or_junction(path):
+                return False
+            if not path.exists() or path.is_file():
+                continue
+            return False
+        if (
+            allow_config_write_staging
+            and path.parent == root
+            and path.name.startswith(f".{_CONFIG_NAME}.")
+            and path.name.endswith(".rat-trap-write")
+        ):
+            if _is_link_or_junction(path):
+                return False
+            # os.replace() can publish the configuration between rglob()
+            # yielding the staging name and this classification.
+            if not path.exists() or path.is_file():
+                continue
+            return False
         if relative == "locks/repository.lock":
             if path.is_file() and not _is_link_or_junction(path):
                 continue
@@ -2628,7 +2654,13 @@ def init_repository(
     if (
         root.exists()
         and any(root.iterdir())
-        and not _is_partial_repository_skeleton(root)
+        and not _is_partial_repository_skeleton(
+            root,
+            allow_config_write_staging=True,
+        )
+        # A competing initializer can publish repository.json after the
+        # first existence check but while the skeleton is being inspected.
+        and not (root / _CONFIG_NAME).exists()
     ):
         raise RepositoryError(
             "Repository initialization requires a new or empty folder"
@@ -3682,6 +3714,9 @@ def export_snapshot(
     output: Path,
     *,
     profile: str = "balanced",
+    encryption_password: Optional[str] = None,
+    recovery_key_output: Optional[Path] = None,
+    allow_plaintext_temp: bool = False,
 ) -> ExportResult:
     root = Path(repository).resolve()
     output = Path(output).resolve()
@@ -3690,36 +3725,97 @@ def export_snapshot(
         raise RepositoryError(f"Export destination already exists: {output}")
     if _path_is_within(output, root):
         raise RepositoryError("Portable archives cannot be exported inside a repository")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    from . import gmw_tool
+    if (encryption_password is None) != (recovery_key_output is None):
+        raise RepositoryError(
+            "Encrypted portable export requires both a password and a new "
+            "recovery-key output path"
+        )
+    recovery_output = (
+        Path(recovery_key_output).resolve()
+        if recovery_key_output is not None
+        else None
+    )
+    if recovery_output is not None:
+        if recovery_output in {output, root} or _path_is_within(
+            recovery_output, root
+        ):
+            raise RepositoryError(
+                "The recovery key must be outside the repository and archive"
+            )
+        if recovery_output.exists():
+            raise RepositoryError(
+                f"Recovery key destination already exists: {recovery_output}"
+            )
+    from . import gmw_tool, secure_engine
 
+    if encryption_password is not None and not allow_plaintext_temp:
+        raise RepositoryError(
+            f"{gmw_tool.PLAINTEXT_TEMP_WARNING} "
+            "Re-run with explicit acknowledgement."
+        )
     if profile not in gmw_tool.COMPRESSION_PROFILES:
         raise RepositoryError(f"Unknown portable archive profile: {profile}")
-    with tempfile.TemporaryDirectory(
-        prefix=".rat-trap-export-", dir=output.parent
-    ) as temporary_name:
-        temporary = Path(temporary_name)
-        restored = temporary / "snapshot"
-        restore_snapshot(root, snapshot_id, restored)
-        staged_output = temporary / output.name
+    output.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, staged_name = tempfile.mkstemp(
+        prefix=f".{output.name}.",
+        suffix=".rat-trap-export",
+        dir=output.parent,
+    )
+    os.close(descriptor)
+    staged_output = Path(staged_name)
+    staged_output.unlink()
+    try:
+        # Restored source material stays in the operating-system temporary
+        # directory. Only the portable archive staging file is adjacent to the
+        # destination, which keeps final publication on one filesystem.
+        with tempfile.TemporaryDirectory(
+            prefix="rat-trap-export-"
+        ) as temporary_name:
+            temporary = Path(temporary_name)
+            restored = temporary / "snapshot"
+            restore_snapshot(root, snapshot_id, restored)
+            try:
+                gmw_tool.compress_folder(
+                    restored,
+                    staged_output,
+                    profile=profile,
+                    encryption_password=encryption_password,
+                    recovery_key_output=recovery_output,
+                    allow_plaintext_temp=allow_plaintext_temp,
+                )
+                if encryption_password is None:
+                    gmw_tool.read_metadata(staged_output)
+                else:
+                    secure_engine.verify_encrypted_file(
+                        staged_output, password=encryption_password
+                    )
+            except (OSError, ValueError, sqlite3.DatabaseError, zstd.ZstdError) as exc:
+                raise RepositoryError(
+                    f"Could not create portable archive: {exc}"
+                ) from exc
+            archive_bytes = staged_output.stat().st_size
+            archive_sha256 = _sha256_file(staged_output)
+            _move_new(staged_output, output)
+    finally:
         try:
-            gmw_tool.compress_folder(
-                restored, staged_output, profile=profile
-            )
-            gmw_tool.read_metadata(staged_output)
-        except (OSError, ValueError, sqlite3.DatabaseError, zstd.ZstdError) as exc:
-            raise RepositoryError(
-                f"Could not create portable archive: {exc}"
-            ) from exc
-        archive_bytes = staged_output.stat().st_size
-        archive_sha256 = _sha256_file(staged_output)
-        _move_new(staged_output, output)
+            staged_output.unlink()
+        except FileNotFoundError:
+            pass
     return ExportResult(
         snapshot_id=snapshot_id,
         output=str(output),
         profile=profile,
         archive_bytes=archive_bytes,
         archive_sha256=archive_sha256,
+        encrypted=encryption_password is not None,
+        encryption_format=(
+            secure_engine.SECURE_FORMAT
+            if encryption_password is not None
+            else ""
+        ),
+        recovery_key_path=(
+            str(recovery_output) if recovery_output is not None else None
+        ),
     )
 
 

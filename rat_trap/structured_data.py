@@ -10,8 +10,10 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import re
 import sqlite3
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
@@ -608,14 +610,41 @@ def export_result(result: StructuredQueryResult, output: Path) -> None:
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     suffix = output.suffix.lower()
-    if suffix == ".json":
-        records = [dict(zip(result.columns, row)) for row in result.rows]
-        output.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
-        return
-    if suffix not in {".csv", ".tsv"}:
+    if suffix not in {".csv", ".tsv", ".json"}:
         raise ValueError("Structured results must be exported as .csv, .tsv, or .json")
-    delimiter = "\t" if suffix == ".tsv" else ","
-    with open(output, "w", encoding="utf-8-sig", newline="") as destination:
-        writer = csv.writer(destination, delimiter=delimiter)
-        writer.writerow(result.columns)
-        writer.writerows(result.rows)
+    staging_name: Optional[str] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            prefix=f".{output.name}.",
+            suffix=".rat-trap-result",
+            dir=output.parent,
+            delete=False,
+            encoding="utf-8" if suffix == ".json" else "utf-8-sig",
+            newline="",
+        ) as destination:
+            staging_name = destination.name
+            if suffix == ".json":
+                records = [
+                    dict(zip(result.columns, row))
+                    for row in result.rows
+                ]
+                json.dump(
+                    records,
+                    destination,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            else:
+                delimiter = "\t" if suffix == ".tsv" else ","
+                writer = csv.writer(destination, delimiter=delimiter)
+                writer.writerow(result.columns)
+                writer.writerows(result.rows)
+        os.replace(staging_name, output)
+        staging_name = None
+    finally:
+        if staging_name:
+            try:
+                os.unlink(staging_name)
+            except FileNotFoundError:
+                pass

@@ -1,4 +1,4 @@
-# Rat-Trap 5.2 — compressed backups, portable archives and queryable vaults
+# Rat-Trap 5.3 — compressed backups, encrypted archives and queryable vaults
 
 Rat-Trap gives Windows users one place to back up changing folders, recover an
 older version, create a compact file for sharing, or turn stored data into a
@@ -17,13 +17,16 @@ searchable local vault.
   labels, then jump to the matching generation.
 - **Portable `.gmw` archives.** Export any verified snapshot, or create a Fast,
   Balanced or Smallest archive directly.
+- **Authenticated encrypted archives.** Protect a portable archive or Vault
+  with AES-256-GCM-SIV, a memory-hard Argon2id password and an independently
+  generated recovery key. Tampering and truncation fail closed.
 - **Queryable Vaults.** Search filenames and supported text without unpacking;
   import CSV, TSV, JSON, JSONL, NDJSON and UCI data into local relational
   tables with point-and-click filters, read-only SQL and result export.
 - **Visible integrity controls.** Quick checks validate structure and
   references. Full checks read every object and reconstruct every file hash.
 - **Deliberate cleanup.** Preview retention first, protect important snapshots
-  with pins, and apply only the exact reviewed plan. Version 5.2 moves removed
+  with pins, and apply only the exact reviewed plan. Version 5.3 moves removed
   data to recoverable trash rather than claiming it has already freed disk
   space.
 
@@ -50,8 +53,9 @@ the exact pending job and `repo-abandon-job` can move only that confirmed job
 to recoverable trash; the Windows app provides the same **Interrupted jobs**
 action.
 
-Rat-Trap 5.2 keeps the supported 4.2–5.1 `.gmw` families readable and does not
-change their formats.
+Rat-Trap 5.3 keeps the supported 4.2–5.2 `.gmw` families readable and does not
+change their formats. Encryption is a strict outer envelope, so existing inner
+families do not become ambiguous or silently incompatible.
 
 ## Technical evidence and buyer diligence
 
@@ -59,7 +63,9 @@ The public product summary above describes Rat-Trap’s own capabilities. The
 technical lane keeps the detailed evidence, formats, test boundaries and
 limitations available for engineering review:
 
-- [5.2 repository format and safety model](docs/REPOSITORY-FORMAT.md)
+- [5.3 secure portable archive format](docs/SECURE-ARCHIVE-FORMAT.md)
+- [5.3 secure archive release gate](docs/SECURE-ARCHIVE-GATE-5.3.0.md)
+- [Repository format and safety model](docs/REPOSITORY-FORMAT.md)
 - [5.2 repository release gate](docs/REPOSITORY-GATE-5.2.0.md)
 - [Benchmark audit](BENCHMARK-AUDIT.md)
 - [Queryable Vault format and workflow](VAULT-README.md)
@@ -70,9 +76,10 @@ limitations available for engineering review:
 - [Product and evidence lanes](docs/PRODUCT-EVIDENCE-LANES.md)
 
 Current repository snapshots are local and checksum-verified, not encrypted.
-Authenticated encryption, recovery keys, VSS handling for open files,
-scheduling, off-site storage and permanent trash expiry are later stages, not
-hidden 5.2 claims. Version 5.2 reads a live folder file by file and atomically
+Portable archives and Vaults can be encrypted, but VSS handling for open
+files, scheduling, off-site storage, encrypted repository schema 2 and
+permanent trash expiry are later stages, not hidden 5.3 claims. Version 5.3
+reads a live folder file by file and atomically
 publishes the completed capture; without VSS it does not claim a filesystem-wide
 point-in-time view while applications are actively changing multiple files.
 It refuses EFS-encrypted, NTFS-compressed, sparse, hard-linked, reparse-point
@@ -133,26 +140,28 @@ Key Innovations:
   * **Parallelized Bucket Packing** – Optimized thread-based bucket construction for multi-core compression, which is the source of its massive speed advantage over single-stream `tar` pipes.
   * **Z-Order Encoding** – Efficient voxel key mapping using Morton encoding for enhanced spatial data compaction.
   * **Adaptive ZSTD Layers** – Configurable trade-offs between speed and compression depth (levels 1–9) to match specific latency requirements.
-  * **Planned Authenticated Encryption** – Not included in Rat-Trap 5.2; the current `.gmw` and repository formats are not encrypted.
+  * **Authenticated Portable Encryption** – Rat-Trap 5.3 can wrap a `.gmw`
+    with AES-256-GCM-SIV, Argon2id password protection and an independent
+    recovery key. The live repository remains unencrypted.
 
 -----
 
 ## 🛠 Installation
 
-Rat-Trap is now published as a standard Python package. Install it into your
-environment (and pull in the optional extras if you want the original
-cryptography/xxhash helpers):
+Rat-Trap is published as a standard Python package. Cryptography is a required
+runtime dependency because the application always recognizes and safely
+rejects or unlocks encrypted archives:
 
 ```bash
 pip install .
 # or build a wheel: python -m build
 
-# optional extras
-pip install .[crypto]
+# optional historical xxhash helper
+pip install .[legacy]
 ```
 
-The `crypto` extra retains dependencies used by historical helper code. It
-does not encrypt Rat-Trap 5.2 archives or repositories.
+The Windows release pins and bundles the exact tested cryptography runtime.
+There is no silent plaintext fallback if that runtime is missing.
 
 > **Note:** The default compression engine uses [Zstandard]. The package declares
 > it as a dependency, but if you install manually without dependencies the CLI
@@ -175,6 +184,35 @@ rat-trap --help
 3.  `rat-trap info <archive>` – show stored metadata without extracting.
 4.  `rat-trap export-zip <archive.gmw> <output.zip>` – export a `.gmw` archive to a standard ZIP for Windows/WinZip compatibility.
 5.  `rat-trap serve <archive>` – expose the archive via HTTP chunk streaming.
+
+Create an encrypted archive with hidden password entry and a new recovery
+file:
+
+```powershell
+rat-trap compress C:\Data C:\Archives\Data.gmw `
+  --profile balanced --encrypt `
+  --recovery-key-out E:\Recovery\Data.rtrk `
+  --allow-plaintext-temp
+
+rat-trap secure-verify C:\Archives\Data.gmw
+rat-trap extract C:\Archives\Data.gmw C:\Restored `
+  --allow-plaintext-output
+```
+
+Passwords are never accepted as raw command-line values or environment
+defaults. Use the interactive masked prompt or `--recovery-key-file`. Keep the
+`.rtrk` file somewhere separate: losing both password and recovery key makes
+the archive unrecoverable.
+
+Rat-Trap 5.3 builds and opens encrypted portable files through a temporary
+plaintext inner archive. Cleanup is best-effort; Windows and SSD storage may
+retain traces, so this release does not claim secure deletion. The explicit
+acknowledgement flags keep that technical boundary visible in automation.
+
+Replacing an encrypted output with a plaintext archive is refused unless the
+user confirms it in the Windows app or deliberately passes
+`--allow-remove-encryption` on `compress` / `vault-create`. This flag removes
+at-rest protection; it is not needed for normal plaintext output paths.
 
 [Zstandard]: https://facebook.github.io/zstd/
 

@@ -1,11 +1,12 @@
 # GMW format registry and compatibility policy
 
-Status: normative for Rat-Trap 5.2.0 and later readers
+Status: normative for Rat-Trap 5.3.0 and later readers
 
 ## Registry
 
-| Family | Identification | First supported | Current writer | 5.2 reader | Status |
+| Family | Identification | First supported | Current writer | 5.3 reader | Status |
 |---|---|---:|---:|---:|---|
+| `RAT-TRAP-ENCRYPTED-1`, schema 1 | `RAT-TRAP-SECURE-1\0` file magic | 5.3 | Yes | Yes | Authenticated outer envelope |
 | `GMW-SQLITE-1` | SQLite plus `metadata.format` | 4.2 | Optional legacy profile | Yes | Legacy read/export |
 | `GMW-SOLID-2` | `RATGMW2\n` file magic | 4.3 | Yes | Yes | Current portable archive |
 | `GMW-VAULT-1`, schema 1 | SQLite plus Vault metadata | 5.0 | No | Yes | Supported legacy Vault |
@@ -14,6 +15,17 @@ Status: normative for Rat-Trap 5.2.0 and later readers
 Earlier raw compressed-tar experiments, JSON-footer tar drafts, and
 `GMW-DEDUP-1` are historical prototypes, not supported release formats.
 `MBT2` is a separate spatial-record format and is not a folder archive.
+
+## `RAT-TRAP-ENCRYPTED-1`
+
+The secure family wraps one complete supported inner `.gmw` and therefore
+does not modify any existing inner family. Its AES-256-GCM-SIV envelope,
+Argon2id password slot, independent HKDF-SHA256 recovery slot, strict parser,
+metadata leakage, and plaintext-working-copy limit are normative in
+[`SECURE-ARCHIVE-FORMAT.md`](SECURE-ARCHIVE-FORMAT.md).
+
+The live schema-1 backup repository is not this family and remains
+unencrypted.
 
 ## `GMW-SOLID-2`
 
@@ -93,19 +105,24 @@ are not stranded. New general-purpose archives should use a current profile.
 
 Readers identify formats in this order:
 
-1. `RATGMW2\n` means `GMW-SOLID-2`.
-2. A SQLite header is opened read-only and its format metadata is validated.
-3. A recognized `GMW-VAULT-1` schema is handled by the Vault reader.
-4. A recognized `GMW-SQLITE-1` database is handled by the legacy reader.
-5. Anything else fails as unsupported.
+1. `RAT-TRAP-SECURE-1\0` means the strict authenticated outer envelope. It
+   must be unlocked and completely authenticated before inner dispatch.
+2. `RATGMW2\n` means `GMW-SOLID-2`.
+3. A SQLite header is opened read-only and its format metadata is validated.
+4. A recognized `GMW-VAULT-1` schema is handled by the Vault reader.
+5. A recognized `GMW-SQLITE-1` database is handled by the legacy reader.
+6. Anything else fails as unsupported.
 
-Rat-Trap 5.2.0 enforces this policy before inspect, extraction, ZIP export, or
+Rat-Trap 5.3.0 enforces this policy before inspect, extraction, ZIP export, or
 legacy HTTP serving. The legacy detector requires SQLite magic, the exact
 `GMW-SQLITE-1` marker, and the required metadata/chunk/file columns. The Vault
 detector requires the exact family and supported schema version, typed
 metadata, all required tables/columns, and an FTS5 search table. A database
 that presents both legacy and Vault family structures is rejected as
 ambiguous.
+
+Encrypted HTTP serving is refused because it would require a long-lived
+plaintext working copy.
 
 The preserved 5.1.0 reader did not fully meet steps 4 and 5: after solid and
 Vault detection it unconditionally tried the legacy reader. That historical
@@ -151,11 +168,16 @@ tests/fixtures/formats/
   gmw-solid-2-4.4-dedup.gmw
   gmw-vault-1-schema-1.gmw
   gmw-vault-1-schema-2.gmw
+  rat-trap-encrypted-1-5.3.gmw
+  rat-trap-encrypted-1-5.3.rtrk
+  rat-trap-encrypted-1-5.3-vector.json
 ```
 
 Every test run checks each fixture's byte size and SHA-256, metadata, family
 detection, exact extracted tree, and ZIP export. Vault fixtures also pass the
-Vault verifier.
+Vault verifier. The secure fixture unlocks independently with its public test
+password and recovery file, verifies its exact inner bytes, rejects wrong
+credentials and corruption, and is regenerated twice byte-for-byte.
 
 These small files are deterministic compatibility reconstructions made from
 the maintained implementations with old metadata/schema shapes. They are not
@@ -164,3 +186,8 @@ so explicitly and records the hashes of the preserved original executables
 for provenance. The workspace's authentic 16–22 MB schema-1 and schema-2 beta
 Vaults remain separate empirical evidence and are referenced by hash rather
 than duplicated in Git.
+
+The schema-1 secure vector is different: it is a deterministic 5.3 writer
+output intended for interoperability, not historical provenance or benchmark
+evidence. It publishes test-only keys and credentials by design. Never use
+them for private archives.

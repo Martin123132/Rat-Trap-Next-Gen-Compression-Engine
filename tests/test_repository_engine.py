@@ -62,6 +62,37 @@ class RepositoryEngineTests(unittest.TestCase):
     def test_concurrent_initializers_never_replace_the_winning_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            transient_repository = root / "transient-repository"
+            transient_repository.mkdir()
+            transient_config = (
+                transient_repository
+                / ".repository.json.deterministic-race.rat-trap-write"
+            )
+            transient_config.write_bytes(b"staged")
+            with mock.patch.object(
+                repository_engine,
+                "_repository_lock",
+                side_effect=repository_engine.RepositoryLockedError(
+                    "initializer still owns the lifecycle lock"
+                ),
+            ):
+                with self.assertRaises(
+                    repository_engine.RepositoryLockedError
+                ):
+                    repository_engine.init_repository(transient_repository)
+
+            # A lookalike staging file is tolerated only long enough to reach
+            # the lifecycle lock. Without a winning initializer, it must not
+            # be adopted as part of a new repository.
+            with self.assertRaisesRegex(
+                repository_engine.RepositoryError,
+                "new or empty folder",
+            ):
+                repository_engine.init_repository(transient_repository)
+            self.assertFalse(
+                (transient_repository / "repository.json").exists()
+            )
+
             repository = root / "repository"
             gate = root / "go"
             child = (
@@ -1261,6 +1292,93 @@ class RepositoryEngineTests(unittest.TestCase):
             restored = root / "portable-restored"
             gmw_tool.extract_archive(archive, restored)
             self.assertEqual(tree_contents(restored), tree_contents(source))
+
+    def test_encrypted_portable_export_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "notes.txt").write_text(
+                "encrypted portable snapshot\n" * 100,
+                encoding="utf-8",
+            )
+            repository = root / "repository"
+            repository_engine.init_repository(repository)
+            snapshot = repository_engine.create_snapshot(repository, source)
+            archive = root / "snapshot-secure.gmw"
+            recovery = root / "snapshot-secure.rtrk"
+            password = "repository export password 2026!"
+
+            with mock.patch.object(
+                repository_engine,
+                "restore_snapshot",
+                wraps=repository_engine.restore_snapshot,
+            ) as restore:
+                exported = repository_engine.export_snapshot(
+                    repository,
+                    snapshot.snapshot_id,
+                    archive,
+                    encryption_password=password,
+                    recovery_key_output=recovery,
+                    allow_plaintext_temp=True,
+                )
+            restored_staging = Path(restore.call_args.args[2]).resolve()
+            self.assertFalse(restored_staging.is_relative_to(archive.parent.resolve()))
+            self.assertTrue(exported.encrypted)
+            self.assertEqual(
+                exported.encryption_format,
+                gmw_tool.secure_engine.SECURE_FORMAT,
+            )
+            self.assertEqual(exported.recovery_key_path, str(recovery))
+            self.assertEqual(exported.archive_bytes, archive.stat().st_size)
+            gmw_tool.secure_engine.verify_encrypted_file(
+                archive, recovery_key=recovery
+            )
+
+            restored = root / "secure-portable-restored"
+            gmw_tool.extract_archive(
+                archive,
+                restored,
+                password=password,
+                allow_plaintext_temp=True,
+            )
+            self.assertEqual(tree_contents(restored), tree_contents(source))
+            self.assertEqual(
+                repository_engine.repository_info(repository).snapshot_count,
+                1,
+            )
+
+    def test_encrypted_portable_export_requires_consent_before_restore(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "notes.txt").write_text("private", encoding="utf-8")
+            repository = root / "repository"
+            repository_engine.init_repository(repository)
+            snapshot = repository_engine.create_snapshot(repository, source)
+            archive = root / "exports" / "snapshot-secure.gmw"
+            recovery = root / "snapshot-secure.rtrk"
+
+            with mock.patch.object(
+                repository_engine, "restore_snapshot"
+            ) as restore:
+                with self.assertRaisesRegex(
+                    repository_engine.RepositoryError,
+                    "explicit acknowledgement",
+                ):
+                    repository_engine.export_snapshot(
+                        repository,
+                        snapshot.snapshot_id,
+                        archive,
+                        encryption_password="repository export password 2026!",
+                        recovery_key_output=recovery,
+                    )
+
+            restore.assert_not_called()
+            self.assertFalse(archive.parent.exists())
+            self.assertFalse(archive.exists())
+            self.assertFalse(recovery.exists())
 
     def test_repository_cli_json_and_prune_is_dry_run_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
