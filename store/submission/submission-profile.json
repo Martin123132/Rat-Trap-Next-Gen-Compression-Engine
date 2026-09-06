@@ -1,0 +1,68 @@
+{
+  "schema": "rat-trap-store-submission/v1",
+  "product": "Rat-Trap",
+  "version": "5.7.0",
+  "owner": "TWO HANDS NETWORK LTD",
+  "status": "draft_pending_partner_center_verification",
+  "channel": "Microsoft Store MSIX",
+  "audience": {
+    "initial_visibility": "private_beta_recommended",
+    "public_release_decision": "pending",
+    "note": "Choose private audience for the controlled beta before the first submission. Confirm the Partner Center visibility choice before saving it."
+  },
+  "commercial": {
+    "base_price": "Free",
+    "in_app_purchases": false,
+    "third_party_payments": false,
+    "advertising": false,
+    "public_licence": "PolyForm Noncommercial 1.0.0",
+    "commercial_use": "Requires a separate written licence from TWO HANDS NETWORK LTD"
+  },
+  "classification": {
+    "product_type": "non-game MSIX app",
+    "category": "Utilities + tools",
+    "subcategory": "Backup + manage",
+    "language": "English (United Kingdom)",
+    "architecture": "x64",
+    "device_family": "Windows Desktop",
+    "minimum_windows_build": "10.0.19041.0",
+    "age_rating": "pending_IARC_questionnaire"
+  },
+  "declarations": {
+    "accesses_user_selected_personal_information": true,
+    "account_or_login": false,
+    "cloud_or_server_dependency": false,
+    "drivers_or_nt_services": false,
+    "generative_ai": false,
+    "notifications": false,
+    "background_audio": false,
+    "accessibility_claim": "not_claimed_pending_specific_testing",
+    "restricted_capabilities": [
+      "runFullTrust"
+    ]
+  },
+  "contacts": {
+    "support_email": "ollett123123@outlook.com",
+    "privacy_url": null,
+    "support_url": null,
+    "website_url": null,
+    "url_status": "pending_company_approved_public_HTTPS_location"
+  },
+  "partner_center": {
+    "company_verification": "pending",
+    "product_name_reservation": "pending",
+    "store_identity_source": "packaging/publisher-profile.json",
+    "do_not_guess_identity": true
+  },
+  "assets": {
+    "listing": "store/submission/en-gb/listing.json",
+    "captions": "store/submission/en-gb/screenshot-captions.json",
+    "screenshot_directory": "store/submission/en-gb/screenshots",
+    "privacy_policy": "PRIVACY.md",
+    "support_policy": "SUPPORT.md",
+    "certification_notes": "store/submission/certification-notes.txt",
+    "certification_walkthrough": "store/submission/certification-test-walkthrough.md",
+    "licence": "LICENSE.md",
+    "paste_ready_licence_terms": "store/submission/en-gb/additional-license-terms.txt"
+  }
+}

@@ -1,0 +1,222 @@
+{
+  "schema": "rat-trap-release-manifest/v1",
+  "product": "Rat-Trap",
+  "version": "5.6.0",
+  "release_stage": "Company Publisher Beta development candidate",
+  "release_date": "2026-07-29",
+  "source": {
+    "repository": "Martin123132/Rat-Trap-Next-Gen-Compression-Engine",
+    "ref": "5.6.0 company-publisher working tree",
+    "baseline_ref": "v5.3.0",
+    "baseline_commit": "e5d14320b919e0081dd92beac3090950f95d5d8b",
+    "includes_uncommitted_5_4_through_5_6_work": true,
+    "commit_created": false,
+    "tag_created": false,
+    "remote_push_performed": false,
+    "note": "This records the tested local working tree. It does not claim that a v5.6.0 commit, Store reservation, Partner Center identity, Store submission, certification, signature, listing, or remote release exists."
+  },
+  "company_identity": {
+    "product_name": "Rat-Trap",
+    "owner": "TWO HANDS NETWORK LTD",
+    "public_publisher_intent": "Two Hands Network Ltd",
+    "ownership_basis": "User-confirmed company ownership under written agreements with project contributors",
+    "compressor_credit": "Designed and built by Glyn Evans",
+    "motion_timespace_credit": "Motion-TimeSpace work by Martin Ollett",
+    "primary_distribution_channel": "Microsoft Store",
+    "package_type": "MSIX",
+    "publisher_profile": {
+      "path": "packaging/publisher-profile.json",
+      "bytes": 1433,
+      "sha256": "D372A448506F0B5D66D530880A72C9F651A6C38FCE9FAB00DC920C16E0112EFF"
+    }
+  },
+  "store_identity": {
+    "status": "pending_partner_center",
+    "reserved_product_name": null,
+    "package_identity_name": null,
+    "package_identity_publisher": null,
+    "package_properties_publisher_display_name": null,
+    "package_family_name": null,
+    "publisher_id": null,
+    "package_sid": null,
+    "store_id": null,
+    "product_id": null,
+    "listing_url": null,
+    "production_identity_guessed_or_fabricated": false,
+    "store_signing_selected": true,
+    "local_production_certificate_required_for_store": false,
+    "store_upload_package_created": false,
+    "blocked_reason": "An authorised company representative must verify TWO HANDS NETWORK LTD, reserve Rat-Trap, and copy the exact Product identity values from Partner Center."
+  },
+  "development_identity": {
+    "name": "TwoHandsNetwork.RatTrap.Development",
+    "publisher": "CN=Two Hands Network Ltd Development, OID.2.25.311729368913984317654407730594956997722=1",
+    "publisher_display_name": "Two Hands Network Ltd (Development)",
+    "unsigned_marker": "OID.2.25.311729368913984317654407730594956997722=1",
+    "permanent": false,
+    "public_release": false,
+    "store_identity": false
+  },
+  "build_environment": {
+    "os": "Windows 10.0.19045",
+    "architecture": "x86_64",
+    "python": "3.13.13",
+    "pip": "26.0.1",
+    "sqlite": "3.50.4",
+    "pyinstaller": "6.21.0",
+    "pyinstaller_hooks_contrib": "2026.6",
+    "pyfastcdc": "0.2.1",
+    "typing_extensions": "4.15.0",
+    "zstandard": "0.25.0",
+    "cryptography": "49.0.0",
+    "openssl": "4.0.1",
+    "cffi": "2.1.0",
+    "pycparser": "3.0",
+    "windows_sdk": "10.0.26100.0",
+    "makeappx_file_version": "10.0.26100.7705",
+    "dependency_file": "requirements-build-5.6.0.txt",
+    "byte_reproducible_build_claimed": false
+  },
+  "artifacts": [
+    {
+      "name": "Rat-Trap.exe",
+      "path": "dist/5.6.0/Rat-Trap.exe",
+      "copied_path": "../../outputs/Rat-Trap-5.6.0.exe",
+      "role": "Company-branded portable Windows application",
+      "bytes": 17972145,
+      "sha256": "6E4A275DB7779696CF6C77C3B0B81E6E961EE2116F08BA9E81B6E8293175DC7E",
+      "file_version": "5.6.0",
+      "product_version": "5.6.0",
+      "company_name": "TWO HANDS NETWORK LTD",
+      "authenticode": "NotSigned"
+    },
+    {
+      "name": "Rat-Trap-Windows-5.6.0-x64-unsigned.msix",
+      "path": "dist/msix/5.6.0/development/Rat-Trap-Windows-5.6.0-x64-unsigned.msix",
+      "copied_path": "../../outputs/Rat-Trap-Windows-5.6.0-x64-company-development.msix",
+      "role": "Explicit unsigned-OID company development structure; not a Store package or public installer",
+      "bytes": 17842348,
+      "sha256": "19521596F1037D16B8324198FD37A69A571F5518E43128B86ABE7FDF416EFBBA",
+      "authenticode": "NotSigned",
+      "installable_public_release": false
+    }
+  ],
+  "publisher_gate": {
+    "build_script": {
+      "path": "scripts/build_msix_5_6_0.ps1",
+      "bytes": 5191,
+      "sha256": "FB12F594878910BB33120EE625682D58588C236A11AA69DC6DD854571F6B5B6E"
+    },
+    "gate_document": {
+      "path": "docs/COMPANY-PUBLISHER-GATE-5.6.0.md",
+      "bytes": 3739,
+      "sha256": "DD7D7072BF3BEC0D7B82BE6E948B0F747EDB24C977902B045D0712551C00C340"
+    },
+    "store_channel_requires_status_assigned": true,
+    "store_channel_requires_all_three_partner_center_manifest_values": true,
+    "blank_or_placeholder_values_rejected": true,
+    "pending_store_attempt_exit_code": 1,
+    "pending_store_attempt_created_artifacts": 0
+  },
+  "windows_branding": {
+    "source": {
+      "path": "packaging/branding/rat-trap-icon.png",
+      "bytes": 402488,
+      "sha256": "CE102231AE212FEF653728B41B18390503069FC7D81F529674503C02A91C1A20"
+    },
+    "executable_icon": {
+      "path": "packaging/branding/rat-trap.ico",
+      "bytes": 70287,
+      "sha256": "5555F6253004E792BE59CB7AD770A1D313768669207B560CE36F90758C0A79D9"
+    },
+    "manifest_template": {
+      "path": "packaging/msix/AppxManifest.template.xml",
+      "bytes": 3195,
+      "sha256": "292240F489BE24E355C1FE582D4A49A81632A595B62DFD3C5CDA309173E2A015"
+    }
+  },
+  "msix_inventory": [
+    {"path": "[Content_Types].xml", "bytes": 585},
+    {"path": "AppxBlockMap.xml", "bytes": 24547},
+    {"path": "AppxManifest.xml", "bytes": 3286},
+    {"path": "Assets/GMW.png", "bytes": 4369},
+    {"path": "Assets/RTSF.png", "bytes": 4384},
+    {"path": "Assets/Square150x150Logo.png", "bytes": 16658},
+    {"path": "Assets/Square44x44Logo.png", "bytes": 2535},
+    {"path": "Assets/StoreLogo.png", "bytes": 3119},
+    {"path": "Legal/COMMERCIAL-LICENSE.md", "bytes": 1877},
+    {"path": "Legal/LICENSE.md", "bytes": 5134},
+    {"path": "Legal/NOTICE.md", "bytes": 5909},
+    {"path": "Legal/README-WINDOWS.txt", "bytes": 9583},
+    {"path": "Legal/SBOM/cryptography-49.0.0-rust-sbom.json", "bytes": 45592},
+    {"path": "Legal/SBOM/cryptography-49.0.0-wheel-sbom.json", "bytes": 1223},
+    {"path": "Legal/THIRD-PARTY-LICENSES/CFFI-2.1.0-LICENSE.txt", "bytes": 1123},
+    {"path": "Legal/THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE.txt", "bytes": 197},
+    {"path": "Legal/THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE-APACHE.txt", "bytes": 11360},
+    {"path": "Legal/THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE-BSD.txt", "bytes": 1532},
+    {"path": "Legal/THIRD-PARTY-LICENSES/OPENSSL-4.0.1-LICENSE.txt", "bytes": 11360},
+    {"path": "Legal/THIRD-PARTY-LICENSES/PYCPARSER-3.0-LICENSE.txt", "bytes": 1543},
+    {"path": "Legal/THIRD-PARTY-LICENSES/PYFASTCDC-0.2.1-LICENSE.txt", "bytes": 1091},
+    {"path": "Legal/THIRD-PARTY-LICENSES/PYINSTALLER-6.21.0-COPYING.txt", "bytes": 32138},
+    {"path": "Legal/THIRD-PARTY-LICENSES/PYINSTALLER-HOOKS-CONTRIB-2026.6-LICENSE.txt", "bytes": 27666},
+    {"path": "Legal/THIRD-PARTY-LICENSES/PYTHON-3.13.13-LICENSE.txt", "bytes": 33861},
+    {"path": "Legal/THIRD-PARTY-LICENSES/PYTHON-ZSTANDARD-0.25.0-LICENSE.txt", "bytes": 1511},
+    {"path": "Legal/THIRD-PARTY-LICENSES/TCL-TK-8.6-LICENSE.txt", "bytes": 2307},
+    {"path": "Legal/THIRD-PARTY-LICENSES/TYPING-EXTENSIONS-4.15.0-LICENSE.txt", "bytes": 13936},
+    {"path": "Legal/THIRD-PARTY-NOTICES.md", "bytes": 1768},
+    {"path": "Rat-Trap.exe", "bytes": 17972145}
+  ],
+  "verification": {
+    "python_unit_tests": {
+      "command": ".venv/Scripts/python.exe -m unittest discover -s tests",
+      "passed": 177,
+      "failed": 0
+    },
+    "python_compile": {
+      "command": ".venv/Scripts/python.exe -m compileall -q rat_trap tests scripts/generate_windows_brand_assets.py",
+      "passed": true
+    },
+    "packaged_self_test": {
+      "exit_code": 0,
+      "passed": true
+    },
+    "packaged_folder_test": {
+      "exit_code": 0,
+      "passed": true,
+      "fixture_file_count": 464,
+      "fixture_total_bytes": 36991791
+    },
+    "executable": {
+      "file_version": "5.6.0",
+      "product_version": "5.6.0",
+      "company_name": "TWO HANDS NETWORK LTD",
+      "icon_resource_present": true,
+      "authenticode_status": "NotSigned"
+    },
+    "development_msix": {
+      "makeappx_pack_succeeded": true,
+      "makeappx_unpack_succeeded": true,
+      "requested_identity_matches_unpacked_manifest": true,
+      "inventory_file_count": 29,
+      "legal_payload_file_count": 5,
+      "third_party_license_file_count": 13,
+      "sbom_file_count": 2,
+      "payload_executable_matches_frozen_build": true,
+      "package_integrity_declared": true,
+      "file_associations_present": [".rtsf", ".gmw"],
+      "recovery_key_association_present": false,
+      "authenticode_status": "NotSigned",
+      "temporary_residue_count": 0
+    }
+  },
+  "known_limitations": [
+    "The development MSIX is not the Microsoft Store identity and is not a public installer",
+    "TWO HANDS NETWORK LTD company verification has not been performed through this repository",
+    "Rat-Trap has not yet been checked or reserved as a Microsoft Store product name",
+    "The exact Store package Name, Publisher and PublisherDisplayName are not yet assigned",
+    "No Store upload package, submission, certification, signature or listing exists",
+    "The direct-download lane has no trusted production signature",
+    "No clean Store-identity install, association, upgrade, repair or uninstall lifecycle test has been performed",
+    "No company-domain licensing, privacy, support or security contact has been supplied"
+  ]
+}

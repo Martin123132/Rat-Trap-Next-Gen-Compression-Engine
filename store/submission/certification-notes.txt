@@ -1,0 +1,49 @@
+Rat-Trap 5.7.0 - Microsoft Store certification notes
+Publisher: TWO HANDS NETWORK LTD
+Package: x64 packaged classic desktop application
+
+RUNFULLTRUST JUSTIFICATION
+
+Rat-Trap is a local Python/Tk Windows file utility. It uses runFullTrust to
+read files and folders explicitly selected by the user; write archives,
+repositories, recovery keys, exports, and restored files to user-selected
+destinations; and handle .gmw and .rtsf activation.
+
+It does not request elevation, install drivers or NT services, write to
+protected system areas, force default associations, download or execute remote
+content, require an account, collect telemetry, display advertising, or depend
+on a Rat-Trap server.
+
+FILE ACTIVATION
+
+Opening an associated .gmw or .rtsf only launches Rat-Trap and preselects the
+relevant view. It never automatically extracts, verifies, decrypts, exports,
+or restores data.
+
+TEST ACCESS
+
+No account, login, subscription, or network service is required. Use ordinary
+non-confidential test files. Public test password:
+Rat-Trap-Certification-2026!
+
+QUICK REVIEWER FLOW
+
+1. Create a Balanced .gmw from a small folder, restore it to a new folder, and
+   compare the files.
+2. Initialise a repository outside the source, create a labelled snapshot,
+   search a known filename, run Quick verify, and restore the snapshot.
+3. Protect a small file, save its .rtrk separately, verify the .rtsf, and
+   restore a copy using the public test password.
+4. Create a Queryable Vault containing text and CSV, search it, browse the
+   table, and run a read-only SELECT.
+5. Use Open with on .gmw and .rtsf files and confirm preselection without an
+   automatic data operation.
+
+BOUNDARIES
+
+Passwords and recovery-key contents are processed locally. Some encrypted
+operations may use temporary plaintext and display a warning first. Live
+repositories are not encrypted. Uninstall does not delete user-created data.
+No diagnostics are uploaded automatically.
+
+Support: ollett123123@outlook.com

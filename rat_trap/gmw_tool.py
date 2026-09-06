@@ -33,6 +33,7 @@ import os
 import socketserver
 import sqlite3
 import stat
+import sys
 import tempfile
 import time
 import warnings
@@ -43,12 +44,24 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Dict, Iterator, List, Optional
 
 try:
-    from . import repository_engine, secure_engine, solid_engine, vault_engine
+    from . import (
+        repository_engine,
+        sealed_file,
+        secure_engine,
+        solid_engine,
+        vault_engine,
+    )
 except ImportError:  # Allows direct execution while developing.
-    import repository_engine  # type: ignore
-    import secure_engine  # type: ignore
-    import solid_engine  # type: ignore
-    import vault_engine  # type: ignore
+    project_root = str(Path(__file__).resolve().parent.parent)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    from rat_trap import (  # type: ignore
+        repository_engine,
+        sealed_file,
+        secure_engine,
+        solid_engine,
+        vault_engine,
+    )
 
 try:
     import zstandard as zstd
@@ -58,7 +71,6 @@ except Exception:  # pragma: no cover - optional dependency
     zstd = None  # type: ignore
     HAS_ZSTD = False
 
-import sys
 import zlib
 import zipfile
 
@@ -1281,6 +1293,101 @@ def _creation_credentials(args: argparse.Namespace) -> Dict[str, object]:
     }
 
 
+def _sealed_credentials(args: argparse.Namespace) -> Dict[str, object]:
+    recovery = getattr(args, "recovery_key_file", None)
+    if recovery:
+        return {"recovery_key": Path(recovery)}
+    return {"password": _prompt_password("Sealed File password: ")}
+
+
+def _preflight_seal_file(
+    source: Path,
+    output: Path,
+    recovery_key_output: Path,
+    *,
+    allow_recovery_same_directory: bool,
+) -> None:
+    """Run the read-only Sealed File path gate before password collection."""
+
+    validated_source = sealed_file._validate_source(Path(source))
+    sealed_file._validate_creation_paths(
+        validated_source,
+        Path(output),
+        Path(recovery_key_output),
+        allow_recovery_same_directory=allow_recovery_same_directory,
+    )
+
+
+def _preflight_unseal_file(path: Path, output_directory: Path) -> None:
+    """Reject public-envelope and destination errors before unlocking."""
+
+    path_argument = Path(path)
+    sealed_file._reject_reparse(path_argument, label="Sealed input")
+    sealed_file.read_locked_info(path_argument)
+    output_argument = Path(output_directory)
+    if output_argument.exists():
+        sealed_file._reject_reparse(
+            output_argument,
+            label="Plaintext destination folder",
+        )
+        if not output_argument.is_dir():
+            raise sealed_file.SealedFileError(
+                f"Plaintext destination is not a folder: {output_argument}"
+            )
+
+
+def _preflight_seal_folder(
+    source_directory: Path,
+    output_directory: Path,
+    recovery_directory: Path,
+) -> None:
+    """Run the side-effect-free bulk path gate before asking for a password."""
+
+    source_argument = Path(source_directory)
+    sealed_file._reject_reparse(source_argument, label="Bulk source")
+    source = source_argument.resolve()
+    if not source.is_dir():
+        raise sealed_file.SealedFileError(
+            f"Bulk source folder not found: {source}"
+        )
+    output_argument = Path(output_directory)
+    recovery_argument = Path(recovery_directory)
+    sealed_file._reject_reparse(output_argument, label="Bulk sealed output")
+    sealed_file._reject_reparse(
+        recovery_argument,
+        label="Bulk recovery-key output",
+    )
+    output = output_argument.resolve()
+    recovery = recovery_argument.resolve()
+    if (
+        output == recovery
+        or sealed_file._path_within(output, recovery)
+        or sealed_file._path_within(recovery, output)
+    ):
+        raise sealed_file.SealedFileError(
+            "Bulk sealed output and recovery-key folders must be separate "
+            "trees that do not contain one another"
+        )
+    if output.exists() or recovery.exists():
+        raise sealed_file.SealedFileError(
+            "Bulk output and recovery folders must both be new"
+        )
+    if any(
+        sealed_file._path_within(candidate, source)
+        for candidate in (output, recovery)
+    ):
+        raise sealed_file.SealedFileError(
+            "Bulk output and recovery folders must be outside the source tree"
+        )
+    if (
+        sealed_file._path_within(source, output)
+        or sealed_file._path_within(source, recovery)
+    ):
+        raise sealed_file.SealedFileError(
+            "Bulk source must not be inside an output or recovery tree"
+        )
+
+
 def _add_encrypted_access_arguments(
     parser: argparse.ArgumentParser,
     *,
@@ -1642,6 +1749,112 @@ def _cmd_secure_rotate_recovery(args: argparse.Namespace) -> None:
         current_recovery_key=credentials.get("recovery_key"),
     )
     print(json.dumps(result.as_dict(), indent=2))
+
+
+def _cmd_seal_file(args: argparse.Namespace) -> None:
+    sealed_file._require_plaintext_temp(bool(args.allow_plaintext_temp))
+    _preflight_seal_file(
+        Path(args.source),
+        Path(args.output),
+        Path(args.recovery_key_out),
+        allow_recovery_same_directory=bool(
+            args.allow_recovery_beside_sealed
+        ),
+    )
+    result = sealed_file.seal_file(
+        Path(args.source),
+        Path(args.output),
+        password=_prompt_password(
+            "New Sealed File password: ",
+            confirm=True,
+        ),
+        recovery_key_output=Path(args.recovery_key_out),
+        allow_plaintext_temp=bool(args.allow_plaintext_temp),
+        allow_recovery_same_directory=bool(
+            args.allow_recovery_beside_sealed
+        ),
+    )
+    print(json.dumps(result.as_dict(), indent=2))
+
+
+def _cmd_unseal_file(args: argparse.Namespace) -> None:
+    sealed_file._require_plaintext_output(
+        bool(args.allow_plaintext_output)
+    )
+    sealed_file._require_plaintext_temp(bool(args.allow_plaintext_temp))
+    _preflight_unseal_file(
+        Path(args.sealed),
+        Path(args.output_directory),
+    )
+    credentials = _sealed_credentials(args)
+    result = sealed_file.unseal_file(
+        Path(args.sealed),
+        Path(args.output_directory),
+        allow_plaintext_output=bool(args.allow_plaintext_output),
+        allow_plaintext_temp=bool(args.allow_plaintext_temp),
+        **credentials,
+    )
+    print(json.dumps(result.as_dict(), indent=2))
+
+
+def _cmd_seal_folder(args: argparse.Namespace) -> None:
+    sealed_file._require_plaintext_temp(bool(args.allow_plaintext_temp))
+    _preflight_seal_folder(
+        Path(args.source_directory),
+        Path(args.output_directory),
+        Path(args.recovery_directory),
+    )
+    result = sealed_file.seal_folder(
+        Path(args.source_directory),
+        Path(args.output_directory),
+        Path(args.recovery_directory),
+        password=_prompt_password(
+            "New Sealed File password: ",
+            confirm=True,
+        ),
+        allow_plaintext_temp=bool(args.allow_plaintext_temp),
+        continue_on_error=not bool(args.stop_on_error),
+    )
+    payload = result.as_dict()
+    print(json.dumps(payload, indent=2))
+    if not bool(payload.get("completed")):
+        # Preserve the complete machine-readable reconciliation result while
+        # making an incomplete batch unambiguously fail for scripts and CI.
+        raise SystemExit(1)
+
+
+def _cmd_sealed_info(args: argparse.Namespace) -> None:
+    path = Path(args.sealed)
+    if not args.unlock:
+        if args.recovery_key_file:
+            raise sealed_file.SealedFileError(
+                "--recovery-key-file requires --unlock for sealed-info"
+            )
+        info = sealed_file.read_locked_info(path)
+        print(json.dumps(info.as_dict(), indent=2))
+        return
+    sealed_file._require_plaintext_temp(bool(args.allow_plaintext_temp))
+    sealed_file.read_locked_info(path)
+    credentials = _sealed_credentials(args)
+    info = sealed_file.inspect_sealed_file(
+        path,
+        allow_plaintext_temp=bool(args.allow_plaintext_temp),
+        **credentials,
+    )
+    print(json.dumps(info.as_dict(), indent=2))
+
+
+def _cmd_sealed_verify(args: argparse.Namespace) -> None:
+    sealed_file._require_plaintext_temp(bool(args.allow_plaintext_temp))
+    path = Path(args.sealed)
+    sealed_file.read_locked_info(path)
+    credentials = _sealed_credentials(args)
+    info = sealed_file.verify_sealed_file(
+        path,
+        allow_plaintext_temp=bool(args.allow_plaintext_temp),
+        **credentials,
+    )
+    print(json.dumps(info.as_dict(), indent=2))
 
 
 def _repository_json(value: object) -> object:
@@ -2300,6 +2513,140 @@ def build_parser() -> argparse.ArgumentParser:
         help="Authorize with the current .rtrk file instead of a password",
     )
     p_secure_recovery.set_defaults(func=_cmd_secure_rotate_recovery)
+
+    p_seal_file = sub.add_parser(
+        "seal-file",
+        help="Compress, encrypt, and verify one file as an opaque .rtsf",
+    )
+    p_seal_file.add_argument("source", help="Existing plaintext input file")
+    p_seal_file.add_argument("output", help="New opaque .rtsf file")
+    p_seal_file.add_argument(
+        "--recovery-key-out",
+        required=True,
+        help="New .rtrk recovery-key file (never overwritten)",
+    )
+    p_seal_file.add_argument(
+        "--allow-plaintext-temp",
+        action="store_true",
+        help=(
+            "Acknowledge isolated plaintext inner-archive staging without a "
+            "secure-delete guarantee"
+        ),
+    )
+    p_seal_file.add_argument(
+        "--allow-recovery-beside-sealed",
+        action="store_true",
+        help=(
+            "Explicitly allow the recovery key to be stored in the same "
+            "directory as the sealed file"
+        ),
+    )
+    p_seal_file.set_defaults(func=_cmd_seal_file)
+
+    p_unseal_file = sub.add_parser(
+        "unseal-file",
+        help="Authenticate and restore one Sealed File as plaintext",
+    )
+    p_unseal_file.add_argument("sealed", help="Rat-Trap .rtsf input")
+    p_unseal_file.add_argument(
+        "output_directory",
+        help="Destination folder for the authenticated original filename",
+    )
+    p_unseal_file.add_argument(
+        "--recovery-key-file",
+        help="Unlock with the matching .rtrk file instead of a password",
+    )
+    p_unseal_file.add_argument(
+        "--allow-plaintext-output",
+        action="store_true",
+        help="Acknowledge publication of an ordinary unencrypted file",
+    )
+    p_unseal_file.add_argument(
+        "--allow-plaintext-temp",
+        action="store_true",
+        help=(
+            "Acknowledge isolated plaintext inner-archive staging without a "
+            "secure-delete guarantee"
+        ),
+    )
+    p_unseal_file.set_defaults(func=_cmd_unseal_file)
+
+    p_seal_folder = sub.add_parser(
+        "seal-folder",
+        help="Copy-seal every regular file in a folder with opaque names",
+    )
+    p_seal_folder.add_argument(
+        "source_directory",
+        help="Existing folder whose files will be sealed",
+    )
+    p_seal_folder.add_argument(
+        "output_directory",
+        help="New folder for opaque .rtsf files",
+    )
+    p_seal_folder.add_argument(
+        "recovery_directory",
+        help="Separate new folder for per-file recovery keys",
+    )
+    p_seal_folder.add_argument(
+        "--allow-plaintext-temp",
+        action="store_true",
+        help=(
+            "Acknowledge isolated plaintext inner-archive staging without a "
+            "secure-delete guarantee"
+        ),
+    )
+    p_seal_folder.add_argument(
+        "--stop-on-error",
+        action="store_true",
+        help=(
+            "Stop after the first failed file; by default Rat-Trap continues "
+            "and reports every independent result"
+        ),
+    )
+    p_seal_folder.set_defaults(func=_cmd_seal_folder)
+
+    p_sealed_info = sub.add_parser(
+        "sealed-info",
+        help="Show locked public or authenticated private Sealed File details",
+    )
+    p_sealed_info.add_argument("sealed", help="Rat-Trap .rtsf input")
+    p_sealed_info.add_argument(
+        "--unlock",
+        action="store_true",
+        help="Unlock and verify the encrypted one-file profile",
+    )
+    p_sealed_info.add_argument(
+        "--recovery-key-file",
+        help="Unlock with the matching .rtrk file instead of a password",
+    )
+    p_sealed_info.add_argument(
+        "--allow-plaintext-temp",
+        action="store_true",
+        help=(
+            "Acknowledge isolated plaintext inner-archive staging without a "
+            "secure-delete guarantee"
+        ),
+    )
+    p_sealed_info.set_defaults(func=_cmd_sealed_info)
+
+    p_sealed_verify = sub.add_parser(
+        "sealed-verify",
+        help="Authenticate and verify a complete Rat-Trap Sealed File",
+    )
+    p_sealed_verify.add_argument("sealed", help="Rat-Trap .rtsf input")
+    p_sealed_verify.add_argument(
+        "--recovery-key-file",
+        help="Unlock with the matching .rtrk file instead of a password",
+    )
+    p_sealed_verify.add_argument(
+        "--allow-plaintext-temp",
+        action="store_true",
+        help=(
+            "Acknowledge isolated plaintext inner-archive staging without a "
+            "secure-delete guarantee"
+        ),
+    )
+    p_sealed_verify.set_defaults(func=_cmd_sealed_verify)
 
     p_srv = sub.add_parser("serve", help="Expose archive over HTTP for remote streaming")
     p_srv.add_argument("archive", help="SQLite archive")

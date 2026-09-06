@@ -30,6 +30,7 @@ sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from rat_trap import (  # noqa: E402
     gmw_tool,
+    sealed_file,
     secure_engine,
     solid_engine,
     vault_engine,
@@ -66,6 +67,32 @@ SECURE_RANDOM_INPUTS = (
     ("recovery_wrap_nonce", bytes(range(0x90, 0x9C))),
     ("header_auth_nonce", bytes(range(0xA0, 0xAC))),
     ("chunk_0_nonce", bytes(range(0xB0, 0xBC))),
+)
+SEALED_TARGETS = (
+    "rat-trap-sealed-file-1-5.4.rtsf",
+    "rat-trap-sealed-file-1-5.4.rtrk",
+    "rat-trap-sealed-file-1-5.4-inner.gmw",
+)
+SEALED_STORED_NAME = "Sealed fixture café.txt"
+SEALED_CONTENT = (
+    b"Rat-Trap sealed-file public compatibility marker\n" * 8
+)
+SEALED_PASSWORD = "Rat-Trap 5.4 public sealed fixture"
+SEALED_DATA_KEY = bytes(0xE0 - index for index in range(32))
+SEALED_UUIDS = (
+    "a102b304c506d708e90afb0c1d2e3f40",
+    "1a2b3c4d5e6f708192a3b4c5d6e7f809",
+    "90f8e7d6c5b4a39281706f5e4d3c2b1a",
+)
+SEALED_RANDOM_INPUTS = (
+    ("recovery_key", bytes(range(0x80, 0xA0))),
+    ("sealed_metadata_nonce", bytes(range(0xA0, 0xAC))),
+    ("password_salt", bytes(range(0xB0, 0xC0))),
+    ("password_wrap_nonce", bytes(range(0xC0, 0xCC))),
+    ("recovery_salt", bytes(range(0xD0, 0xF0))),
+    ("recovery_wrap_nonce", bytes(range(0xF0, 0xFC))),
+    ("header_auth_nonce", bytes(range(0x40, 0x4C))),
+    ("chunk_0_nonce", bytes(range(0x50, 0x5C))),
 )
 LEGACY_METADATA_KEYS = (
     "format",
@@ -200,8 +227,11 @@ def _verify(source: Path, paths: list[Path]) -> None:
 
 
 class _FixedRandom:
-    def __init__(self) -> None:
-        self._remaining = list(SECURE_RANDOM_INPUTS)
+    def __init__(
+        self,
+        inputs: tuple[tuple[str, bytes], ...] = SECURE_RANDOM_INPUTS,
+    ) -> None:
+        self._remaining = list(inputs)
 
     def __call__(self, size: int) -> bytes:
         if not self._remaining:
@@ -288,7 +318,7 @@ def _build_secure_vector(
         ),
         "format": secure_engine.SECURE_FORMAT,
         "schema_version": secure_engine.SECURE_SCHEMA_VERSION,
-        "writer_version": secure_engine.WRITER_VERSION,
+        "writer_version": str(header["writer_version"]),
         "source_inner": {
             "name": inner.name,
             "bytes": inner.stat().st_size,
@@ -428,6 +458,11 @@ def generate_secure(replace: bool) -> None:
                 "time_ns",
                 return_value=FIXED_TIMESTAMP_NS,
             ),
+            mock.patch.object(
+                secure_engine,
+                "WRITER_VERSION",
+                "5.3.0",
+            ),
         ):
             secure_engine.encrypt_file(
                 inner,
@@ -471,6 +506,114 @@ def generate_secure(replace: bool) -> None:
         )
         for source_path, destination in zip(
             (archive, recovery, vector_path),
+            destinations,
+        ):
+            shutil.copyfile(source_path, destination)
+            print(
+                f"{destination.name} {destination.stat().st_size} "
+                f"{_sha256(destination)}"
+            )
+
+
+def generate_sealed(replace: bool) -> None:
+    destinations = [FIXTURE_DIR / name for name in SEALED_TARGETS]
+    existing = [path for path in destinations if path.exists()]
+    if existing and not replace:
+        names = ", ".join(path.name for path in existing)
+        raise SystemExit(
+            "Refusing to replace golden Sealed File fixtures without "
+            f"--replace: {names}"
+        )
+
+    with tempfile.TemporaryDirectory(
+        prefix="rat-trap-sealed-fixture-build-"
+    ) as temporary:
+        root = Path(temporary)
+        source = root / "plaintext" / SEALED_STORED_NAME
+        source.parent.mkdir()
+        source.write_bytes(SEALED_CONTENT)
+        os.utime(source, (FIXED_TIMESTAMP, FIXED_TIMESTAMP))
+        archive = root / "sealed" / SEALED_TARGETS[0]
+        recovery = root / "recovery" / SEALED_TARGETS[1]
+        inner = root / SEALED_TARGETS[2]
+        fixed_random = _FixedRandom(SEALED_RANDOM_INPUTS)
+        fixed_uuids = [
+            uuid.UUID(hex=value)
+            for value in SEALED_UUIDS
+        ]
+        with (
+            mock.patch.object(
+                secure_engine.AESGCMSIV,
+                "generate_key",
+                return_value=SEALED_DATA_KEY,
+            ),
+            mock.patch.object(
+                secure_engine.os,
+                "urandom",
+                side_effect=fixed_random,
+            ),
+            mock.patch.object(
+                secure_engine.uuid,
+                "uuid4",
+                side_effect=fixed_uuids,
+            ),
+            mock.patch.object(
+                secure_engine.time,
+                "time_ns",
+                return_value=FIXED_TIMESTAMP_NS + 1,
+            ),
+            mock.patch.object(
+                secure_engine,
+                "WRITER_VERSION",
+                "5.4.0",
+            ),
+            mock.patch.object(
+                solid_engine.time,
+                "time",
+                return_value=FIXED_TIMESTAMP,
+            ),
+        ):
+            sealed_file.seal_file(
+                source,
+                archive,
+                password=SEALED_PASSWORD,
+                recovery_key_output=recovery,
+                allow_plaintext_temp=True,
+            )
+        fixed_random.verify_consumed()
+
+        secure_engine.decrypt_file(
+            archive,
+            inner,
+            password=SEALED_PASSWORD,
+        )
+        entry = solid_engine.inspect_single_file(inner)
+        if (
+            entry.name != SEALED_STORED_NAME
+            or entry.size != len(SEALED_CONTENT)
+            or entry.sha256
+            != hashlib.sha256(SEALED_CONTENT).hexdigest()
+            or entry.metadata.profile != sealed_file.SEALED_PROFILE
+        ):
+            raise RuntimeError("Sealed File inner profile verification failed")
+        if (
+            SEALED_STORED_NAME.encode("utf-8") in archive.read_bytes()
+            or SEALED_CONTENT[:32] in archive.read_bytes()
+        ):
+            raise RuntimeError("Sealed fixture leaks a plaintext marker")
+        sealed_file.verify_sealed_file(
+            archive,
+            password=SEALED_PASSWORD,
+            allow_plaintext_temp=True,
+        )
+        sealed_file.verify_sealed_file(
+            archive,
+            recovery_key=recovery,
+            allow_plaintext_temp=True,
+        )
+
+        for source_path, destination in zip(
+            (archive, recovery, inner),
             destinations,
         ):
             shutil.copyfile(source_path, destination)
@@ -554,9 +697,18 @@ def main() -> None:
         action="store_true",
         help="generate only the deterministic schema-1 encrypted fixture",
     )
+    parser.add_argument(
+        "--sealed-only",
+        action="store_true",
+        help="generate only the deterministic 5.4 Sealed File fixture",
+    )
     args = parser.parse_args()
+    if args.secure_only and args.sealed_only:
+        parser.error("--secure-only and --sealed-only are mutually exclusive")
     if args.secure_only:
         generate_secure(args.replace)
+    elif args.sealed_only:
+        generate_sealed(args.replace)
     else:
         generate(args.replace)
 

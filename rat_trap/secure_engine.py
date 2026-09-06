@@ -39,7 +39,7 @@ SECURE_SCHEMA_VERSION = 1
 RECOVERY_FILE_FORMAT = "RAT-TRAP-RECOVERY-KEY-1"
 RECOVERY_FILE_SCHEMA_VERSION = 1
 SEALED_METADATA_FORMAT = "RAT-TRAP-SEALED-METADATA-1"
-WRITER_VERSION = "5.3.0"
+WRITER_VERSION = "5.7.0"
 
 SECURE_MAGIC = b"RAT-TRAP-SECURE-1\x00"
 _HEADER_LENGTH = struct.Struct("<I")
@@ -254,6 +254,12 @@ def _validate_password(
     return encoded
 
 
+def validate_new_password(password: str) -> None:
+    """Validate a new archive password before any plaintext work begins."""
+
+    _validate_password(password, creating=True)
+
+
 def _argon2_key(password: bytes, salt: bytes, file_id: str) -> bytes:
     try:
         return Argon2id(
@@ -324,32 +330,6 @@ def decode_recovery_key(value: str) -> bytes:
     return key
 
 
-def _write_new_bytes(path: Path, payload: bytes) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        descriptor = os.open(
-            path,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o600,
-        )
-    except FileExistsError as exc:
-        raise RecoveryKeyError(
-            f"Refusing to overwrite an existing recovery key: {path}"
-        ) from exc
-    try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except Exception:
-        try:
-            path.unlink()
-        except OSError:
-            pass
-        raise
-
-
 def write_recovery_key_file(
     path: Path,
     *,
@@ -370,8 +350,24 @@ def write_recovery_key_file(
     }
     encoded = _canonical_json(payload) + b"\n"
     path = Path(path).resolve()
-    _write_new_bytes(path, encoded)
+    if path.exists():
+        raise RecoveryKeyError(
+            f"Refusing to overwrite an existing recovery key: {path}"
+        )
+    staged = _staging_path(path, "recovery")
+    published = False
     try:
+        with open(staged, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        loaded_id, loaded_key = read_recovery_key_file(staged)
+        if loaded_id != file_id or not hmac.compare_digest(
+            loaded_key, recovery_key
+        ):
+            raise RecoveryKeyError("Recovery key file verification failed")
+        _publish_new(staged, path)
+        published = True
         loaded_id, loaded_key = read_recovery_key_file(path)
         if loaded_id != file_id or not hmac.compare_digest(
             loaded_key, recovery_key
@@ -379,9 +375,14 @@ def write_recovery_key_file(
             raise RecoveryKeyError("Recovery key file verification failed")
     except Exception:
         try:
-            path.unlink()
+            staged.unlink()
         except OSError:
             pass
+        if published:
+            try:
+                path.unlink()
+            except OSError:
+                pass
         raise
     return path
 
@@ -1185,32 +1186,25 @@ def _publish_new(staged: Path, destination: Path) -> None:
             f"Destination already exists: {destination}"
         )
     try:
-        os.link(staged, destination)
+        if os.name == "nt":
+            # Staging is in the destination directory. Windows rename is a
+            # same-volume atomic publication and refuses an existing target.
+            os.rename(staged, destination)
+        else:
+            # A hard link is the portable POSIX no-replace primitive. Do not
+            # fall back to copying into the final name: a crash could expose
+            # a truncated archive as if it were complete.
+            os.link(staged, destination)
+            staged.unlink()
     except FileExistsError as exc:
         raise SecureArchiveError(
             f"Destination already exists: {destination}"
         ) from exc
-    except OSError:
-        created = False
-        try:
-            with open(staged, "rb") as source, open(
-                destination, "xb"
-            ) as target:
-                created = True
-                shutil.copyfileobj(source, target, length=1024 * 1024)
-                target.flush()
-                os.fsync(target.fileno())
-        except Exception:
-            if created:
-                try:
-                    destination.unlink()
-                except OSError:
-                    pass
-            raise
-    try:
-        staged.unlink()
-    except OSError:
-        pass
+    except OSError as exc:
+        raise SecureArchiveError(
+            "This filesystem could not atomically publish the encrypted "
+            "file without replacing an existing destination"
+        ) from exc
 
 
 def _publish(
@@ -1291,6 +1285,7 @@ def encrypt_file(
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     replace: bool = False,
     progress: Optional[Callable[[int, int], None]] = None,
+    pre_publish_validator: Optional[Callable[[Path, Path], None]] = None,
 ) -> EncryptResult:
     source_argument = Path(source)
     output = Path(output).resolve()
@@ -1393,9 +1388,20 @@ def encrypt_file(
             created_at_ns=verified.created_at_ns,
         )
         published_recovery = True
+        recovery_verified = verify_encrypted_file(
+            staged,
+            recovery_key=recovery_key_output,
+        )
+        if recovery_verified.file_id != verified.file_id:
+            raise SecureArchiveError(
+                "Generated recovery key verification returned the wrong "
+                "encrypted file identity"
+            )
+        if pre_publish_validator is not None:
+            pre_publish_validator(staged, recovery_key_output)
         _publish(staged, output, replace=replace)
         verified = dataclasses.replace(
-            verified,
+            recovery_verified,
             path=str(output),
             encrypted_size=output.stat().st_size,
         )
@@ -1664,6 +1670,7 @@ __all__ = [
     "read_recovery_key_file",
     "read_secure_info",
     "rotate_recovery_key",
+    "validate_new_password",
     "verify_encrypted_file",
     "write_recovery_key_file",
 ]

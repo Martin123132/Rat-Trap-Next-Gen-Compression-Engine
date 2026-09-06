@@ -1,12 +1,13 @@
 # GMW format registry and compatibility policy
 
-Status: normative for Rat-Trap 5.3.0 and later readers
+Status: normative for Rat-Trap 5.4.0 and later readers
 
 ## Registry
 
-| Family | Identification | First supported | Current writer | 5.3 reader | Status |
+| Family or profile | Identification | First supported | Current writer | 5.4 reader | Status |
 |---|---|---:|---:|---:|---|
 | `RAT-TRAP-ENCRYPTED-1`, schema 1 | `RAT-TRAP-SECURE-1\0` file magic | 5.3 | Yes | Yes | Authenticated outer envelope |
+| Sealed File profile 1 | Outer encrypted magic; profile only after authenticated inner validation | 5.4 | Yes | Yes | Independent `.rtsf` per-file protection |
 | `GMW-SQLITE-1` | SQLite plus `metadata.format` | 4.2 | Optional legacy profile | Yes | Legacy read/export |
 | `GMW-SOLID-2` | `RATGMW2\n` file magic | 4.3 | Yes | Yes | Current portable archive |
 | `GMW-VAULT-1`, schema 1 | SQLite plus Vault metadata | 5.0 | No | Yes | Supported legacy Vault |
@@ -26,6 +27,25 @@ metadata leakage, and plaintext-working-copy limit are normative in
 
 The live schema-1 backup repository is not this family and remains
 unencrypted.
+
+## Sealed File profile 1
+
+A Rat-Trap Sealed File is not a new encryption family. Its `.rtsf` exterior
+uses the unchanged `RAT-TRAP-ENCRYPTED-1` schema-1 envelope and contains one
+exact `GMW-SOLID-2` archive with:
+
+- profile `sealed-file`;
+- Zstandard level 6;
+- exactly one regular file and no directory or link members;
+- path entry order, with whole-file deduplication and long-distance mode off.
+
+The original basename, content hash, byte size, modification time, and mode
+exist only inside the authenticated ciphertext. Before unlock, a reader may
+report public outer-envelope fields but must not claim that the file has the
+Sealed File profile. Each `.rtsf` has its own independent `.rtrk` recovery key;
+normal writers give the encrypted file an opaque `RT-<128-bit hex>.rtsf`
+exterior name. The profile and its resource and path-safety requirements are
+normative in [`SEALED-FILE-FORMAT.md`](SEALED-FILE-FORMAT.md).
 
 ## `GMW-SOLID-2`
 
@@ -107,13 +127,16 @@ Readers identify formats in this order:
 
 1. `RAT-TRAP-SECURE-1\0` means the strict authenticated outer envelope. It
    must be unlocked and completely authenticated before inner dispatch.
-2. `RATGMW2\n` means `GMW-SOLID-2`.
-3. A SQLite header is opened read-only and its format metadata is validated.
-4. A recognized `GMW-VAULT-1` schema is handled by the Vault reader.
-5. A recognized `GMW-SQLITE-1` database is handled by the legacy reader.
-6. Anything else fails as unsupported.
+2. An `.rtsf` operation additionally requires the authenticated inner archive
+   to match every Sealed File profile-1 constraint before original metadata is
+   reported or plaintext is published.
+3. `RATGMW2\n` means `GMW-SOLID-2`.
+4. A SQLite header is opened read-only and its format metadata is validated.
+5. A recognized `GMW-VAULT-1` schema is handled by the Vault reader.
+6. A recognized `GMW-SQLITE-1` database is handled by the legacy reader.
+7. Anything else fails as unsupported.
 
-Rat-Trap 5.3.0 enforces this policy before inspect, extraction, ZIP export, or
+Rat-Trap 5.4.0 enforces this policy before inspect, extraction, ZIP export, or
 legacy HTTP serving. The legacy detector requires SQLite magic, the exact
 `GMW-SQLITE-1` marker, and the required metadata/chunk/file columns. The Vault
 detector requires the exact family and supported schema version, typed
@@ -171,6 +194,9 @@ tests/fixtures/formats/
   rat-trap-encrypted-1-5.3.gmw
   rat-trap-encrypted-1-5.3.rtrk
   rat-trap-encrypted-1-5.3-vector.json
+  rat-trap-sealed-file-1-5.4.rtsf
+  rat-trap-sealed-file-1-5.4.rtrk
+  rat-trap-sealed-file-1-5.4-inner.gmw
 ```
 
 Every test run checks each fixture's byte size and SHA-256, metadata, family
@@ -178,6 +204,10 @@ detection, exact extracted tree, and ZIP export. Vault fixtures also pass the
 Vault verifier. The secure fixture unlocks independently with its public test
 password and recovery file, verifies its exact inner bytes, rejects wrong
 credentials and corruption, and is regenerated twice byte-for-byte.
+The Sealed File fixture also verifies that locked inspection discloses no
+inner-profile or original-file fields, authenticates the exact profile with
+both credentials, restores the original Unicode basename and bytes, and
+publishes no plaintext after a wrong password or ciphertext corruption.
 
 These small files are deterministic compatibility reconstructions made from
 the maintained implementations with old metadata/schema shapes. They are not
@@ -191,3 +221,8 @@ The schema-1 secure vector is different: it is a deterministic 5.3 writer
 output intended for interoperability, not historical provenance or benchmark
 evidence. It publishes test-only keys and credentials by design. Never use
 them for private archives.
+
+The Sealed File fixture is likewise a deterministic 5.4 writer output for
+profile compatibility, not historical provenance or benchmark evidence. Its
+test password, recovery key, decrypted inner archive, and original plaintext
+description are public by design and must never be reused for private files.

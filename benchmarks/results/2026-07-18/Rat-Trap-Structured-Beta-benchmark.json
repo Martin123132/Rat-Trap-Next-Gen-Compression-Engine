@@ -1,0 +1,124 @@
+{
+  "schema": "rat-trap-structured-vault-benchmark-1",
+  "version": "5.1.0",
+  "source": "[REDACTED_LOCAL_WORKSPACE]/work/Rat-Trap-Beta-Test-Data",
+  "vault": "[REDACTED_LOCAL_WORKSPACE]/outputs/Rat-Trap-Beta-Structured-Vault-5.1.gmw",
+  "source_files": 464,
+  "source_bytes": 36991791,
+  "vault_bytes": 21803008,
+  "retained_percent": 58.94012539160377,
+  "build_seconds": 8.711759900004836,
+  "verify_seconds": 0.6411428999999771,
+  "extract_seconds": 1.5590042999974685,
+  "round_trip_verified": true,
+  "structured_sources": [
+    {
+      "path": "02-structured/adult.data",
+      "table_name": "rt_data_5",
+      "format": "csv",
+      "rows": 32561,
+      "columns": 15
+    },
+    {
+      "path": "02-structured/adult.test",
+      "table_name": "rt_data_7",
+      "format": "csv",
+      "rows": 16281,
+      "columns": 15
+    },
+    {
+      "path": "MANIFEST.json",
+      "table_name": "rt_data_1",
+      "format": "json",
+      "rows": 463,
+      "columns": 3
+    }
+  ],
+  "structured_source_count": 3,
+  "structured_row_count": 49305,
+  "adult_data": {
+    "rows": 32561,
+    "columns": [
+      {
+        "source_name": "age",
+        "column_name": "age",
+        "type": "INTEGER"
+      },
+      {
+        "source_name": "workclass",
+        "column_name": "workclass",
+        "type": "TEXT"
+      },
+      {
+        "source_name": "fnlwgt",
+        "column_name": "fnlwgt",
+        "type": "INTEGER"
+      },
+      {
+        "source_name": "education",
+        "column_name": "education",
+        "type": "TEXT"
+      },
+      {
+        "source_name": "education-num",
+        "column_name": "education_num",
+        "type": "INTEGER"
+      },
+      {
+        "source_name": "marital-status",
+        "column_name": "marital_status",
+        "type": "TEXT"
+      },
+      {
+        "source_name": "occupation",
+        "column_name": "occupation",
+        "type": "TEXT"
+      },
+      {
+        "source_name": "relationship",
+        "column_name": "relationship",
+        "type": "TEXT"
+      },
+      {
+        "source_name": "race",
+        "column_name": "race",
+        "type": "TEXT"
+      },
+      {
+        "source_name": "sex",
+        "column_name": "sex",
+        "type": "TEXT"
+      },
+      {
+        "source_name": "capital-gain",
+        "column_name": "capital_gain",
+        "type": "INTEGER"
+      },
+      {
+        "source_name": "capital-loss",
+        "column_name": "capital_loss",
+        "type": "INTEGER"
+      },
+      {
+        "source_name": "hours-per-week",
+        "column_name": "hours_per_week",
+        "type": "INTEGER"
+      },
+      {
+        "source_name": "native-country",
+        "column_name": "native_country",
+        "type": "TEXT"
+      },
+      {
+        "source_name": "class",
+        "column_name": "class",
+        "type": "TEXT"
+      }
+    ],
+    "private_filter_rows": 5000,
+    "private_filter_median_ms": 48.76390000572428,
+    "private_export_rows": 5000,
+    "numeric_sql_rows_returned": 1000,
+    "numeric_sql_median_ms": 17.073600000003353
+  }
+}

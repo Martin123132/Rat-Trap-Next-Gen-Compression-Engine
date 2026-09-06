@@ -1,0 +1,6 @@
+# Golden recovery-key fixtures are byte-addressed test vectors, not prose.
+tests/fixtures/formats/*.rtrk -text
+
+# Preserve frozen evidence bytes independently of a user's newline settings.
+release-manifests/*.json -text
+packaging/direct/qa-results*.json -text

@@ -1,0 +1,40 @@
+{
+  "schema": "rat-trap-publisher-profile/v1",
+  "product": {
+    "name": "Rat-Trap",
+    "version": "5.7.0",
+    "owner": "TWO HANDS NETWORK LTD",
+    "publisher_intent": "Two Hands Network Ltd",
+    "ownership_basis": "User-confirmed company ownership under written agreements with project contributors"
+  },
+  "distribution": {
+    "primary_channel": "Microsoft Store",
+    "package_type": "MSIX",
+    "store_signing_selected": true,
+    "local_production_certificate_required_for_store": false,
+    "direct_download_is_separate_signing_lane": true
+  },
+  "development_identity": {
+    "name": "TwoHandsNetwork.RatTrap.Development",
+    "publisher": "CN=Two Hands Network Ltd Development, OID.2.25.311729368913984317654407730594956997722=1",
+    "publisher_display_name": "Two Hands Network Ltd (Development)",
+    "unsigned_marker": "OID.2.25.311729368913984317654407730594956997722=1",
+    "permanent": false,
+    "public_release": false
+  },
+  "store_identity": {
+    "status": "pending_partner_center",
+    "reserved_product_name": null,
+    "package_identity_name": null,
+    "package_identity_publisher": null,
+    "package_properties_publisher_display_name": null,
+    "package_family_name": null,
+    "publisher_id": null,
+    "package_sid": null,
+    "store_id": null,
+    "product_id": null,
+    "listing_url": null,
+    "recorded_utc": null,
+    "source": "Partner Center > Product management > Product identity"
+  }
+}

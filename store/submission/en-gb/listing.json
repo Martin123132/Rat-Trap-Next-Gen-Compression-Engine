@@ -1,0 +1,49 @@
+{
+  "schema": "rat-trap-store-listing/v1",
+  "language": "en-GB",
+  "status": "draft_pending_partner_center_verification_and_clean_screenshots",
+  "product_name": "Rat-Trap",
+  "short_description": "Back up, compress, protect and find your files in one local Windows app. Create versioned snapshots, encrypted Sealed Files, portable GMW archives and searchable Vaults - no account required.",
+  "description": "Rat-Trap brings backup history, file compression, authenticated encryption and local search together in one Windows desktop app.\n\nKEEP HISTORY, NOT ANOTHER PILE OF COPIES\n\nCreate verified snapshots of a folder in a local repository. Rat-Trap reuses matching content across snapshots, lets you search filenames and paths through time, pins important generations, previews retention before cleanup and restores a selected snapshot to a new folder.\n\nPROTECT FILES YOU WANT TO KEEP OPAQUE\n\nA Sealed File is an independently compressed .rtsf copy protected using authenticated encryption. Rat-Trap can generate an opaque exterior filename that does not expose the original basename. Open it with its password or matching .rtrk recovery key. The original plaintext file is always retained, so you stay in control of when it is removed.\n\nCREATE PORTABLE ARCHIVES\n\nChoose Fast, Balanced or Smallest for a portable .gmw archive. Balanced is the recommended all-round profile and stores exact duplicate files once. Optional authenticated encryption protects the complete portable archive with a password and an independently generated recovery key. Supported archives and Vaults can also be exported to standard ZIP.\n\nTURN STORED COLLECTIONS INTO SEARCHABLE VAULTS\n\nQueryable Vaults search filenames and supported text without first unpacking the collection. Preview or selectively export matching files. Recognised CSV, TSV, JSON, JSONL, NDJSON and UCI datasets can be browsed as typed local tables, filtered without SQL or queried with read-only SELECT statements.\n\nVERIFY BEFORE YOU RESTORE\n\nRun a quick structural check or a full check that reads stored objects and reconstructs file hashes. Backup history can be searched, pinned, restored or exported as a portable archive.\n\nMADE FOR WINDOWS\n\nRat-Trap works locally and requires no account. Windows Open with support for .gmw and .rtsf selects the file in Rat-Trap but never extracts or decrypts it automatically.\n\nIMPORTANT SECURITY AND STORAGE BOUNDARIES\n\nBackup repositories are checksum-verified but are not currently encrypted. Encryption applies only when you choose it for portable archives or Vaults, and to Sealed Files.\n\nEncrypted operations may use temporary plaintext working copies. Cleanup is best-effort and secure deletion is not claimed. Keep recovery keys away from the files they unlock. If both a password and its recovery key are lost, encrypted data cannot be recovered.\n\nSealed Files are copy-only: Rat-Trap does not delete or replace the original. Encryption is not a substitute for maintaining a separate backup.\n\nRat-Trap is licensed for personal and non-commercial use. Commercial use requires a separate written licence from TWO HANDS NETWORK LTD.",
+  "features": [
+    "Keep versioned folder snapshots and restore any verified generation",
+    "Reuse matching data across backups and store exact duplicate files once",
+    "Compress and protect individual files as opaque Sealed Files with a separate recovery key",
+    "Create Fast, Balanced, or Smallest portable GMW archives with optional authenticated encryption",
+    "Search filenames and supported text inside Queryable Vaults without unpacking the collection",
+    "Browse CSV, TSV, JSON, JSONL, NDJSON, and UCI data as typed local tables",
+    "Filter structured data without SQL or run read-only SELECT queries",
+    "Run quick or full integrity checks before restore",
+    "Export supported archives and Vaults to standard ZIP",
+    "Work locally without creating a Rat-Trap account"
+  ],
+  "search_terms": [
+    "file compression",
+    "backup history",
+    "encrypted files",
+    "searchable archive",
+    "data vault",
+    "file deduplication",
+    "GMW archive"
+  ],
+  "whats_new": null,
+  "whats_new_instruction": "Leave blank for the first Store submission.",
+  "category": "Utilities + tools",
+  "subcategory": "Backup + manage",
+  "additional_licence_terms": {
+    "source_file": "store/submission/en-gb/additional-license-terms.txt",
+    "partner_center_value": "Paste the complete contents of the source file, or replace them with one company-approved public HTTPS URL.",
+    "public_url": null,
+    "status": "paste_ready_text"
+  },
+  "benchmark_numbers_used": false,
+  "competitor_names_used": false,
+  "required_before_submission": [
+    "Confirm Rat-Trap name reservation",
+    "Publish a stable HTTPS privacy policy",
+    "Confirm support contact",
+    "Capture five clean desktop screenshots",
+    "Complete the IARC questionnaire in Partner Center",
+    "Confirm private-beta visibility before the first submission"
+  ]
+}

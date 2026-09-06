@@ -1,0 +1,384 @@
+{
+  "schema": "rat-trap-release-manifest/v1",
+  "product": "Rat-Trap",
+  "version": "5.7.0",
+  "release_stage": "Windows Reliability Beta development candidate",
+  "release_date": "2026-07-30",
+  "source": {
+    "repository": "Martin123132/Rat-Trap-Next-Gen-Compression-Engine",
+    "ref": "5.7.0 reliability working tree",
+    "branch": "main",
+    "baseline_ref": "v5.3.0",
+    "baseline_commit": "e5d14320b919e0081dd92beac3090950f95d5d8b",
+    "includes_uncommitted_5_4_through_5_7_work": true,
+    "commit_created": false,
+    "tag_created": false,
+    "remote_push_performed": false,
+    "note": "This records the tested local working tree. It does not claim that a v5.7.0 commit, Store reservation, Partner Center identity, Store submission, certification, signature, listing, or remote release exists."
+  },
+  "company_identity": {
+    "product_name": "Rat-Trap",
+    "owner": "TWO HANDS NETWORK LTD",
+    "public_publisher_intent": "Two Hands Network Ltd",
+    "compressor_credit": "Designed and built by Glyn Evans",
+    "motion_timespace_credit": "Motion-TimeSpace work by Martin Ollett",
+    "primary_distribution_channel": "Microsoft Store",
+    "package_type": "MSIX"
+  },
+  "scope": {
+    "release_theme": "Windows lifecycle reliability, privacy-safe local diagnostics, support information, and deterministic file activation",
+    "background_task_model": "Worker threads publish finish events to a thread-safe queue; Tk polling, progress rendering, control restoration, completion callbacks, and dialogs run on the main thread",
+    "progress_model": "Latest progress value is coalesced under a lock instead of queueing one UI event per file",
+    "stale_task_protection": "Each task receives a unique poll token",
+    "close_policy": "Normal window close is blocked while a worker is active",
+    "about_tab_added": true,
+    "local_diagnostics_added": true
+  },
+  "diagnostic_boundary": {
+    "networking_or_upload": false,
+    "default_location": "%LOCALAPPDATA%/Two Hands Network Ltd/Rat-Trap/Diagnostics/rat-trap.log",
+    "format": "rotating JSON Lines",
+    "default_max_bytes": 262144,
+    "default_backup_count": 3,
+    "hard_max_bytes": 5242880,
+    "hard_backup_count": 5,
+    "support_id_format": "RT-[A-F0-9]{10}",
+    "exception_messages_persisted": false,
+    "unknown_fields_persisted": false,
+    "paths_filenames_contents_credentials_recovery_material_persisted": false,
+    "logging_failure_is_fatal": false
+  },
+  "store_identity": {
+    "status": "pending_partner_center",
+    "reserved_product_name": null,
+    "package_identity_name": null,
+    "package_identity_publisher": null,
+    "package_properties_publisher_display_name": null,
+    "production_identity_guessed_or_fabricated": false,
+    "store_upload_package_created": false,
+    "blocked_reason": "An authorised company representative must complete TWO HANDS NETWORK LTD verification, reserve Rat-Trap, and copy the exact Partner Center identity values."
+  },
+  "development_identity": {
+    "name": "TwoHandsNetwork.RatTrap.Development",
+    "publisher": "CN=Two Hands Network Ltd Development, OID.2.25.311729368913984317654407730594956997722=1",
+    "publisher_display_name": "Two Hands Network Ltd (Development)",
+    "permanent": false,
+    "public_release": false,
+    "store_identity": false
+  },
+  "build_environment": {
+    "os": "Windows 10.0.19045",
+    "architecture": "x86_64",
+    "python": "3.13.13",
+    "pyinstaller": "6.21.0",
+    "pyinstaller_hooks_contrib": "2026.6",
+    "pyfastcdc": "0.2.1",
+    "zstandard": "0.25.0",
+    "cryptography": "49.0.0",
+    "openssl": "4.0.1",
+    "cffi": "2.1.0",
+    "pycparser": "3.0",
+    "windows_sdk": "10.0.26100.0",
+    "makeappx_file_version": "10.0.26100.7705",
+    "dependency_file": "requirements-build-5.7.0.txt",
+    "byte_reproducible_build_claimed": false
+  },
+  "artifacts": [
+    {
+      "name": "Rat-Trap.exe",
+      "path": "dist/5.7.0/Rat-Trap.exe",
+      "copied_path": "../../outputs/Rat-Trap-5.7.0.exe",
+      "role": "Portable Windows beta application",
+      "bytes": 18038953,
+      "sha256": "2FDBC470CA51E04E7F38459F0C58089BF487965333C6AE21B6E2886CB14AF273",
+      "file_version": "5.7.0",
+      "product_version": "5.7.0",
+      "company_name": "TWO HANDS NETWORK LTD",
+      "authenticode": "NotSigned"
+    },
+    {
+      "name": "Rat-Trap-Windows-5.7.0-x64-unsigned.msix",
+      "path": "dist/msix/5.7.0/development/Rat-Trap-Windows-5.7.0-x64-unsigned.msix",
+      "copied_path": "../../outputs/Rat-Trap-Windows-5.7.0-x64-company-development.msix",
+      "role": "Structurally validated development package; not a Store package or public installer",
+      "bytes": 17909407,
+      "sha256": "A246E1A41D1E0ACEDDA734EDA825DFBDFC4FF1B50E3AA950757F723162C1CF4B",
+      "authenticode": "NotSigned",
+      "installable_public_release": false
+    }
+  ],
+  "windows_activation": {
+    "application_count": 1,
+    "executable": "Rat-Trap.exe",
+    "runtime_behavior": "packagedClassicApp",
+    "trust_level": "mediumIL",
+    "capabilities": [
+      "runFullTrust"
+    ],
+    "package_integrity_enforcement": true,
+    "associations": [
+      {
+        "file_type": ".rtsf",
+        "parameters": "--open-sealed \"%1\"",
+        "multi_select_model": "Single",
+        "automatic_decrypt_verify_extract": false
+      },
+      {
+        "file_type": ".gmw",
+        "parameters": "--open-archive \"%1\"",
+        "multi_select_model": "Single",
+        "automatic_decrypt_verify_extract": false
+      }
+    ],
+    "recovery_key_association_present": false
+  },
+  "verification": {
+    "python_unit_tests": {
+      "execution": "three complete unittest groups",
+      "passed": 221,
+      "failed": 0,
+      "group_counts": [
+        87,
+        55,
+        79
+      ],
+      "diagnostic_tests": 11,
+      "windows_reliability_tests": 19,
+      "namespace_aware_packaging_tests": 4
+    },
+    "independent_blocker_review": {
+      "release_blockers": 0,
+      "focused_tests_passed": 59,
+      "focused_tests_failed": 0
+    },
+    "python_compile": {
+      "command": "python -m compileall -q rat_trap tests",
+      "passed": true
+    },
+    "source_self_test": {
+      "command": "python -c \"from rat_trap.windows_app import _self_test; _self_test()\"",
+      "passed": true
+    },
+    "git_diff_check": {
+      "passed": true,
+      "note": "Only normal LF-to-CRLF working-copy notices were emitted."
+    },
+    "packaged_self_test": {
+      "exit_code": 0,
+      "passed": true
+    },
+    "packaged_folder_test": {
+      "exit_code": 0,
+      "passed": true,
+      "fixture_file_count": 464,
+      "fixture_total_bytes": 36991791
+    },
+    "development_msix": {
+      "makeappx_pack_succeeded": true,
+      "makeappx_unpack_succeeded": true,
+      "inventory_file_count": 29,
+      "legal_payload_file_count": 20,
+      "payload_executable_matches_frozen_build": true,
+      "package_integrity_declared": true,
+      "file_associations_present": [
+        ".rtsf",
+        ".gmw"
+      ],
+      "recovery_key_association_present": false,
+      "authenticode_status": "NotSigned",
+      "signature_entry_present": false,
+      "temporary_residue_count": 0
+    },
+    "store_fail_closed_gate": {
+      "pending_identity_attempt_exit_code": 1,
+      "artifacts_before": 0,
+      "artifacts_after": 0,
+      "pending_identity_reported": true
+    }
+  },
+  "evidence_files": [
+    {
+      "path": "packaging/publisher-profile.json",
+      "bytes": 1433,
+      "sha256": "588B8B374AC38E418F5EB6AB0087A30CEFE800428998E01403C57904889B5A59"
+    },
+    {
+      "path": "scripts/build_msix_5_7_0.ps1",
+      "bytes": 5191,
+      "sha256": "7579AB0DAD077C5832080684C8204F89BB435EDCCD6CDA87E7E932822FDA0D16"
+    },
+    {
+      "path": "docs/WINDOWS-RELIABILITY-GATE-5.7.0.md",
+      "bytes": 7071,
+      "sha256": "7FD4E3A06CEE8A5BC8F909F153B65603860AFD81C5822B7A259D6FE17E74D214"
+    },
+    {
+      "path": "build_windows.ps1",
+      "bytes": 1464,
+      "sha256": "D112DCE9F827E8F7E3609A0C856CAADE362029911293DAC4001E5A4619226125"
+    },
+    {
+      "path": "requirements-build-5.7.0.txt",
+      "bytes": 434,
+      "sha256": "CCF125BCFC4E77ED5AFECB059116F836D40D9F4715501F6C90CE67B11D3676E5"
+    },
+    {
+      "path": "packaging/msix/AppxManifest.template.xml",
+      "bytes": 3195,
+      "sha256": "292240F489BE24E355C1FE582D4A49A81632A595B62DFD3C5CDA309173E2A015"
+    },
+    {
+      "path": "rat_trap/diagnostics.py",
+      "bytes": 13569,
+      "sha256": "15C7D294E27E5468DA310EA1A49EE37FCE5FD3B9ED3B1929290CE70B5C5E80A1"
+    },
+    {
+      "path": "rat_trap/windows_app.py",
+      "bytes": 183134,
+      "sha256": "CC815AFED9421DA5CCB48C4A1683EC3A0B422644DB70BCB556B1F356A26E5D4F"
+    },
+    {
+      "path": "tests/test_diagnostics.py",
+      "bytes": 9898,
+      "sha256": "259D3D2297181C35739F72DBC8957C37C72C99B145CE2D8ED6196DB3775B4947"
+    },
+    {
+      "path": "tests/test_windows_reliability.py",
+      "bytes": 21849,
+      "sha256": "09A1DD50467FCE4F63A2F2B4BC2C951CA1BFA96BF538F6D4225B90391B9D38C5"
+    },
+    {
+      "path": "tests/test_windows_packaging.py",
+      "bytes": 7315,
+      "sha256": "7706F774549B1DDEC31145900B7BE96B6FABB255CD67DCC727E9DAA6B0CB5C6A"
+    }
+  ],
+  "msix_inventory": [
+    {
+      "path": "[Content_Types].xml",
+      "bytes": 585
+    },
+    {
+      "path": "AppxBlockMap.xml",
+      "bytes": 24620
+    },
+    {
+      "path": "AppxManifest.xml",
+      "bytes": 3286
+    },
+    {
+      "path": "Assets/GMW.png",
+      "bytes": 4369
+    },
+    {
+      "path": "Assets/RTSF.png",
+      "bytes": 4384
+    },
+    {
+      "path": "Assets/Square150x150Logo.png",
+      "bytes": 16658
+    },
+    {
+      "path": "Assets/Square44x44Logo.png",
+      "bytes": 2535
+    },
+    {
+      "path": "Assets/StoreLogo.png",
+      "bytes": 3119
+    },
+    {
+      "path": "Legal/COMMERCIAL-LICENSE.md",
+      "bytes": 1877
+    },
+    {
+      "path": "Legal/LICENSE.md",
+      "bytes": 5134
+    },
+    {
+      "path": "Legal/NOTICE.md",
+      "bytes": 5909
+    },
+    {
+      "path": "Legal/README-WINDOWS.txt",
+      "bytes": 9636
+    },
+    {
+      "path": "Legal/SBOM/cryptography-49.0.0-rust-sbom.json",
+      "bytes": 45592
+    },
+    {
+      "path": "Legal/SBOM/cryptography-49.0.0-wheel-sbom.json",
+      "bytes": 1223
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/CFFI-2.1.0-LICENSE.txt",
+      "bytes": 1123
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE-APACHE.txt",
+      "bytes": 11360
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE-BSD.txt",
+      "bytes": 1532
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE.txt",
+      "bytes": 197
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/OPENSSL-4.0.1-LICENSE.txt",
+      "bytes": 11360
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYCPARSER-3.0-LICENSE.txt",
+      "bytes": 1543
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYFASTCDC-0.2.1-LICENSE.txt",
+      "bytes": 1091
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYINSTALLER-6.21.0-COPYING.txt",
+      "bytes": 32138
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYINSTALLER-HOOKS-CONTRIB-2026.6-LICENSE.txt",
+      "bytes": 27666
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYTHON-3.13.13-LICENSE.txt",
+      "bytes": 33861
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYTHON-ZSTANDARD-0.25.0-LICENSE.txt",
+      "bytes": 1511
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/TCL-TK-8.6-LICENSE.txt",
+      "bytes": 2307
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/TYPING-EXTENSIONS-4.15.0-LICENSE.txt",
+      "bytes": 13936
+    },
+    {
+      "path": "Legal/THIRD-PARTY-NOTICES.md",
+      "bytes": 1768
+    },
+    {
+      "path": "Rat-Trap.exe",
+      "bytes": 18038953
+    }
+  ],
+  "known_limitations": [
+    "The development MSIX is unsigned, uses a non-permanent development identity, and is not a public installer",
+    "The portable executable is not Authenticode-signed",
+    "Partner Center business verification and exact Store identity assignment remain external pending steps",
+    "No Store upload package, submission, certification, Microsoft signature, listing, or IARC result exists",
+    "No clean Store-identity install, upgrade, association, repair, uninstall, or Windows App Certification Kit run has been performed",
+    "No cooperative cancellation mechanism exists for a genuinely hung operation; normal close remains blocked while its worker reports active",
+    "An operating-system kill, abrupt power loss, or storage-device failure cannot be made safe by the window close handler",
+    "No company-domain public privacy, support, or security contact page has been supplied"
+  ]
+}

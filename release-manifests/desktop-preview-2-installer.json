@@ -1,0 +1,189 @@
+{
+  "schema": "rat-trap-desktop-preview-installer-release/v1",
+  "product": "Rat-Trap Desktop Preview 2",
+  "publisher": "TWO HANDS NETWORK LTD",
+  "installer_version": "5.7.0.2",
+  "application_version": "5.7.0-desktop-preview.2",
+  "date": "2026-09-06",
+  "stage": "Unsigned separate preview installer candidate; not promoted to main beta",
+  "path_base": "repository root",
+  "artifacts": [
+    {
+      "path": "../../outputs/Rat-Trap-Desktop-Preview-2-Windows-x64-setup.exe",
+      "bytes": 18947507,
+      "sha256": "7D7DB00EA0E2ED0D5226019FDDC97AEF3127E0BC45A3F6018048259D8FC7D420"
+    },
+    {
+      "path": "../../outputs/Rat-Trap-Desktop-Preview-2-Installer-SHA256SUMS.txt",
+      "bytes": 115,
+      "sha256": "1A7EAE8DBCB4870CC1AEA8FFD203B0652302BC4D2BCA8CBA682136AE7A285BA3"
+    },
+    {
+      "path": "../../outputs/Rat-Trap-Desktop-Preview-2-Installer-Readme.txt",
+      "bytes": 5522,
+      "sha256": "39625DE75EF36188A52E938AEAB5DE5D8F9580C2C6BCE642BB06B29744A794E0"
+    }
+  ],
+  "baseline_records": [
+    {
+      "path": "release-manifests/desktop-preview-2.json",
+      "bytes": 19363,
+      "sha256": "E0993ADFF9D7A547FEF46C9A4CAE258A3DA9C60369A4993DE54AD1B03614BCDB"
+    },
+    {
+      "path": "release-manifests/5.7.0-direct-beta.json",
+      "bytes": 7857,
+      "sha256": "4DE1558E1EC3172C78105E75D59F2CDF341E9DA26E243D704B8D159F4AB023AF"
+    }
+  ],
+  "evidence_files": [
+    {
+      "path": "scripts/build_windows_desktop_preview2_installer.ps1",
+      "bytes": 18142,
+      "sha256": "4D047C09E1B241ACD763C3990AE6AEBC2E5B1DA97FAB52D4F79D075BC7167307"
+    },
+    {
+      "path": "scripts/test_windows_desktop_preview2_installer.ps1",
+      "bytes": 34053,
+      "sha256": "2FCE8E8BC659E523D90F7F4524C2F6E2725A3F00C9ACFC55CED74A334D766A5A"
+    },
+    {
+      "path": "scripts/test_desktop_preview2_installer_preflight.ps1",
+      "bytes": 7764,
+      "sha256": "BED281FA7A06D4385B4BD70ADC6D7C0020AE3FA794CA9E6479D5302F91D88225"
+    },
+    {
+      "path": "packaging/direct/rat-trap-desktop-preview2.nsi",
+      "bytes": 13276,
+      "sha256": "ADF87A1928B07405C85DACAA689B750B126CD758D4CC3C2FE9421FE4DC3764BC"
+    },
+    {
+      "path": "packaging/direct/README-DESKTOP-PREVIEW-2-INSTALLER.txt",
+      "bytes": 5522,
+      "sha256": "39625DE75EF36188A52E938AEAB5DE5D8F9580C2C6BCE642BB06B29744A794E0"
+    },
+    {
+      "path": "packaging/direct/qa-results-desktop-preview-2-installer.json",
+      "bytes": 24664,
+      "sha256": "FE9C195D9DB22E6B980AD6963B5730471C308E028F157E85CB5D1449976DB7E7"
+    },
+    {
+      "path": "docs/DESKTOP-PREVIEW-2-INSTALLER.md",
+      "bytes": 5059,
+      "sha256": "5424581E3F0CA8AB09EE01BD444B75E0953803BC374CEA19BD592894B25977F4"
+    },
+    {
+      "path": "docs/DESKTOP-PREVIEW-2-INSTALLER-CHECKLIST.md",
+      "bytes": 5913,
+      "sha256": "104BF7CC7B695A7E1D91DAF0D6CBBCC176FC1A6522B774D0E431B87F9AE22B24"
+    }
+  ],
+  "application": {
+    "executable": "Rat-Trap-Desktop-Preview-2.exe",
+    "bytes": 19109283,
+    "sha256": "C2F26CAA509D6F5ED887E0E839DDEA6095341A6DD0A0C1D29097BFEF42A3324F",
+    "rebuilt": false,
+    "architecture": "x64",
+    "authenticode": "NotSigned"
+  },
+  "installer": {
+    "app_key": "TwoHandsNetwork.RatTrap.DesktopPreview2",
+    "display_name": "Rat-Trap Desktop Preview 2",
+    "installation_path": "%LOCALAPPDATA%\\Programs\\Two Hands Network Ltd\\Rat-Trap Desktop Preview 2",
+    "scope": "current user",
+    "minimum_os": "Windows 10 x64",
+    "file_product_version": "5.7.0.2",
+    "product_name": "Rat-Trap Desktop Preview 2 Setup",
+    "launcher_architecture": "x86 PE32",
+    "requested_execution_level": "asInvoker",
+    "ui_access": false,
+    "authenticode": "NotSigned",
+    "payload_files": 27,
+    "legal_files": 21,
+    "generated_uninstaller_additional": true,
+    "optional_components_initially_off": [
+      "desktop shortcut",
+      "Open-with registration for .gmw and .rtsf"
+    ],
+    "default_applications_changed": false,
+    "recovery_key_association": false,
+    "uninstall": "Explicit installed-file list; nonrecursive empty-directory removal; preserve user-added files.",
+    "main_beta_replaced": false,
+    "main_beta_upgrade_migration": false,
+    "automatic_updater": false,
+    "portable_guide_retained_as": "README-PORTABLE.txt",
+    "installer_guide": "README-FIRST.txt"
+  },
+  "compiler": {
+    "name": "NSIS",
+    "version": "3.12",
+    "sha256": "B043E554AFEFBFC56315669D0B4779793AEAE67F0F2A7A790E2EA91F05298EFF",
+    "licence_sha256": "388357C1215FF403C5EBDE3A5ECD273E68F8B79A579996775245D1EE65442ABA",
+    "globally_installed": false,
+    "compiler_verified_before_execution": true,
+    "byte_reproducibility_claimed": false
+  },
+  "verification": {
+    "source_suite": {
+      "command": ".venv/Scripts/python.exe -m unittest discover -s tests",
+      "passed": 291,
+      "failed": 0,
+      "duration_seconds": 158.4
+    },
+    "build_input_tests": {
+      "passed": 44,
+      "failed": 0,
+      "scenarios": 9,
+      "started_utc": "2026-09-06T01:05:23.0377972Z",
+      "completed_utc": "2026-09-06T01:05:36.9686212Z"
+    },
+    "isolated_lifecycle": {
+      "passed": 167,
+      "failed": 0,
+      "cleanup_errors": 0,
+      "started_utc": "2026-09-06T01:06:58.6762772Z",
+      "completed_utc": "2026-09-06T01:08:10.4381706Z",
+      "host": "Windows 10 Home 22H2 19045.6456 x64",
+      "powershell": "5.1.19041.6456",
+      "clean_vm": false,
+      "test_identity": "TwoHandsNetwork.RatTrap.DesktopPreview2.QA.a65138032bdb43308d87cb3157c0d0a9",
+      "qa_setup_sha256": "D38BDEC3F85A3D365C5691D3ADF1305DF238F327959E4EF559CA4F96FA09912D",
+      "installed_engine_self_test_exit": 0,
+      "installed_ui_self_test_exit": 0,
+      "installed_payload_hashes_verified": 27,
+      "preexisting_referenced_progid_count": 0,
+      "generated_other_app_openwith_sentinels": 2,
+      "ordinary_uninstaller_handoff": true,
+      "copied_uninstaller_path": true,
+      "qa_install_and_registration_cleaned": true,
+      "non_qa_install_state_unchanged": true,
+      "scope_note": "Lifecycle tested a separately compiled QA identity. Handoff setup inspected read-only; matching installer source hashes and application payload."
+    },
+    "independent_source_review_blockers": 0,
+    "independent_final_pe_review": true,
+    "prior_direct_beta_record_hashes_verified": 15,
+    "prior_preview2_record_hashes_verified": 65,
+    "frozen_portable_payload_files_unchanged": 25,
+    "older_beta_and_preview_binaries_replaced": false
+  },
+  "scope": {
+    "application_or_engine_code_changed": false,
+    "archive_formats_changed": false,
+    "encryption_or_recovery_changed": false,
+    "github_push": false,
+    "repository_visibility_changed": false,
+    "public_download_published": false,
+    "signing_purchase": false,
+    "microsoft_store_change": false
+  },
+  "limitations": [
+    "Unsigned preview, not a signed commercial or Microsoft Store release.",
+    "Clean Windows 11 validation remains outstanding; no usable local runner was found.",
+    "Native desktop capture failed: SetIsBorderRequired failed: No such interface supported (0x80004002). No visual or interactive wizard pass claimed.",
+    "Actual Explorer folder-reveal and Open-with UI behavior still require hands-on testing.",
+    "No populated-default or intended downloaded-file security UX pass.",
+    "Same-version repair and isolated identity tested; no future-version upgrade migration.",
+    "Application test suite passed, but packaging changes do not imply improved compression ratios or security guarantees."
+  ],
+  "next_gate": "Complete docs/DESKTOP-PREVIEW-2-INSTALLER-CHECKLIST.md with disposable copies on a clean Windows 11 x64 machine before main-beta promotion or public distribution."
+}

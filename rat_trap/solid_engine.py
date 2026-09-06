@@ -74,6 +74,44 @@ class SolidMetadata:
             raise ValueError("Archive has invalid Rat-Trap metadata") from exc
 
 
+@dataclass(frozen=True)
+class SolidSingleFileInfo:
+    metadata: SolidMetadata
+    name: str
+    size: int
+    mtime: float
+    mode: int
+    sha256: str
+
+
+@dataclass(frozen=True)
+class _RegularFileSnapshot:
+    device: int
+    inode: int
+    size: int
+    mtime_ns: int
+    mode: int
+    link_count: int
+
+    @classmethod
+    def from_stat(cls, value: os.stat_result) -> "_RegularFileSnapshot":
+        mode = int(value.st_mode)
+        if os.name == "nt":
+            # Windows path stat synthesizes execute bits from .exe/.com/.bat/
+            # .cmd suffixes; fstat of the same file does not. These are not
+            # NTFS ACLs. Keep type and read/write bits, plus every identity and
+            # mutation field below; POSIX permission comparisons stay exact.
+            mode &= ~(stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        return cls(
+            device=int(value.st_dev),
+            inode=int(value.st_ino),
+            size=int(value.st_size),
+            mtime_ns=int(value.st_mtime_ns),
+            mode=mode,
+            link_count=int(value.st_nlink),
+        )
+
+
 class _HashingSink:
     def __init__(self, raw: BinaryIO) -> None:
         self.raw = raw
@@ -143,6 +181,53 @@ class _LimitedHashingReader:
         self.remaining -= len(data)
         self.hasher.update(data)
         return data
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+
+class _HashingReader:
+    def __init__(self, raw: BinaryIO) -> None:
+        self.raw = raw
+        self.hasher = hashlib.sha256()
+        self.bytes_read = 0
+
+    def read(self, size: int = -1) -> bytes:
+        data = self.raw.read(size)
+        self.hasher.update(data)
+        self.bytes_read += len(data)
+        return data
+
+
+class _OutputLimitReader:
+    """Bound decompressed bytes so a valid checksum cannot hide a bomb."""
+
+    def __init__(self, raw: BinaryIO, limit: int) -> None:
+        self.raw = raw
+        self.limit = limit
+        self.bytes_read = 0
+
+    def read(self, size: int = -1) -> bytes:
+        remaining_with_probe = self.limit - self.bytes_read + 1
+        if remaining_with_probe <= 0:
+            raise ValueError(
+                "Archive expands beyond the one-file decompression limit"
+            )
+        if size is None or size < 0 or size > remaining_with_probe:
+            size = remaining_with_probe
+        data = self.raw.read(size)
+        self.bytes_read += len(data)
+        if self.bytes_read > self.limit:
+            raise ValueError(
+                "Archive expands beyond the one-file decompression limit"
+            )
+        return data
+
+    def close(self) -> None:
+        self.raw.close()
 
     def readable(self) -> bool:
         return True
@@ -269,6 +354,74 @@ def _validate_create_paths(folder: Path, output: Path) -> tuple[Path, Path]:
     return folder, output
 
 
+def _paths_alias(first: Path, second: Path) -> bool:
+    first = Path(first)
+    second = Path(second)
+    if first.resolve() == second.resolve():
+        return True
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
+
+
+def _single_member_name(value: str) -> str:
+    relative = _normalise_member_path(value)
+    return PurePosixPath(*relative.parts).as_posix()
+
+
+def _digest_open_file(handle: BinaryIO, expected_size: int) -> str:
+    handle.seek(0)
+    digest = hashlib.sha256()
+    remaining = expected_size
+    while remaining:
+        block = handle.read(min(_BUFFER_SIZE, remaining))
+        if not block:
+            raise ValueError(
+                "Source file changed while it was being compressed"
+            )
+        digest.update(block)
+        remaining -= len(block)
+    if handle.read(1):
+        raise ValueError(
+            "Source file changed while it was being compressed"
+        )
+    handle.seek(0)
+    return digest.hexdigest()
+
+
+def _source_matches_snapshot(
+    source: Path,
+    handle: BinaryIO,
+    expected: _RegularFileSnapshot,
+) -> bool:
+    try:
+        path_stat = source.lstat()
+        handle_stat = os.fstat(handle.fileno())
+    except OSError:
+        return False
+    return (
+        stat.S_ISREG(path_stat.st_mode)
+        and stat.S_ISREG(handle_stat.st_mode)
+        and _RegularFileSnapshot.from_stat(path_stat) == expected
+        and _RegularFileSnapshot.from_stat(handle_stat) == expected
+    )
+
+
+def _single_file_tar_info(
+    stored_name: str,
+    source_stat: os.stat_result,
+) -> tarfile.TarInfo:
+    member = tarfile.TarInfo(stored_name)
+    member.type = tarfile.REGTYPE
+    member.size = int(source_stat.st_size)
+    member.mtime = float(source_stat.st_mtime)
+    member.mode = stat.S_IMODE(source_stat.st_mode)
+    member.uid = int(getattr(source_stat, "st_uid", 0))
+    member.gid = int(getattr(source_stat, "st_gid", 0))
+    return member
+
+
 def compress_folder(
     folder: Path,
     output: Path,
@@ -385,6 +538,165 @@ def compress_folder(
             pass
 
 
+def compress_file(
+    source: Path,
+    output: Path,
+    *,
+    compressor: str = "zstd",
+    level: int = 6,
+    profile: str = "sealed-file",
+    threads: int = 0,
+    stored_name: Optional[str] = None,
+) -> SolidMetadata:
+    """Create a one-regular-file GMW-SOLID-2 archive.
+
+    The source is read directly through one open descriptor.  A digest pass
+    before compression and a second digest while tar consumes that descriptor
+    detect content changes even when size and timestamps are restored.
+    """
+
+    source_argument = Path(source)
+    output = Path(output).resolve()
+    try:
+        argument_stat = source_argument.lstat()
+    except OSError as exc:
+        raise ValueError(f"Input file '{source_argument}' not found") from exc
+    if source_argument.is_symlink() or not stat.S_ISREG(argument_stat.st_mode):
+        raise ValueError(
+            f"Input must be an ordinary non-symbolic-link file: {source_argument}"
+        )
+    source = source_argument.resolve()
+    if _paths_alias(source, output):
+        raise ValueError("The output archive must not replace its input file")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.is_dir():
+        raise ValueError(f"Output path '{output}' is a folder")
+
+    name = _single_member_name(
+        source.name if stored_name is None else stored_name
+    )
+    if compressor == "zstd":
+        if not HAS_ZSTD:
+            raise RuntimeError("Zstandard support is unavailable")
+        if not -7 <= level <= 22:
+            raise ValueError("Zstandard level must be between -7 and 22")
+    elif compressor == "xz":
+        if not 0 <= level <= 9:
+            raise ValueError("XZ level must be between 0 and 9")
+    else:
+        raise ValueError(f"Unsupported solid compressor '{compressor}'")
+
+    started = time.time()
+    with open(source, "rb") as source_handle:
+        source_stat = os.fstat(source_handle.fileno())
+        snapshot = _RegularFileSnapshot.from_stat(source_stat)
+        if (
+            not stat.S_ISREG(source_stat.st_mode)
+            or int(argument_stat.st_dev) != snapshot.device
+            or int(argument_stat.st_ino) != snapshot.inode
+            or not _source_matches_snapshot(source, source_handle, snapshot)
+        ):
+            raise ValueError(
+                "Source file was replaced before it could be compressed"
+            )
+        source_sha256 = _digest_open_file(source_handle, snapshot.size)
+        if not _source_matches_snapshot(source, source_handle, snapshot):
+            raise ValueError(
+                "Source file changed while it was being compressed"
+            )
+
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{output.name}.",
+            suffix=".rat-trap-build",
+            dir=output.parent,
+            delete=False,
+        ) as staging_file:
+            staging_path = Path(staging_file.name)
+
+        try:
+            with open(staging_path, "wb") as raw_out:
+                raw_out.write(MAGIC)
+                sink = _HashingSink(raw_out)
+                if compressor == "zstd":
+                    assert zstd is not None
+                    compressor_context = zstd.ZstdCompressor(
+                        level=level, threads=threads
+                    )
+                    stream = compressor_context.stream_writer(
+                        sink, closefd=False
+                    )
+                else:
+                    stream = _LzmaWriter(sink, level)
+
+                hashing_source = _HashingReader(source_handle)
+                with stream:
+                    with tarfile.open(
+                        fileobj=stream,
+                        mode="w|",
+                        format=tarfile.PAX_FORMAT,
+                    ) as archive:
+                        archive.addfile(
+                            _single_file_tar_info(name, source_stat),
+                            hashing_source,
+                        )
+
+                if (
+                    hashing_source.bytes_read != snapshot.size
+                    or source_handle.read(1)
+                    or hashing_source.hasher.hexdigest() != source_sha256
+                    or not _source_matches_snapshot(
+                        source, source_handle, snapshot
+                    )
+                ):
+                    raise ValueError(
+                        "Source file changed while it was being compressed"
+                    )
+
+                metadata = SolidMetadata(
+                    format="GMW-SOLID-2",
+                    compressor=compressor,
+                    compression_level=level,
+                    checksum=sink.hasher.hexdigest(),
+                    checksum_algorithm="sha256",
+                    created_at=started,
+                    elapsed_seconds=time.time() - started,
+                    file_count=1,
+                    directory_count=0,
+                    total_bytes=snapshot.size,
+                    payload_bytes=sink.bytes_written,
+                    profile=profile,
+                    entry_order="path",
+                    zstd_window_log=None,
+                    zstd_long_distance=False,
+                    whole_file_dedup=False,
+                    duplicate_file_count=0,
+                )
+                metadata_blob = json.dumps(
+                    metadata.as_dict(),
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+                raw_out.write(metadata_blob)
+                raw_out.write(_LENGTH.pack(len(metadata_blob)))
+                raw_out.write(FOOTER_MAGIC)
+                raw_out.flush()
+                os.fsync(raw_out.fileno())
+
+            if not _source_matches_snapshot(
+                source, source_handle, snapshot
+            ):
+                raise ValueError(
+                    "Source file changed while it was being compressed"
+                )
+            os.replace(staging_path, output)
+            return metadata
+        finally:
+            try:
+                staging_path.unlink()
+            except FileNotFoundError:
+                pass
+
+
 def _read_layout(fp: BinaryIO) -> tuple[SolidMetadata, int]:
     fp.seek(0, os.SEEK_END)
     archive_size = fp.tell()
@@ -425,7 +737,11 @@ def read_metadata(path: Path) -> SolidMetadata:
 
 
 def _open_tar_stream(
-    fp: BinaryIO, metadata: SolidMetadata, payload_size: int
+    fp: BinaryIO,
+    metadata: SolidMetadata,
+    payload_size: int,
+    *,
+    max_output_bytes: Optional[int] = None,
 ) -> tuple[_LimitedHashingReader, BinaryIO, tarfile.TarFile]:
     fp.seek(len(MAGIC))
     limited = _LimitedHashingReader(fp, payload_size)
@@ -436,6 +752,11 @@ def _open_tar_stream(
         decompressed = zstd.ZstdDecompressor().stream_reader(limited, closefd=False)
     else:
         decompressed = lzma.LZMAFile(limited, mode="rb")
+    if max_output_bytes is not None:
+        decompressed = _OutputLimitReader(
+            decompressed,
+            max_output_bytes,
+        )
     tf = tarfile.open(fileobj=decompressed, mode="r|")
     return limited, decompressed, tf
 
@@ -450,6 +771,205 @@ def _finish_read(
     digest = limited.hasher.hexdigest()
     if digest != metadata.checksum:
         raise ValueError("Archive checksum verification failed")
+
+
+def _validate_single_file_metadata(metadata: SolidMetadata) -> None:
+    if (
+        type(metadata.file_count) is not int
+        or metadata.file_count != 1
+        or type(metadata.directory_count) is not int
+        or metadata.directory_count != 0
+        or type(metadata.total_bytes) is not int
+        or metadata.total_bytes < 0
+    ):
+        raise ValueError(
+            "Archive is not an exact one-file Rat-Trap solid archive"
+        )
+    if (
+        metadata.checksum_algorithm != "sha256"
+        or not isinstance(metadata.checksum, str)
+        or len(metadata.checksum) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in metadata.checksum
+        )
+    ):
+        raise ValueError("Archive has invalid one-file checksum metadata")
+
+
+def _read_single_file(
+    archive: Path,
+    target: Optional[BinaryIO] = None,
+) -> SolidSingleFileInfo:
+    archive = Path(archive).resolve()
+    if not archive.is_file():
+        raise ValueError(f"Archive '{archive}' not found")
+
+    with open(archive, "rb") as fp:
+        metadata, payload_size = _read_layout(fp)
+        _validate_single_file_metadata(metadata)
+        limited, decompressed, tar = _open_tar_stream(
+            fp,
+            metadata,
+            payload_size,
+            max_output_bytes=metadata.total_bytes + 16 * 1024 * 1024,
+        )
+        found: Optional[SolidSingleFileInfo] = None
+        try:
+            for member in tar:
+                if found is not None:
+                    raise ValueError(
+                        "One-file archive contains more than one member"
+                    )
+                _validate_tar_member(member, allow_hardlinks=False)
+                if not member.isfile():
+                    raise ValueError(
+                        "One-file archive contains a directory or link"
+                    )
+                name = _single_member_name(member.name)
+                if member.size < 0 or member.size != metadata.total_bytes:
+                    raise ValueError(
+                        "One-file archive member size does not match metadata"
+                    )
+                source = tar.extractfile(member)
+                if source is None:
+                    raise ValueError(
+                        "Could not read the one-file archive member"
+                    )
+                digest = hashlib.sha256()
+                copied = 0
+                with source:
+                    while True:
+                        block = source.read(_BUFFER_SIZE)
+                        if not block:
+                            break
+                        copied += len(block)
+                        if copied > member.size:
+                            raise ValueError(
+                                "One-file archive member exceeds its declared size"
+                            )
+                        digest.update(block)
+                        if target is not None:
+                            written = target.write(block)
+                            if written is not None and written != len(block):
+                                raise OSError(
+                                    "Short write while extracting one-file archive"
+                                )
+                if copied != member.size:
+                    raise ValueError(
+                        "One-file archive member is truncated"
+                    )
+                found = SolidSingleFileInfo(
+                    metadata=metadata,
+                    name=name,
+                    size=copied,
+                    mtime=float(member.mtime),
+                    mode=stat.S_IMODE(int(member.mode)),
+                    sha256=digest.hexdigest(),
+                )
+            _finish_read(limited, decompressed, metadata)
+        except tarfile.TarError as exc:
+            raise ValueError("One-file archive tar payload is invalid") from exc
+        finally:
+            tar.close()
+            decompressed.close()
+
+    if found is None:
+        raise ValueError("One-file archive contains no regular file")
+    return found
+
+
+def inspect_single_file(archive: Path) -> SolidSingleFileInfo:
+    """Fully read and validate an exact one-regular-file solid archive."""
+
+    return _read_single_file(Path(archive))
+
+
+def _publish_single_file(
+    staged: Path,
+    output: Path,
+    *,
+    replace: bool,
+) -> None:
+    if replace:
+        os.replace(staged, output)
+        return
+    if output.exists():
+        raise FileExistsError(f"Destination already exists: {output}")
+    try:
+        if os.name == "nt":
+            # Windows rename is atomic and refuses to replace an existing
+            # destination.  Staging occurs in the same directory/volume.
+            os.rename(staged, output)
+        else:
+            # A same-filesystem hard link gives POSIX an atomic no-replace
+            # publication primitive without a check-then-rename race.
+            os.link(staged, output)
+            staged.unlink()
+    except FileExistsError as exc:
+        raise FileExistsError(
+            f"Destination already exists: {output}"
+        ) from exc
+    except OSError as exc:
+        raise OSError(
+            "This filesystem could not atomically publish the extracted "
+            "file without replacing an existing destination"
+        ) from exc
+
+
+def extract_single_file(
+    archive: Path,
+    output: Path,
+    *,
+    expected: Optional[SolidSingleFileInfo] = None,
+    replace: bool = False,
+) -> SolidSingleFileInfo:
+    """Extract one member to an explicit path, publishing only after verify."""
+
+    archive = Path(archive).resolve()
+    output = Path(output).resolve()
+    if _paths_alias(archive, output):
+        raise ValueError(
+            "The extracted file must not replace its source archive"
+        )
+    if (
+        expected is not None
+        and not isinstance(expected, SolidSingleFileInfo)
+    ):
+        raise TypeError("expected must be SolidSingleFileInfo or None")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.is_dir():
+        raise ValueError(f"Output path '{output}' is a folder")
+    if output.exists() and not replace:
+        raise FileExistsError(f"Destination already exists: {output}")
+
+    descriptor, staging_name = tempfile.mkstemp(
+        prefix=f".{output.name}.",
+        suffix=".rat-trap-part",
+        dir=output.parent,
+    )
+    staged = Path(staging_name)
+    try:
+        with os.fdopen(descriptor, "wb") as target:
+            actual = _read_single_file(archive, target)
+            target.flush()
+            os.fsync(target.fileno())
+        if expected is not None and actual != expected:
+            raise ValueError(
+                "One-file archive no longer matches the inspected file"
+            )
+        try:
+            os.chmod(staged, stat.S_IMODE(actual.mode))
+            os.utime(staged, (actual.mtime, actual.mtime))
+        except OSError:
+            pass
+        _publish_single_file(staged, output, replace=replace)
+        return actual
+    finally:
+        try:
+            staged.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _validate_tar_member(member: tarfile.TarInfo, *, allow_hardlinks: bool = False) -> None:

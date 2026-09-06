@@ -3,6 +3,7 @@
 Rat-Trap-Next-Gen-Compression-Engine is source-available software, not open-source software.
 
 Required Notice: Copyright (c) 2026 TWO HANDS NETWORK LTD.
+Required Notice: Rat-Trap is a product owned and published by TWO HANDS NETWORK LTD under its written agreements with the project's contributors.
 
 Rat-Trap-Next-Gen-Compression-Engine is licensed under the PolyForm Noncommercial License 1.0.0. Personal, hobby, research, educational, public-interest, and other non-commercial uses are permitted under that license.
 
@@ -15,15 +16,19 @@ Commercial use requires a separate written license from the licensor. Commercial
 - training, fine-tuning, distilling, evaluating, or improving a commercial AI model or commercial AI system using Rat-Trap-Next-Gen-Compression-Engine source code, documentation, tests, data formats, or derived materials;
 - removing or obscuring copyright, license, attribution, or required notices.
 
-Rat-Trap-Next-Gen-Compression-Engine was created by Martin Ollett and is owned/licensed by TWO HANDS NETWORK LTD.
+The Rat-Trap compressor implementation was designed and built by Glyn Evans,
+drawing on Motion-TimeSpace work by Martin Ollett. Authorship and ownership of
+underlying intellectual property remain governed by the applicable written
+agreements; this notice does not vary those agreements.
 
 This notice does not limit rights you may have under fair use, fair dealing, or other applicable law. It is intended to make the licensor's permission boundaries clear before the repository is made public.
 
 ## Frozen Windows runtime inventory
 
-The Rat-Trap 5.3.0 Windows executable also contains separately licensed
-components. The release ZIP includes their complete upstream licence files in
-`THIRD-PARTY-LICENSES`:
+The Rat-Trap 5.7.0 Windows executable also contains separately licensed
+components. Windows release packages include their complete upstream licence
+files under `THIRD-PARTY-LICENSES` or
+`Legal/THIRD-PARTY-LICENSES`:
 
 - Python 3.13.13;
 - Tcl/Tk 8.6;
@@ -46,7 +51,7 @@ licence texts plus the cryptography wheel and Rust component SBOMs.
 
 ## Bundled third-party component: PyFastCDC
 
-Rat-Trap 5.3 bundles PyFastCDC 0.2.1 for FastCDC 2020 content-defined
+Rat-Trap 5.7 bundles PyFastCDC 0.2.1 for FastCDC 2020 content-defined
 chunking. PyFastCDC is licensed separately under the MIT License:
 
 MIT License
@@ -73,7 +78,7 @@ SOFTWARE.
 
 ## Bundled third-party component: python-zstandard
 
-Rat-Trap 5.3 bundles python-zstandard 0.25.0 for Zstandard compression.
+Rat-Trap 5.7 bundles python-zstandard 0.25.0 for Zstandard compression.
 python-zstandard is licensed separately under the BSD 3-Clause License:
 
 Copyright (c) 2016, Gregory Szorc

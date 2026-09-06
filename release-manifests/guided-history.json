@@ -1,0 +1,464 @@
+{
+  "schema": "rat-trap-guided-history-release/v1",
+  "product": "Rat-Trap Desktop Preview 2",
+  "publisher": "TWO HANDS NETWORK LTD",
+  "date": "2026-09-06",
+  "application_version": "5.7.0-desktop-preview.2-tutorial.4",
+  "installer_version": "5.7.0.6",
+  "base_engine_version": "5.7.0",
+  "stage": "Unsigned private backup-history tutorial update; same installed product; not a main-beta or Store promotion",
+  "path_base": "repository root",
+  "ready_walkthroughs": [
+    "Find a file inside a Vault",
+    "Compress a folder",
+    "Restore your files",
+    "Protect a file and recover it",
+    "Browse backup history"
+  ],
+  "upcoming_walkthroughs": [],
+  "artifacts": [
+    {
+      "path": "dist/guided-history-final-f3f5e6f5aed04b1798e708a6f9d7a538/Rat-Trap-Desktop-Preview-2.exe",
+      "bytes": 19215482,
+      "sha256": "5D305EDBF38B9C0B81A2602488F982E51DEEF9B5B9D44785738248729DCCCA5C"
+    },
+    {
+      "path": "dist/guided-history-installer-final-f3f5e6f5aed04b1798e708a6f9d7a538/Rat-Trap-Guided-History-Windows-x64-setup.exe",
+      "bytes": 19054436,
+      "sha256": "1A20D60641D79D7F5CDFDB3DACFC326B14845559E4B400975FFEACA8F6764AB5"
+    }
+  ],
+  "current_handoff": {
+    "mutable_latest_pointer": true,
+    "files": [
+      {
+        "path": "../../outputs/00 - START HERE/Install Rat-Trap.exe",
+        "bytes": 19054436,
+        "sha256": "1A20D60641D79D7F5CDFDB3DACFC326B14845559E4B400975FFEACA8F6764AB5"
+      },
+      {
+        "path": "../../outputs/00 - START HERE/READ ME FIRST.txt",
+        "bytes": 3806,
+        "sha256": "CBBBDD7BF53D1CBB6D6FFC3F9D82A4EE0F2AC346F0816A204D10B8270749D7FB"
+      }
+    ],
+    "replaced_previous_sha256": "35566D1562AB1A574AA191A04F276EAB2FC0E075F20F59CF11A94460C0329032",
+    "preserved_previous_path": "dist/guided-protection-installer/Rat-Trap-Guided-Protection-Windows-x64-setup.exe",
+    "files_in_folder": 2,
+    "normal_setup_executed": false
+  },
+  "superseded_development_artifacts": {
+    "reason": "Initial private history candidate retained as evidence; replaced before handoff after the high-DPI restoration fix. Not the current release.",
+    "artifacts": [
+      {
+        "path": "dist/guided-history/Rat-Trap-Desktop-Preview-2.exe",
+        "bytes": 19213396,
+        "sha256": "333FDBD0900A536E9461141E52CF5A3D8A5D2EEA6B6F943F426913FF4A15BFE8"
+      },
+      {
+        "path": "dist/guided-history-installer/Rat-Trap-Guided-History-Windows-x64-setup.exe",
+        "bytes": 19052111,
+        "sha256": "48F9E9FD1527371C684A99EBF7DAD4CF2EB32724D9820F15EC14EE83F5D571E4"
+      }
+    ]
+  },
+  "evidence_files": [
+    {
+      "path": "rat_trap/guided_app.py",
+      "bytes": 114216,
+      "sha256": "2E12DE10EB1E5B10568F4002F5CD75DDFA577B7F0DF4B7CA66BBF4DB7A215BE6"
+    },
+    {
+      "path": "rat_trap/tutorials.py",
+      "bytes": 21224,
+      "sha256": "0B209E620F7E0610C86A2237B9F22B7627386C9F0C7EC70877AD096D9BCD3DFD"
+    },
+    {
+      "path": "rat_trap/history_tutorials.py",
+      "bytes": 20924,
+      "sha256": "FDBF35F1336EC6B8A3733FD9BA6CC4A120F90A608AC957581C0FDEB43864926D"
+    },
+    {
+      "path": "rat_trap/protection_tutorials.py",
+      "bytes": 14346,
+      "sha256": "43D24306987327AC2A235C9D21D77A664E5E5F0224B48BBACD7FC03E1449ED08"
+    },
+    {
+      "path": "rat_trap/archive_tutorials.py",
+      "bytes": 17619,
+      "sha256": "28E176080B780806335C51C1D3B893FB7D7890A3AC8F391103B7FDE216C5BD89"
+    },
+    {
+      "path": "windows_guided_preview.py",
+      "bytes": 133,
+      "sha256": "2DF4F26BA59901A2C1D6BD44F6640429DC5AF196D9B0B88E77E89FE9F7979C49"
+    },
+    {
+      "path": "tests/test_history_guided_app.py",
+      "bytes": 39126,
+      "sha256": "F5093A8B4EF2E0EE58AA0A12FB8BE3D2650D2640D0AC4F99F9CB8573F1C2A7DA"
+    },
+    {
+      "path": "tests/test_history_tutorials.py",
+      "bytes": 31824,
+      "sha256": "28E8E8CB5D1D560464DA64BE13B443EE1443102FBF6F41AF62BF145B884220C0"
+    },
+    {
+      "path": "tests/test_tutorials.py",
+      "bytes": 8336,
+      "sha256": "3817F0BA9F7B838683508A0840A55A23892F9B5F68E0908EB9AD94E5BECE5D2F"
+    },
+    {
+      "path": "scripts/build_windows_guided_history.ps1",
+      "bytes": 22807,
+      "sha256": "8A729D8E76C39EDDDAEE6D0B562A392DDB1B485C73B450E094B52D8B3FF48100"
+    },
+    {
+      "path": "scripts/build_windows_guided_history_installer.ps1",
+      "bytes": 20075,
+      "sha256": "D86745E7ACDA9401003E962BA93F7FA001D18005502007429C88D587D31F3291"
+    },
+    {
+      "path": "scripts/test_windows_guided_history_installer.ps1",
+      "bytes": 46379,
+      "sha256": "EAD817199A6A22DA926E6AF0A3C15A7025C792642C3D17B4EC3BDEF9D0C781AA"
+    },
+    {
+      "path": "packaging/direct/rat-trap-guided-history.nsi",
+      "bytes": 13458,
+      "sha256": "B5FAF550457D6B46B34FE41ED029A7ED3F47140772F4F0F71831644563832559"
+    },
+    {
+      "path": "packaging/direct/README-GUIDED-HISTORY.txt",
+      "bytes": 5077,
+      "sha256": "E30ABEAF2768F95A148060E57F6EBD13F1CC3B6D6A6F9BE148BDDC8C9F32042F"
+    },
+    {
+      "path": "packaging/direct/README-GUIDED-HISTORY-INSTALLER.txt",
+      "bytes": 5658,
+      "sha256": "E4011BAAEB916DA0F91467892A9A5D0FB0D0E71ADA450F7C7590A57FF45031F9"
+    },
+    {
+      "path": "docs/GUIDED-HISTORY-LESSON.md",
+      "bytes": 7421,
+      "sha256": "1E359E8D1E06DD0E95672C24AE7908538E3D9415DB56264A42EE27D909B63172"
+    },
+    {
+      "path": "packaging/direct/qa-results-guided-history.json",
+      "bytes": 33752,
+      "sha256": "9A8BA109A4B35FCA28301CD9DBA063F6D6B6E04130565015F8B686EA42B0E5A6"
+    },
+    {
+      "path": "dist/guided-history/BUILD-MANIFEST.json",
+      "bytes": 54835,
+      "sha256": "6EBEADA2871569E57C59A0B57CA56F18750EB659CA232C35CE402512F9C9E272"
+    },
+    {
+      "path": "build/guided-history-f24697acc6ed43d1b498265d15031aaa/build-info.json",
+      "bytes": 54835,
+      "sha256": "6EBEADA2871569E57C59A0B57CA56F18750EB659CA232C35CE402512F9C9E272"
+    },
+    {
+      "path": "build/guided-history-qa/080cf188f6534c9abb3203a9defd169d/lifecycle-report.json",
+      "bytes": 76495,
+      "sha256": "8E16703A2A0BBF108DB29979A8A18CB4E4D04832C42B60BFE8F81E4A3CF389F0"
+    },
+    {
+      "path": "build/guided-history-source-tests-f178f51891fa47aaaa3fcbfb0e612792/source-tests.log",
+      "bytes": 113511,
+      "sha256": "FA628E004FA8635C06FEF47CC61002AECC39D1B67A7BCE78E10DD9BB9286EAED"
+    },
+    {
+      "path": "build/guided-history-source-tests-75950a8cacfa4503ba410c5906bdcb96/source-tests.log",
+      "bytes": 105226,
+      "sha256": "9E877E3AFADB417BC0BB4BF8CB8438D62AFD5F0C7D985C76AE69E078F7C81992"
+    },
+    {
+      "path": "build/history-ui-confirmation-44fb88fa74b0492a8c4ef3282f2efb1b/history-ui-scale-state.log",
+      "bytes": 305,
+      "sha256": "2E19A96BE5A5F7F0673592C469867C800047311DD4DD11A27E2E545BD1CBEB06"
+    },
+    {
+      "path": "dist/guided-history-final-f3f5e6f5aed04b1798e708a6f9d7a538/BUILD-MANIFEST.json",
+      "bytes": 54835,
+      "sha256": "6535148844E7D5D617702ECF3E0BC034E6246F32C0C16282C3F98C5DB255CCF6"
+    },
+    {
+      "path": "build/guided-history-3a084141d25f439b802b2baff7e7fd12/build-info.json",
+      "bytes": 54835,
+      "sha256": "6535148844E7D5D617702ECF3E0BC034E6246F32C0C16282C3F98C5DB255CCF6"
+    },
+    {
+      "path": "build/guided-history-final-gui-2e12de10/source-tests.log",
+      "bytes": 5208,
+      "sha256": "734690B70E6856A70F47BEC379DE534E788DC9F43094157C898829ACA9B4A58E"
+    },
+    {
+      "path": "build/guided-history-qa/bb063dd4d902458c9fc04d0e3f76b98e/lifecycle-report.json",
+      "bytes": 76534,
+      "sha256": "1D05AFFF57D76CEC6F2A1852B533E8B4ECEBC1057689C8358071782F17683E33"
+    },
+    {
+      "path": "build/guided-history-final-source-df7736ee06a144fabaa5e0184f7b2b0c/stdout.log",
+      "bytes": 181738,
+      "sha256": "27D042A8BBA2679EEFF9959EAF62CC0C1EBF24C28979630EC6411508508FF3FE"
+    },
+    {
+      "path": "build/guided-history-final-source-df7736ee06a144fabaa5e0184f7b2b0c/stderr.log",
+      "bytes": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "build/guided-history-final-source-df7736ee06a144fabaa5e0184f7b2b0c/run_regression.py",
+      "bytes": 2475,
+      "sha256": "145901B8A75123C765A7DAF8B48BEF898D651DE2D20EE4BC9A25CEAC59501B15"
+    }
+  ],
+  "build_source_sha256": [
+    {
+      "path": "packaging/branding/rat-trap.ico",
+      "sha256": "5555F6253004E792BE59CB7AD770A1D313768669207B560CE36F90758C0A79D9"
+    },
+    {
+      "path": "packaging/direct/README-GUIDED-HISTORY.txt",
+      "sha256": "E30ABEAF2768F95A148060E57F6EBD13F1CC3B6D6A6F9BE148BDDC8C9F32042F"
+    },
+    {
+      "path": "PRIVACY.md",
+      "sha256": "15203BDA8E644E4366D14DC15CE82A6C60E1ABD4AE319564ECD6586AA9BD98B1"
+    },
+    {
+      "path": "rat_trap/__init__.py",
+      "sha256": "DC6390CF786786416148F8F67EB19D399BA3ECCCF3531E639AF812732462E3E9"
+    },
+    {
+      "path": "rat_trap/archive_tutorials.py",
+      "sha256": "28E176080B780806335C51C1D3B893FB7D7890A3AC8F391103B7FDE216C5BD89"
+    },
+    {
+      "path": "rat_trap/cli.py",
+      "sha256": "A31A294D9EF449AE82D2485AA4AACE92ED6A29FB7905CC4CF0A81F619E5AFA7E"
+    },
+    {
+      "path": "rat_trap/desktop_app.py",
+      "sha256": "E4D792729F4ADCDFD18BF046E0BAFA41A94002FA50158608656529C7729C29D4"
+    },
+    {
+      "path": "rat_trap/desktop_preview2.py",
+      "sha256": "8C55DAEE6405AFBAFEA19B93A203F3158995672F9C16C5420E4623A353608259"
+    },
+    {
+      "path": "rat_trap/diagnostics.py",
+      "sha256": "15C7D294E27E5468DA310EA1A49EE37FCE5FD3B9ED3B1929290CE70B5C5E80A1"
+    },
+    {
+      "path": "rat_trap/gmw_gui_complete.py",
+      "sha256": "578565850D0B7670E8909879C71FB24925F49DB3B1E7B0E7C870EDB3205F02D7"
+    },
+    {
+      "path": "rat_trap/gmw_tool_v4.py",
+      "sha256": "71D0B93796055DF95FEE642FD561609E9E5C8D7B63AD9B4741F446F287E07EF2"
+    },
+    {
+      "path": "rat_trap/gmw_tool.py",
+      "sha256": "24771E9684530F723B6ADB36DFC7C5ED557D0FD4342312CAB88DBDDBF8CF8824"
+    },
+    {
+      "path": "rat_trap/guided_app.py",
+      "sha256": "2E12DE10EB1E5B10568F4002F5CD75DDFA577B7F0DF4B7CA66BBF4DB7A215BE6"
+    },
+    {
+      "path": "rat_trap/history_tutorials.py",
+      "sha256": "FDBF35F1336EC6B8A3733FD9BA6CC4A120F90A608AC957581C0FDEB43864926D"
+    },
+    {
+      "path": "rat_trap/protection_tutorials.py",
+      "sha256": "43D24306987327AC2A235C9D21D77A664E5E5F0224B48BBACD7FC03E1449ED08"
+    },
+    {
+      "path": "rat_trap/repository_engine.py",
+      "sha256": "A97608F733BFD291677777FFE93B4A48D4829C1D7DF0A11244B26DC39C1DF9D3"
+    },
+    {
+      "path": "rat_trap/sealed_file.py",
+      "sha256": "6BE69826603380E727FC880A784202F598B0DC94CAC9CE467284C8C88088A12C"
+    },
+    {
+      "path": "rat_trap/secure_engine.py",
+      "sha256": "C65FA0825FD99CD002370C7C3C9469184575F200C34CCE9ED173A625318364BB"
+    },
+    {
+      "path": "rat_trap/solid_engine.py",
+      "sha256": "1A15D16679FA24B2A0FC3C3A2AFCE01B40391DC4CD9195901129D60392C373BB"
+    },
+    {
+      "path": "rat_trap/structured_data.py",
+      "sha256": "B7A093B1000738AFC4C32F57113D8CEF38F03F4391294384879D682683E9ECEC"
+    },
+    {
+      "path": "rat_trap/tutorials.py",
+      "sha256": "0B209E620F7E0610C86A2237B9F22B7627386C9F0C7EC70877AD096D9BCD3DFD"
+    },
+    {
+      "path": "rat_trap/vault_engine.py",
+      "sha256": "A0C0174F592D1643A317F195CA9B8FD34358500C8DA361BD5616A83E3AA7E0FA"
+    },
+    {
+      "path": "rat_trap/windows_app.py",
+      "sha256": "CC815AFED9421DA5CCB48C4A1683EC3A0B422644DB70BCB556B1F356A26E5D4F"
+    },
+    {
+      "path": "release-manifests/5.7.0.json",
+      "sha256": "0C2DA5DE6E915DABD01FDA8E89D090FBFD5C2D7FE60D4B05423298E8840C0666"
+    },
+    {
+      "path": "release-manifests/guided-protection.json",
+      "sha256": "E8897E9342625681FFB72D7AD01BA76574098394072CBAB6521BBC673709F002"
+    },
+    {
+      "path": "requirements-build-5.7.0.txt",
+      "sha256": "CCF125BCFC4E77ED5AFECB059116F836D40D9F4715501F6C90CE67B11D3676E5"
+    },
+    {
+      "path": "scripts/build_windows_guided_history.ps1",
+      "sha256": "8A729D8E76C39EDDDAEE6D0B562A392DDB1B485C73B450E094B52D8B3FF48100"
+    },
+    {
+      "path": "scripts/package_windows_beta_5_7_0.ps1",
+      "sha256": "4FD7BC8C0A192D5DB3BB161C26673C76F2ADFD12207F0FC841088321950B8105"
+    },
+    {
+      "path": "SUPPORT.md",
+      "sha256": "43638E3098A06622F06598B40EC1B1B199CA28FF94EF13867E993A5A26B9B5CE"
+    },
+    {
+      "path": "windows_guided_preview.py",
+      "sha256": "2DF4F26BA59901A2C1D6BD44F6640429DC5AF196D9B0B88E77E89FE9F7979C49"
+    }
+  ],
+  "build_environment": {
+    "architecture": "x64",
+    "dependencies": {
+      "altgraph": "0.17.5",
+      "cffi": "2.1.0",
+      "cryptography": "49.0.0",
+      "packaging": "26.2",
+      "pefile": "2024.8.26",
+      "pycparser": "3.0",
+      "pyfastcdc": "0.2.1",
+      "pyinstaller": "6.21.0",
+      "pyinstaller-hooks-contrib": "2026.6",
+      "pywin32-ctypes": "0.2.3",
+      "setuptools": "83.0.0",
+      "typing-extensions": "4.15.0",
+      "zstandard": "0.25.0"
+    },
+    "python": "3.13.13"
+  },
+  "built_at_utc": "2026-09-06T17:50:20.6839212Z",
+  "previous_tutorial_source_snapshot": {
+    "directory": "build/source-baseline-8ec655df16e04816930ec911866933ab",
+    "files": [
+      {
+        "path": "rat_trap/guided_app.py",
+        "sha256": "EC47B5B4B0BED38861A998AC29FFAA6D252A8B7178E25C12D3A7F8735587CBE3"
+      },
+      {
+        "path": "rat_trap/tutorials.py",
+        "sha256": "FFE5912C08BE7E94E8F3FB7A8F509CE91DA8AA5919BBB2D316090495C8F11521"
+      },
+      {
+        "path": "rat_trap/archive_tutorials.py",
+        "sha256": "28E176080B780806335C51C1D3B893FB7D7890A3AC8F391103B7FDE216C5BD89"
+      },
+      {
+        "path": "rat_trap/protection_tutorials.py",
+        "sha256": "43D24306987327AC2A235C9D21D77A664E5E5F0224B48BBACD7FC03E1449ED08"
+      },
+      {
+        "path": "windows_guided_preview.py",
+        "sha256": "2DF4F26BA59901A2C1D6BD44F6640429DC5AF196D9B0B88E77E89FE9F7979C49"
+      }
+    ],
+    "copied_before_edits": true
+  },
+  "application": {
+    "executable": "Rat-Trap-Desktop-Preview-2.exe",
+    "architecture": "x64",
+    "requested_execution_level": "asInvoker",
+    "ui_access": false,
+    "authenticode": "NotSigned",
+    "private_payload_files": 25,
+    "legal_files": 20,
+    "base_engine_modules_changed": false
+  },
+  "installer": {
+    "app_key": "TwoHandsNetwork.RatTrap.DesktopPreview2",
+    "marker": "RatTrapDesktopPreview2/v1",
+    "display_name": "Rat-Trap Desktop Preview 2",
+    "installation_path": "%LOCALAPPDATA%\\Programs\\Two Hands Network Ltd\\Rat-Trap Desktop Preview 2",
+    "scope": "current user",
+    "minimum_os": "Windows 10 x64",
+    "launcher_architecture": "x86 PE32",
+    "requested_execution_level": "asInvoker",
+    "ui_access": false,
+    "authenticode": "NotSigned",
+    "payload_files": 27,
+    "legal_files": 21,
+    "generated_uninstaller_additional": true,
+    "optional_components_initially_off": [
+      "desktop shortcut",
+      "Open with for .gmw and .rtsf"
+    ],
+    "default_applications_changed": false,
+    "recovery_key_association": false,
+    "automatic_updater": false,
+    "upgrade_from_tested": "5.7.0.5",
+    "same_installed_identity": true,
+    "uninstall": "Explicit installed-file list; empty-directory removal only; preserve user-added files."
+  },
+  "verification": {
+    "source_tests_passed": 488,
+    "source_tests_failed": 0,
+    "source_tests_skipped": 0,
+    "source_test_execution": "Two concurrent disjoint partitions covering every discovered test identifier exactly once",
+    "source_test_partition_counts": [
+      27,
+      461
+    ],
+    "source_test_partition_seconds": [
+      311.153,
+      460.706
+    ],
+    "new_tutorial_tests_included": 66,
+    "independent_high_dpi_exact_state_journeys": 6,
+    "packaged_self_tests_passed": 3,
+    "installed_self_tests_passed": 3,
+    "isolated_installer_checks_passed": 224,
+    "installer_cleanup_errors": 0,
+    "source_receipt_matches_current": true,
+    "unchanged_prior_engine_and_interface_files": 17,
+    "historical_private_artifacts_preserved": true,
+    "real_sample_snapshots": 2,
+    "old_and_current_file_states_compared": 4,
+    "source_remains_newer_after_restore": true,
+    "evidence": "packaging/direct/qa-results-guided-history.json"
+  },
+  "limitations": [
+    "No clean Windows VM, SmartScreen UI, or interactive wizard test.",
+    "Tests the specific 5.7.0.5 to 5.7.0.6 upgrade under one isolated QA identity; not arbitrary future upgrades.",
+    "Generated archive/recovery fixtures test preservation, not user originals.",
+    "Internal transparent/off-screen Tk checks are not native visual acceptance, accessibility certification, or clean Windows 11 acceptance.",
+    "Unsigned private preview; no Microsoft Store release, remote publication, normal installer execution, or automatic update.",
+    "The sample proves this tutorial workflow, not compression performance on arbitrary files or backup reliability on every storage device."
+  ],
+  "compiler": {
+    "name": "NSIS",
+    "version": "3.12",
+    "sha256": "B043E554AFEFBFC56315669D0B4779793AEAE67F0F2A7A790E2EA91F05298EFF",
+    "licence_sha256": "388357C1215FF403C5EBDE3A5ECD273E68F8B79A579996775245D1EE65442ABA",
+    "globally_installed": false
+  },
+  "byte_reproducibility_claimed": false,
+  "published_to_remote": false
+}

@@ -934,6 +934,110 @@ class SecureEngineTests(unittest.TestCase):
         self.assertEqual(source.read_bytes(), b"source")
         self.assertFalse(recovery.exists())
 
+    def test_recovery_file_publication_is_staged_and_atomic(self) -> None:
+        destination = self.root / "keys" / "new.rtrk"
+        with (
+            mock.patch.object(
+                secure_engine,
+                "_publish_new",
+                side_effect=secure_engine.SecureArchiveError(
+                    "injected publication failure"
+                ),
+            ),
+            self.assertRaisesRegex(
+                secure_engine.SecureArchiveError,
+                "injected publication failure",
+            ),
+        ):
+            secure_engine.write_recovery_key_file(
+                destination,
+                file_id="1" * 32,
+                recovery_key=bytes(range(32)),
+                created_at_ns=1,
+            )
+
+        self.assertFalse(destination.exists())
+        self.assertEqual(
+            list(destination.parent.glob("*.tmp")),
+            [],
+        )
+
+    def test_atomic_publication_never_falls_back_to_final_name_copy(
+        self,
+    ) -> None:
+        staged = self.root / "staged.tmp"
+        destination = self.root / "published.gmw"
+        staged.write_bytes(b"complete staged bytes")
+        primitive = "rename" if os.name == "nt" else "link"
+
+        with (
+            mock.patch.object(
+                secure_engine.os,
+                primitive,
+                side_effect=OSError("unsupported atomic primitive"),
+            ),
+            mock.patch.object(
+                secure_engine.shutil,
+                "copyfileobj",
+            ) as copy,
+            self.assertRaisesRegex(
+                secure_engine.SecureArchiveError,
+                "atomically publish",
+            ),
+        ):
+            secure_engine._publish_new(staged, destination)
+
+        copy.assert_not_called()
+        self.assertTrue(staged.is_file())
+        self.assertFalse(destination.exists())
+
+    def test_pre_publish_validator_runs_after_recovery_before_output(
+        self,
+    ) -> None:
+        source = self.root / "validator-source.gmw"
+        source.write_bytes(b"validator plaintext")
+        output = self.root / "validator-secure.gmw"
+        recovery = self.root / "validator-recovery.rtrk"
+        calls: list[tuple[Path, Path]] = []
+
+        def reject(staged: Path, recovery_path: Path) -> None:
+            calls.append((staged, recovery_path))
+            self.assertTrue(staged.is_file())
+            self.assertTrue(recovery_path.is_file())
+            self.assertFalse(output.exists())
+            self.assertTrue(
+                secure_engine.verify_encrypted_file(
+                    staged,
+                    recovery_key=recovery_path,
+                ).verified
+            )
+            raise secure_engine.SecureArchiveError(
+                "injected profile rejection"
+            )
+
+        with (
+            mock.patch.object(
+                secure_engine,
+                "_argon2_key",
+                side_effect=_fast_test_argon2,
+            ),
+            self.assertRaisesRegex(
+                secure_engine.SecureArchiveError,
+                "injected profile rejection",
+            ),
+        ):
+            secure_engine.encrypt_file(
+                source,
+                output,
+                password=PASSWORD,
+                recovery_key_output=recovery,
+                pre_publish_validator=reject,
+            )
+
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(output.exists())
+        self.assertTrue(recovery.is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

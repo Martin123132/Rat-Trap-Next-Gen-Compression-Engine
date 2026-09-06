@@ -1,0 +1,41 @@
+{
+  "schema": "rat-trap-store-screenshot-captions/v1",
+  "language": "en-GB",
+  "screenshots": [
+    {
+      "order": 1,
+      "file": "01-create-archive.png",
+      "caption": "Create a portable GMW archive with Fast, Balanced, Smallest, or Queryable Vault profiles and optional authenticated encryption.",
+      "view": "Create archive",
+      "status": "pending_clean_capture"
+    },
+    {
+      "order": 2,
+      "file": "02-secure-files.png",
+      "caption": "Protect one file, or batch a folder into independent encrypted Sealed Files, each with its own separately stored recovery key.",
+      "view": "Secure files > Protect one file",
+      "status": "pending_clean_capture"
+    },
+    {
+      "order": 3,
+      "file": "03-backup-history.png",
+      "caption": "Keep compressed snapshots, search file history, verify stored data, and restore an earlier folder state.",
+      "view": "Repository",
+      "status": "pending_clean_capture"
+    },
+    {
+      "order": 4,
+      "file": "04-queryable-vault.png",
+      "caption": "Search filenames and supported text inside a local Queryable Vault without unpacking the full collection.",
+      "view": "Search Vault",
+      "status": "pending_clean_capture"
+    },
+    {
+      "order": 5,
+      "file": "05-data-tables.png",
+      "caption": "Browse structured files as local tables or run read-only SQL and export only the results you need.",
+      "view": "Data Tables",
+      "status": "pending_clean_capture"
+    }
+  ]
+}

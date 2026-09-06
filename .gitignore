@@ -15,6 +15,31 @@ htmlcov/
 build/
 dist/
 *.spec
+/tmp/
+/outputs/
+
+# Private credentials, local diagnostics and user-created protected files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.rtrk
+*.rtsf
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+!tests/fixtures/formats/*.rtrk
+!tests/fixtures/formats/*.rtsf
 
 # Locally generated archives and release bundles
 *.gmw

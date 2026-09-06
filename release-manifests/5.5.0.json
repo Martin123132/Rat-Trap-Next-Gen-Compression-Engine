@@ -1,0 +1,386 @@
+{
+  "schema": "rat-trap-release-manifest/v1",
+  "product": "Rat-Trap",
+  "version": "5.5.0",
+  "release_stage": "Windows Integration Beta development candidate",
+  "release_date": "2026-07-29",
+  "source": {
+    "repository": "Martin123132/Rat-Trap-Next-Gen-Compression-Engine",
+    "ref": "5.5.0 release-candidate working tree",
+    "baseline_ref": "v5.3.0",
+    "baseline_commit": "e5d14320b919e0081dd92beac3090950f95d5d8b",
+    "includes_uncommitted_5_4_and_5_5_work": true,
+    "commit_created": false,
+    "tag_created": false,
+    "remote_push_performed": false,
+    "note": "This manifest records the tested local working tree. It does not claim that a v5.5.0 commit, tag, signed installer, Store listing, or remote release exists."
+  },
+  "build_environment": {
+    "os": "Windows 10.0.19045",
+    "architecture": "x86_64",
+    "python": "3.13.13",
+    "pip": "26.0.1",
+    "sqlite": "3.50.4",
+    "pyinstaller": "6.21.0",
+    "pyinstaller_hooks_contrib": "2026.6",
+    "pyfastcdc": "0.2.1",
+    "typing_extensions": "4.15.0",
+    "zstandard": "0.25.0",
+    "cryptography": "49.0.0",
+    "openssl": "4.0.1",
+    "cffi": "2.1.0",
+    "pycparser": "3.0",
+    "windows_sdk": "10.0.26100.0",
+    "makeappx_file_version": "10.0.26100.7705",
+    "dependency_file": "requirements-build-5.5.0.txt",
+    "byte_reproducible_build_claimed": false
+  },
+  "artifacts": [
+    {
+      "name": "Rat-Trap.exe",
+      "path": "dist/5.5.0/Rat-Trap.exe",
+      "role": "branded portable Windows application used as the MSIX payload",
+      "bytes": 17972072,
+      "sha256": "67C6616BE37FA093D1DD9EE41B2E6B430740674BCCA1B9B00CE3DF16D89E3473",
+      "file_version": "5.5.0",
+      "product_version": "5.5.0",
+      "icon_resource_present": true,
+      "authenticode": "NotSigned"
+    },
+    {
+      "name": "Rat-Trap-Windows-5.5.0-x64-unsigned.msix",
+      "path": "dist/msix/5.5.0/Rat-Trap-Windows-5.5.0-x64-unsigned.msix",
+      "copied_path": "../../outputs/Rat-Trap-Windows-5.5.0-x64-unsigned.msix",
+      "role": "MakeAppx-validated development structure; explicitly not a trusted public installer",
+      "bytes": 17842029,
+      "sha256": "953E0E156984D38C5D8D5FC5ED691D996367EECA9F4ED91FA355BD315DA055B4",
+      "authenticode": "NotSigned",
+      "installable_public_release": false
+    },
+    {
+      "name": "Rat-Trap-Beta-Test-Data.zip",
+      "role": "canonical corrected 464-file regression corpus",
+      "bytes": 29325417,
+      "sha256": "8FD745B2E9969DC49A34685D7FE62241B9E49F1D6729BC197D9935959C20A16A"
+    }
+  ],
+  "windows_branding": {
+    "source": {
+      "path": "packaging/branding/rat-trap-icon.png",
+      "bytes": 402488,
+      "sha256": "CE102231AE212FEF653728B41B18390503069FC7D81F529674503C02A91C1A20",
+      "alpha_channel": true,
+      "transparent_corners": true
+    },
+    "executable_icon": {
+      "path": "packaging/branding/rat-trap.ico",
+      "bytes": 70287,
+      "sha256": "5555F6253004E792BE59CB7AD770A1D313768669207B560CE36F90758C0A79D9",
+      "sizes": [
+        16,
+        20,
+        24,
+        32,
+        40,
+        48,
+        64,
+        128,
+        256
+      ]
+    },
+    "msix_assets": [
+      {
+        "path": "packaging/msix/Assets/GMW.png",
+        "bytes": 4369,
+        "sha256": "3D489A44A0A737EF40BDCB887C65F19AF6AB6DA2B052647A7C3168D2A5BC79C6"
+      },
+      {
+        "path": "packaging/msix/Assets/RTSF.png",
+        "bytes": 4384,
+        "sha256": "414941598AD329E1D23F5D890BAAD87A2FB33AF77BD45769142F8F8BA903AB0A"
+      },
+      {
+        "path": "packaging/msix/Assets/Square44x44Logo.png",
+        "bytes": 2535,
+        "sha256": "35D8FA549BE5C41F73A1526B8113D24E410E5AB7473A3744B94A578CF5EB7BCA"
+      },
+      {
+        "path": "packaging/msix/Assets/Square150x150Logo.png",
+        "bytes": 16658,
+        "sha256": "8CAFEBA8055ABE7949536B53DCD92B243B33CB0769F0116403ED9379567C7760"
+      },
+      {
+        "path": "packaging/msix/Assets/StoreLogo.png",
+        "bytes": 3119,
+        "sha256": "392B5FE5712C61ACCA2875612C15452E411289887E7F656C0E0B332839E97E79"
+      }
+    ],
+    "generation_helper": "scripts/generate_windows_brand_assets.py"
+  },
+  "msix_profile": {
+    "package_name": "RatTrap.Development",
+    "publisher": "CN=Rat-Trap Development",
+    "publisher_display_name": "Rat-Trap Development",
+    "identity_is_permanent": false,
+    "package_version": "5.5.0.0",
+    "processor_architecture": "x64",
+    "target_device_family": "Windows.Desktop",
+    "minimum_os_version": "10.0.19041.0",
+    "maximum_version_tested": "10.0.26100.0",
+    "runtime_behavior": "packagedClassicApp",
+    "trust_level": "mediumIL",
+    "run_full_trust_capability": true,
+    "package_integrity_enforcement": "on",
+    "manifest_template": {
+      "path": "packaging/msix/AppxManifest.template.xml",
+      "bytes": 3195,
+      "sha256": "292240F489BE24E355C1FE582D4A49A81632A595B62DFD3C5CDA309173E2A015"
+    },
+    "appinstaller_template": {
+      "path": "packaging/msix/Rat-Trap.appinstaller.template.xml",
+      "bytes": 546,
+      "sha256": "A749B1A63FBAA8D1BB81CDB907795398257FD8E9ABC55E902DCE338285FDEC9D"
+    },
+    "associations": [
+      {
+        "extension": ".rtsf",
+        "display_name": "Rat-Trap Sealed File",
+        "parameters": "--open-sealed \"%1\"",
+        "multi_select_model": "Single",
+        "activation": "preselect Secure files / Open / restore only"
+      },
+      {
+        "extension": ".gmw",
+        "display_name": "Rat-Trap GMW Archive",
+        "parameters": "--open-archive \"%1\"",
+        "multi_select_model": "Single",
+        "activation": "preselect Inspect / export only"
+      }
+    ],
+    "recovery_key_association_registered": false,
+    "default_application_forced": false,
+    "generic_file_explorer_context_menu_registered": false,
+    "optional_appinstaller": {
+      "generated_for_this_candidate": false,
+      "requires_signed_package": true,
+      "requires_two_absolute_https_uris": true,
+      "schema": "2021",
+      "on_launch_check_interval_hours": 12
+    }
+  },
+  "msix_inventory": [
+    {
+      "path": "[Content_Types].xml",
+      "bytes": 585
+    },
+    {
+      "path": "AppxBlockMap.xml",
+      "bytes": 24547
+    },
+    {
+      "path": "AppxManifest.xml",
+      "bytes": 3190
+    },
+    {
+      "path": "Assets/GMW.png",
+      "bytes": 4369
+    },
+    {
+      "path": "Assets/RTSF.png",
+      "bytes": 4384
+    },
+    {
+      "path": "Assets/Square150x150Logo.png",
+      "bytes": 16658
+    },
+    {
+      "path": "Assets/Square44x44Logo.png",
+      "bytes": 2535
+    },
+    {
+      "path": "Assets/StoreLogo.png",
+      "bytes": 3119
+    },
+    {
+      "path": "Legal/COMMERCIAL-LICENSE.md",
+      "bytes": 1647
+    },
+    {
+      "path": "Legal/LICENSE.md",
+      "bytes": 4989
+    },
+    {
+      "path": "Legal/NOTICE.md",
+      "bytes": 5549
+    },
+    {
+      "path": "Legal/README-WINDOWS.txt",
+      "bytes": 8789
+    },
+    {
+      "path": "Legal/SBOM/cryptography-49.0.0-rust-sbom.json",
+      "bytes": 45592
+    },
+    {
+      "path": "Legal/SBOM/cryptography-49.0.0-wheel-sbom.json",
+      "bytes": 1223
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/CFFI-2.1.0-LICENSE.txt",
+      "bytes": 1123
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE.txt",
+      "bytes": 197
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE-APACHE.txt",
+      "bytes": 11360
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE-BSD.txt",
+      "bytes": 1532
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/OPENSSL-4.0.1-LICENSE.txt",
+      "bytes": 11360
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYCPARSER-3.0-LICENSE.txt",
+      "bytes": 1543
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYFASTCDC-0.2.1-LICENSE.txt",
+      "bytes": 1091
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYINSTALLER-6.21.0-COPYING.txt",
+      "bytes": 32138
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYINSTALLER-HOOKS-CONTRIB-2026.6-LICENSE.txt",
+      "bytes": 27666
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYTHON-3.13.13-LICENSE.txt",
+      "bytes": 33861
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/PYTHON-ZSTANDARD-0.25.0-LICENSE.txt",
+      "bytes": 1511
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/TCL-TK-8.6-LICENSE.txt",
+      "bytes": 2307
+    },
+    {
+      "path": "Legal/THIRD-PARTY-LICENSES/TYPING-EXTENSIONS-4.15.0-LICENSE.txt",
+      "bytes": 13936
+    },
+    {
+      "path": "Legal/THIRD-PARTY-NOTICES.md",
+      "bytes": 1768
+    },
+    {
+      "path": "Rat-Trap.exe",
+      "bytes": 17972072
+    }
+  ],
+  "verification": {
+    "python_unit_tests": {
+      "command": ".venv/Scripts/python.exe -m unittest discover -s tests",
+      "passed": 172,
+      "failed": 0
+    },
+    "python_compile": {
+      "command": ".venv/Scripts/python.exe -m compileall -q rat_trap tests scripts/generate_windows_brand_assets.py",
+      "passed": true
+    },
+    "launch_activation": {
+      "rtsf_upper_and_lower_case_parsed": true,
+      "gmw_upper_and_lower_case_parsed": true,
+      "invalid_extensions_rejected": true,
+      "ambiguous_or_extra_arguments_rejected": true,
+      "sealed_activation_does_not_verify_or_decrypt": true,
+      "archive_activation_does_not_read_or_extract": true
+    },
+    "packaged_self_test": {
+      "command": "dist/5.5.0/Rat-Trap.exe --self-test",
+      "exit_code": 0,
+      "passed": true
+    },
+    "packaged_folder_test": {
+      "command": "dist/5.5.0/Rat-Trap.exe --self-test-folder <canonical-beta-folder>",
+      "exit_code": 0,
+      "passed": true,
+      "fixture_file_count": 464,
+      "fixture_total_bytes": 36991791,
+      "portable_profiles": [
+        "fast",
+        "balanced",
+        "smallest",
+        "vault"
+      ],
+      "encrypted_archive_round_trip": true,
+      "repository_round_trip": true
+    },
+    "executable": {
+      "version_resource_verified": true,
+      "icon_resource_verified": true,
+      "authenticode_status": "NotSigned"
+    },
+    "msix": {
+      "makeappx_schema_validation": true,
+      "pack_succeeded": true,
+      "unpack_succeeded": true,
+      "inventory_file_count": 29,
+      "legal_payload_file_count": 5,
+      "third_party_license_file_count": 13,
+      "sbom_file_count": 2,
+      "required_legal_payload_present": true,
+      "payload_executable_matches_frozen_build_before_package_signing": true,
+      "package_integrity_declared": true,
+      "authenticode_status": "NotSigned",
+      "atomic_publish_after_pack_and_unpack_verification": true,
+      "final_path_not_used_until_publication": true,
+      "post_staging_failure_path_tested": true,
+      "post_staging_failure_left_final_package": false,
+      "post_staging_failure_residue_count": 0,
+      "requested_identity_matches_unpacked_manifest": true
+    },
+    "lifecycle": {
+      "clean_install_tested": false,
+      "file_association_tested_in_installed_package": false,
+      "upgrade_tested": false,
+      "repair_tested": false,
+      "uninstall_tested": false,
+      "blocked_reason": "The development candidate has no trusted signing certificate and was not installed or trusted on the test machine."
+    }
+  },
+  "security": {
+    "production_signing_identity_configured": false,
+    "usable_current_user_code_signing_certificate_found": false,
+    "executable_signed": false,
+    "msix_signed": false,
+    "self_signed_certificate_created_or_trusted": false,
+    "private_signing_key_created_exported_or_embedded": false,
+    "build_script_accepts_certificate_store_thumbprint": true,
+    "build_script_verifies_code_signing_eku": true,
+    "build_script_verifies_private_key_access": true,
+    "build_script_requires_exact_publisher_subject_match": true,
+    "build_script_supports_rfc3161_timestamp": true,
+    "build_script_signs_staged_executable_before_packaging": true,
+    "build_script_signs_and_verifies_msix_before_atomic_publication": true
+  },
+  "known_limitations": [
+    "The current MSIX is unsigned and is not a trusted or installable public release",
+    "The development package name and publisher are placeholders and must not be frozen accidentally",
+    "A permanent package name, exact legal certificate subject, and distribution identity have not been selected",
+    "No clean install, association, upgrade, repair, or uninstall lifecycle test has been performed",
+    "The optional HTTPS App Installer update feed has not been generated or hosted",
+    "The general Seal with Rat-Trap Explorer context menu requires a separately built and audited native x64 IExplorerCommand DLL",
+    "Windows controls default-app selection; registration only makes Rat-Trap available as a handler",
+    "Package integrity protects deployed application files, not user archives, passwords, recovery keys, or plaintext temporary data",
+    "No independent security review of the complete application has yet been completed"
+  ]
+}

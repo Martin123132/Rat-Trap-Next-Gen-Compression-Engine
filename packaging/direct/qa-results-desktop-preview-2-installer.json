@@ -1,0 +1,915 @@
+{
+  "schema": "rat-trap-desktop-preview-installer-qa/v1",
+  "product": "Rat-Trap Desktop Preview 2 installer",
+  "installer_version": "5.7.0.2",
+  "test_kind": "Same-host Windows Desktop Preview 2 installer lifecycle; not a clean-VM test",
+  "clean_vm": false,
+  "host": {
+    "windows": "Windows 10 Home 22H2 19045.6456 x64",
+    "powershell": "5.1.19041.6456"
+  },
+  "started_utc": "2026-09-06T01:06:58.6762772Z",
+  "completed_utc": "2026-09-06T01:08:10.4381706Z",
+  "passed": true,
+  "checks_passed": 167,
+  "checks_failed": 0,
+  "cleanup_errors": [],
+  "qa_identity": "a65138032bdb43308d87cb3157c0d0a9",
+  "tested_installer": {
+    "path": "build/dp2qa/a65138032bdb43308d87cb3157c0d0a9/Rat-Trap-Desktop-Preview-2-Windows-x64-setup-QA-a65138032bdb43308d87cb3157c0d0a9.exe",
+    "bytes": 18947364,
+    "sha256": "D38BDEC3F85A3D365C5691D3ADF1305DF238F327959E4EF559CA4F96FA09912D"
+  },
+  "installed_application": {
+    "bytes": 19109283,
+    "sha256": "C2F26CAA509D6F5ED887E0E839DDEA6095341A6DD0A0C1D29097BFEF42A3324F",
+    "engine_self_test_exit": 0,
+    "ui_self_test_exit": 0
+  },
+  "input_source_hashes": [
+    {
+      "path": "packaging/direct/rat-trap-desktop-preview2.nsi",
+      "sha256": "ADF87A1928B07405C85DACAA689B750B126CD758D4CC3C2FE9421FE4DC3764BC"
+    },
+    {
+      "path": "scripts/build_windows_desktop_preview2_installer.ps1",
+      "sha256": "4D047C09E1B241ACD763C3990AE6AEBC2E5B1DA97FAB52D4F79D075BC7167307"
+    },
+    {
+      "path": "scripts/test_windows_desktop_preview2_installer.ps1",
+      "sha256": "2FCE8E8BC659E523D90F7F4524C2F6E2725A3F00C9ACFC55CED74A334D766A5A"
+    },
+    {
+      "path": "packaging/direct/README-DESKTOP-PREVIEW-2-INSTALLER.txt",
+      "sha256": "39625DE75EF36188A52E938AEAB5DE5D8F9580C2C6BCE642BB06B29744A794E0"
+    },
+    {
+      "path": "release-manifests/desktop-preview-2.json",
+      "sha256": "E0993ADFF9D7A547FEF46C9A4CAE258A3DA9C60369A4993DE54AD1B03614BCDB"
+    }
+  ],
+  "preexisting_referenced_progid_count": 0,
+  "generated_other_app_sentinels": 2,
+  "real_app_state_snapshots_unchanged": true,
+  "qa_install_and_registration_cleaned": true,
+  "checks": [
+    {
+      "Name": "Isolated QA installer identity",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "occupied-directory-install exit code",
+      "Passed": true,
+      "Detail": "Expected 3; observed 3."
+    },
+    {
+      "Name": "Occupied unregistered directory remains unchanged",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "default-install exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "Default install exact manifest-pinned Desktop Preview 2 executable",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install complete installed checksum inventory",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install preserves every frozen portable payload file and original guide",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install installs the current installer-specific first-run guide",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install preserves the NSIS compiler licence",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install has uninstaller",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Per-user Apps and Features registration",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "No machine-wide Apps and Features registration",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Quoted Apps and Features uninstall commands",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Start menu application shortcut exists",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Start menu application shortcut target",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Start menu readme shortcut exists",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Start menu readme shortcut target",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install .gmw ProgID absent",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install .rtsf ProgID absent",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install desktop choice",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install persisted option flags",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Default install leaves real installations and frozen beta/preview records unchanged",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "installed-application-self-test exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "installed-preview2-ui-self-test exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "enable-options-reinstall exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "Options reinstall exact manifest-pinned Desktop Preview 2 executable",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reinstall complete installed checksum inventory",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reinstall preserves every frozen portable payload file and original guide",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reinstall installs the current installer-specific first-run guide",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reinstall preserves the NSIS compiler licence",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reinstall has uninstaller",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options enabled .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options enabled .gmw quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options enabled .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options enabled .rtsf quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options enabled desktop choice",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options enabled desktop shortcut exists",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options enabled desktop shortcut target",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options enabled persisted option flags",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options enabled preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "preserve-options-reinstall exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "Options preserved on reinstall .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options preserved on reinstall .gmw quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options preserved on reinstall .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options preserved on reinstall .rtsf quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options preserved on reinstall desktop choice",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options preserved on reinstall desktop shortcut exists",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options preserved on reinstall desktop shortcut target",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options preserved on reinstall persisted option flags",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options preserved on reinstall preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "repair-incomplete-install exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "Repaired incomplete installation exact manifest-pinned Desktop Preview 2 executable",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repaired incomplete installation complete installed checksum inventory",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repaired incomplete installation preserves every frozen portable payload file and original guide",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repaired incomplete installation installs the current installer-specific first-run guide",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repaired incomplete installation preserves the NSIS compiler licence",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repaired incomplete installation has uninstaller",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repair completes pending registration and restores missing readme",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repair preserves choices .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repair preserves choices .gmw quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repair preserves choices .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repair preserves choices .rtsf quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repair preserves choices desktop choice",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repair preserves choices desktop shortcut exists",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repair preserves choices desktop shortcut target",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repair preserves choices persisted option flags",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Repair preserves choices preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "locked-exe-reinstall exit code",
+      "Passed": true,
+      "Detail": "Expected 4; observed 4."
+    },
+    {
+      "Name": "locked-exe-uninstall exit code",
+      "Passed": true,
+      "Detail": "Expected 4; observed 4."
+    },
+    {
+      "Name": "Locked exe leaves every payload file unchanged",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked exe leaves repair registration unchanged",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked exe .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked exe .gmw quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked exe .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked exe .rtsf quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked exe desktop choice",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked exe desktop shortcut exists",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked exe desktop shortcut target",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked exe persisted option flags",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked exe preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "locked-readme-reinstall exit code",
+      "Passed": true,
+      "Detail": "Expected 4; observed 4."
+    },
+    {
+      "Name": "locked-readme-uninstall exit code",
+      "Passed": true,
+      "Detail": "Expected 4; observed 4."
+    },
+    {
+      "Name": "Locked readme leaves every payload file unchanged",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked readme leaves repair registration unchanged",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked readme .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked readme .gmw quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked readme .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked readme .rtsf quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked readme desktop choice",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked readme desktop shortcut exists",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked readme desktop shortcut target",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked readme persisted option flags",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Locked readme preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "disable-options-reinstall exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "Options disabled .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options disabled .gmw ProgID absent",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options disabled .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options disabled .rtsf ProgID absent",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options disabled desktop choice",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options disabled persisted option flags",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options disabled preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "reenable-options-reinstall exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "Options reenabled .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reenabled .gmw quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reenabled .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reenabled .rtsf quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reenabled desktop choice",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reenabled desktop shortcut exists",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reenabled desktop shortcut target",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reenabled persisted option flags",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Options reenabled preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Reinstall preserves generated user file Legal\\qa-user-note.txt",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Reinstall preserves generated user file qa-preserved.gmw",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Reinstall preserves generated user file qa-user-files\\nested\\qa-archive.gmw",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Reinstall preserves generated user file qa-user-files\\nested\\qa-recovery.rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "uninstall exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "Uninstall removes only QA Apps and Features registration",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall removes QA shortcuts",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall removes own ProgID TwoHandsNetwork.RatTrap.DesktopPreview2.QA.a65138032bdb43308d87cb3157c0d0a9.GMW",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall removes own ProgID TwoHandsNetwork.RatTrap.DesktopPreview2.QA.a65138032bdb43308d87cb3157c0d0a9.RTSF",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall removes own .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall removes own .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall leaves only generated user-owned fixtures, no application payload",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall preserves generated user file Legal\\qa-user-note.txt",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall preserves generated user file qa-preserved.gmw",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall preserves generated user file qa-user-files\\nested\\qa-archive.gmw",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall preserves generated user file qa-user-files\\nested\\qa-recovery.rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Uninstall leaves real installations and frozen beta/preview records unchanged",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "unregistered-repeat-uninstall exit code",
+      "Passed": true,
+      "Detail": "Expected 3; observed 3."
+    },
+    {
+      "Name": "Rejected repeat uninstall preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "normal-uninstall-fresh-install exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall exact manifest-pinned Desktop Preview 2 executable",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall complete installed checksum inventory",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall preserves every frozen portable payload file and original guide",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall installs the current installer-specific first-run guide",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall preserves the NSIS compiler licence",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall has uninstaller",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall .gmw quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall .rtsf quoted non-extracting command",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall desktop choice",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall desktop shortcut exists",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall desktop shortcut target",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall persisted option flags",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Fresh install for ordinary uninstall preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "normal-installed-uninstaller-bootstrap exit code",
+      "Passed": true,
+      "Detail": "Expected 0; observed 0."
+    },
+    {
+      "Name": "Ordinary uninstall handoff completes and removes its installed executable",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall removes QA shortcuts",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall removes own ProgID TwoHandsNetwork.RatTrap.DesktopPreview2.QA.a65138032bdb43308d87cb3157c0d0a9.GMW",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall removes own ProgID TwoHandsNetwork.RatTrap.DesktopPreview2.QA.a65138032bdb43308d87cb3157c0d0a9.RTSF",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall removes own .gmw OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall removes own .rtsf OpenWith value",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall leaves only generated user-owned fixtures",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall preserves generated user file Legal\\qa-user-note.txt",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall preserves generated user file qa-preserved.gmw",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall preserves generated user file qa-user-files\\nested\\qa-archive.gmw",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall preserves generated user file qa-user-files\\nested\\qa-recovery.rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Ordinary uninstall leaves real installations and frozen beta/preview records unchanged",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Cleanup restores original shared association values",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "QA installed files and registration cleaned up",
+      "Passed": true,
+      "Detail": ""
+    },
+    {
+      "Name": "Final cleanup leaves real installations and frozen beta/preview records unchanged",
+      "Passed": true,
+      "Detail": ""
+    }
+  ],
+  "build_input_tests": {
+    "passed": 44,
+    "failed": 0,
+    "scenarios": 9,
+    "report": {
+      "path": "build/preview2-installer-preflight/221255dba5d04e7cbe56883e8e41f7e3/preflight-report.json",
+      "bytes": 8385,
+      "sha256": "CC6232AB22581E67AD1CCD7C31EDC7EB01F96604077C7D1CEDDA44F5A5FFCF08"
+    }
+  },
+  "limitations": [
+    "Same-host Windows 10 only.",
+    "No populated-default ProgIDs existed on this host.",
+    "No actual Explorer folder-reveal, native wizard, clean Windows 11 or downloaded-file security UX pass.",
+    "No upgrade migration claimed; same-version repair and side-by-side identity only.",
+    "QA identity compiled separately from handoff setup using matching installer sources and application payload.",
+    "Generated preservation fixtures, not user originals. Raw machine-specific reports stay under build."
+  ],
+  "raw_local_report": {
+    "path": "build/dp2qa/a65138032bdb43308d87cb3157c0d0a9/lifecycle-report.json",
+    "bytes": 44180,
+    "sha256": "D3E3C22129708979AAFCE3A1C88572EDE9A73DDD1DCA325597B81F04246770A7"
+  }
+}

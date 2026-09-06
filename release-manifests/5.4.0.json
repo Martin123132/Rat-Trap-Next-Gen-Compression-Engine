@@ -1,0 +1,345 @@
+{
+  "schema": "rat-trap-release-manifest/v1",
+  "product": "Rat-Trap",
+  "version": "5.4.0",
+  "release_stage": "Sealed Files Beta",
+  "release_date": "2026-07-29",
+  "source": {
+    "repository": "Martin123132/Rat-Trap-Next-Gen-Compression-Engine",
+    "ref": "5.4.0 release-candidate working tree",
+    "baseline_ref": "v5.3.0",
+    "baseline_commit": "e5d14320b919e0081dd92beac3090950f95d5d8b",
+    "commit_created": false,
+    "tag_created": false,
+    "remote_push_performed": false,
+    "note": "This manifest records the tested local 5.4.0 release-candidate working tree. It does not claim that a v5.4.0 commit, tag, or remote release exists."
+  },
+  "build_environment": {
+    "os": "Windows 10.0.19045",
+    "architecture": "x86_64",
+    "python": "3.13.13",
+    "pip": "26.0.1",
+    "sqlite": "3.50.4",
+    "pyinstaller": "6.21.0",
+    "pyinstaller_hooks_contrib": "2026.6",
+    "pyfastcdc": "0.2.1",
+    "typing_extensions": "4.15.0",
+    "zstandard": "0.25.0",
+    "cryptography": "49.0.0",
+    "openssl": "4.0.1",
+    "cffi": "2.1.0",
+    "pycparser": "3.0",
+    "dependency_file": "requirements-build-5.4.0.txt",
+    "byte_reproducible_build_claimed": false
+  },
+  "artifacts": [
+    {
+      "name": "Rat-Trap.exe",
+      "role": "portable Windows Sealed Files, backup, authenticated archive, repository, and Queryable Vault application",
+      "bytes": 17961355,
+      "sha256": "1B8B3C46A73DCB32F89E5E96A55E31F6CC61C46F25E09DCD6224896432307FD8",
+      "file_version": "5.4.0",
+      "product_version": "5.4.0",
+      "authenticode": "NotSigned"
+    },
+    {
+      "name": "Rat-Trap-Windows-5.4.0.zip",
+      "role": "37-file portable Windows Sealed Files beta release",
+      "bytes": 17834188,
+      "sha256": "7F33BE058615C172E170C6F07E191A0D168E713245B9EDC8A840F2FB2987DBA2"
+    },
+    {
+      "name": "Rat-Trap-Beta-Test-Data.zip",
+      "role": "canonical corrected 464-file beta corpus",
+      "bytes": 29325417,
+      "sha256": "8FD745B2E9969DC49A34685D7FE62241B9E49F1D6729BC197D9935959C20A16A"
+    },
+    {
+      "name": "Rat-Trap-Beta-Queryable-Vault.gmw",
+      "role": "authentic schema-1 Vault compatibility evidence",
+      "bytes": 16367616,
+      "sha256": "F095309B3A6FFDA902340E9085A280EC474C0BE8865B475405613825E96796E2"
+    },
+    {
+      "name": "Rat-Trap-Beta-Structured-Vault-5.1.gmw",
+      "role": "authentic schema-2 structured Vault compatibility evidence",
+      "bytes": 21803008,
+      "sha256": "762753311679FFDCD2A692EE1162BB65FBE0A9D567C59394E6BD5B2161B0E3C9"
+    }
+  ],
+  "release_zip_inventory": [
+    "BENCHMARK-AUDIT.md",
+    "COMMERCIAL-LICENSE.md",
+    "COMPATIBILITY-GATE.md",
+    "GMW-FORMAT-REGISTRY.md",
+    "LICENSE.md",
+    "NOTICE.md",
+    "Rat-Trap-Beta-4.4-final.json",
+    "Rat-Trap-Beta-Categories-baseline.json",
+    "Rat-Trap-Beta-Categories-hybrid.json",
+    "Rat-Trap-Structured-Beta-benchmark.json",
+    "Rat-Trap-Vault-Beta-benchmark.json",
+    "Rat-Trap.exe",
+    "README-WINDOWS.txt",
+    "REPOSITORY-FORMAT.md",
+    "REPOSITORY-GATE-5.2.0.md",
+    "SBOM/cryptography-49.0.0-rust-sbom.json",
+    "SBOM/cryptography-49.0.0-wheel-sbom.json",
+    "SEALED-FILE-FORMAT.md",
+    "SEALED-FILE-GATE-5.4.0.md",
+    "SECURE-ARCHIVE-FORMAT.md",
+    "SECURE-ARCHIVE-GATE-5.3.0.md",
+    "SHA256.txt",
+    "THIRD-PARTY-LICENSES/CFFI-2.1.0-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE-APACHE.txt",
+    "THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE-BSD.txt",
+    "THIRD-PARTY-LICENSES/CRYPTOGRAPHY-49.0.0-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/OPENSSL-4.0.1-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/PYCPARSER-3.0-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/PYFASTCDC-0.2.1-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/PYINSTALLER-6.21.0-COPYING.txt",
+    "THIRD-PARTY-LICENSES/PYINSTALLER-HOOKS-CONTRIB-2026.6-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/PYTHON-3.13.13-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/PYTHON-ZSTANDARD-0.25.0-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/TCL-TK-8.6-LICENSE.txt",
+    "THIRD-PARTY-LICENSES/TYPING-EXTENSIONS-4.15.0-LICENSE.txt",
+    "THIRD-PARTY-NOTICES.md",
+    "VAULT-README.md"
+  ],
+  "compatibility_fixtures": {
+    "classification": "deterministic_compatibility_reconstruction",
+    "original_writer_executables_used": false,
+    "manifest": {
+      "path": "tests/fixtures/formats/manifest.json",
+      "bytes": 9684,
+      "sha256": "C846D8D41AEA4CA0DA7693044F8DA44271B560A4E9276E284A99FC2DC3BC5519"
+    },
+    "supported_inner_families": [
+      "GMW-SQLITE-1",
+      "GMW-SOLID-2",
+      "GMW-SOLID-2/profile=sealed-file",
+      "GMW-VAULT-1/schema-1",
+      "GMW-VAULT-1/schema-2"
+    ],
+    "supported_outer_families": [
+      "RAT-TRAP-ENCRYPTED-1/schema-1"
+    ],
+    "legacy_golden_archives_unchanged": true,
+    "sealed_file_fixture": {
+      "outer": {
+        "path": "tests/fixtures/formats/rat-trap-sealed-file-1-5.4.rtsf",
+        "bytes": 2043,
+        "sha256": "E71FCA1817BCADDE1AB708A964B785CB3FFD05FE887EA3C0710F7AF1986D8360"
+      },
+      "recovery": {
+        "path": "tests/fixtures/formats/rat-trap-sealed-file-1-5.4.rtrk",
+        "bytes": 233,
+        "sha256": "25A3432067E7826E4AAE6D5939BE68732A2B0A02F2DD2C91511C072F52E8DF16"
+      },
+      "inner": {
+        "path": "tests/fixtures/formats/rat-trap-sealed-file-1-5.4-inner.gmw",
+        "bytes": 667,
+        "sha256": "0945EACFCB1C38A244697FA7F259A5AE76D7017A00FB1A25E8151A2DEBE938DE"
+      },
+      "byte_determinism_verified": true,
+      "credentials_are_public_test_values": true
+    }
+  },
+  "secure_archive_format": {
+    "format": "RAT-TRAP-ENCRYPTED-1",
+    "schema_version": 1,
+    "magic": "RAT-TRAP-SECURE-1\\u0000",
+    "cipher": "AES-256-GCM-SIV",
+    "content_chunk_bytes": 4194304,
+    "password_kdf": {
+      "name": "Argon2id",
+      "memory_kib": 65536,
+      "iterations": 3,
+      "lanes": 4,
+      "salt_bytes": 16,
+      "output_bytes": 32
+    },
+    "recovery_kdf": "HKDF-SHA256",
+    "independent_random_recovery_secret": true,
+    "password_and_recovery_slots": 2,
+    "sealed_plaintext_sha256": true,
+    "per_chunk_authentication": true,
+    "exact_length_truncation_and_trailing_check": true,
+    "credential_mutations_os_locked": true,
+    "stale_authenticated_header_rejected": true
+  },
+  "sealed_file_profile": {
+    "extension": ".rtsf",
+    "recovery_extension": ".rtrk",
+    "outer_format": "RAT-TRAP-ENCRYPTED-1/schema-1",
+    "inner_format": "GMW-SOLID-2",
+    "inner_profile": "sealed-file",
+    "compressor": "zstd",
+    "compression_level": 6,
+    "entry_count": 1,
+    "entry_type": "regular_file",
+    "default_opaque_name": "RT-<128-bit lowercase hexadecimal>.rtsf",
+    "original_basename_stored_only_inside_authenticated_ciphertext": true,
+    "original_path_stored": false,
+    "stored_file_metadata": [
+      "basename",
+      "content",
+      "size",
+      "sha256",
+      "modification_time",
+      "portable_mode"
+    ],
+    "independent_recovery_file_per_sealed_file": true,
+    "source_original_retained": true,
+    "delete_recycle_or_secure_erase_original": false,
+    "maximum_inner_archive_bytes": 1099511627776,
+    "maximum_authenticated_original_bytes": 8796093022208,
+    "locked_inspection_requires_no_credential": true,
+    "locked_inspection_reveals_inner_profile": false,
+    "authenticated_inner_validation_required_before_profile_claim": true,
+    "bulk_beta": {
+      "separate_sealed_and_recovery_output_trees": true,
+      "source_tree_must_be_separate": true,
+      "durable_journal": false,
+      "resume_supported": false,
+      "final_source_reconciliation": [
+        "added",
+        "removed",
+        "renamed",
+        "changed"
+      ],
+      "partial_result_is_nonzero_cli_exit": true,
+      "optional_plaintext_json_mapping_report": true,
+      "mapping_report_is_atomic": true,
+      "mapping_report_privacy_warning": true,
+      "mapping_report_refused_inside_source_or_output_trees": true
+    },
+    "launch_arguments": "preselect_only_never_auto_decrypt",
+    "cli_commands": [
+      "seal-file",
+      "unseal-file",
+      "seal-folder",
+      "sealed-info",
+      "sealed-verify"
+    ],
+    "cli_password_transport": "masked_interactive_prompt_only"
+  },
+  "repository_format": {
+    "configuration": "RAT-TRAP-REPOSITORY-1",
+    "pack": "RAT-TRAP-PACK-1",
+    "snapshot": "RAT-TRAP-SNAPSHOT-1",
+    "chunking": "fastcdc-2020-hybrid-1",
+    "chunking_implementation": "pyfastcdc.cy.fastcdc",
+    "manifest_commit_marker": true,
+    "catalog_rebuildable": true,
+    "retention_moves_to_recoverable_trash": true,
+    "encrypted": false
+  },
+  "verification": {
+    "python_unit_tests": {
+      "command": ".venv/Scripts/python.exe -m unittest discover -s tests -v",
+      "passed": 171,
+      "failed": 0
+    },
+    "python_compile": {
+      "command": ".venv/Scripts/python.exe -m compileall -q rat_trap tests",
+      "passed": true
+    },
+    "fixture_determinism": {
+      "regeneration_preserved_all_recorded_fixture_hashes": true
+    },
+    "sealed_file_engine": {
+      "password_and_recovery_round_trip": true,
+      "wrong_credentials_rejected": true,
+      "header_payload_truncation_and_trailing_tamper_rejected": true,
+      "authenticated_inner_profile_and_exact_one_file_validated": true,
+      "strict_json_types_enforced": true,
+      "hostile_metadata_rejected_through_sealed_error_boundary": true,
+      "original_name_content_and_extension_absent_from_locked_outer_bytes": true,
+      "source_mutation_during_sealing_rejected": true,
+      "collision_and_alias_outputs_rejected": true,
+      "atomic_staged_recovery_and_sealed_publication": true,
+      "prepublication_password_and_recovery_verification": true,
+      "bulk_source_add_change_remove_reconciliation": true,
+      "bulk_partial_result_preserves_complete_machine_readable_results": true,
+      "mapping_report_export_scope_and_privacy_controls": true
+    },
+    "packaged_self_test": {
+      "command": "Rat-Trap.exe --self-test",
+      "exit_code": 0,
+      "passed": true,
+      "gui_and_tab_creation_exercised": true,
+      "zstd_archive_round_trip_exercised": true,
+      "argon2id_and_aes_gcm_siv_exercised": true,
+      "password_and_recovery_unlock_exercised": true,
+      "tamper_rejection_exercised": true,
+      "password_and_recovery_rotation_exercised": true,
+      "sealed_file_create_verify_and_restore_exercised": true,
+      "encrypted_repository_export_exercised": true,
+      "vault_search_and_structured_tables_exercised": true
+    },
+    "packaged_folder_test": {
+      "command": "Rat-Trap.exe --self-test-folder <canonical-beta-folder>",
+      "exit_code": 0,
+      "passed": true,
+      "fixture": {
+        "source_archive": "Rat-Trap-Beta-Test-Data.zip",
+        "file_count": 464,
+        "total_bytes": 36991791,
+        "tree_sha256_windows_path_order": "CBD2E941DCC34F4C148D036CCD7252CF4D25778CB68B643A09B03B5B69D4FD2C",
+        "canonical_manifest_tree_sha256": "4FA04A491B9BF50C0FC3DFECB40FB685F5BA5CBA4145C32B555AE298525A3F9A",
+        "digest_note": "The first digest is the current Windows Path ordering used by the live folder self-test. The second preserves the prior canonical corpus digest produced with case-insensitive normalized relative-name ordering after removing the ZIP top folder. Both describe the same 464 files and 36991791 content bytes; the difference is entry ordering in the aggregate digest."
+      },
+      "portable_profiles": [
+        "fast",
+        "balanced",
+        "smallest",
+        "vault"
+      ],
+      "encrypted_balanced_password_verify_and_recovery_restore": true,
+      "repository_snapshot_full_verify_restore": true,
+      "round_trip_verified": true
+    },
+    "release_zip": {
+      "inventory_file_count": 37,
+      "single_root_folder": "Rat-Trap-Windows-5.4.0",
+      "unsafe_traversal_entries": 0,
+      "third_party_license_file_count": 13,
+      "sbom_file_count": 2,
+      "checksum_file_matches_executable": true,
+      "packaged_executable_matches_tested_build": true,
+      "sealed_format_and_gate_documents_present": true
+    },
+    "git_diff_check": {
+      "passed": true,
+      "line_ending_warnings_only": true
+    }
+  },
+  "security": {
+    "sealed_file_encryption": true,
+    "sealed_file_authentication": true,
+    "independent_recovery_key": true,
+    "repository_encryption": false,
+    "release_signature": false,
+    "independent_security_review_completed": false,
+    "plaintext_temporary_inner_archive": true,
+    "temporary_plaintext_removed_best_effort": true,
+    "secure_deletion_claimed": false,
+    "source_is_live_not_vss_point_in_time": true,
+    "interoperability_statement": "Normal applications see encrypted bytes without a valid password or recovery file. Rat-Trap is the registered application profile, but independent conforming software can implement the documented format and decrypt with a valid credential."
+  },
+  "known_limitations": [
+    "Canonical RAT-TRAP-REPOSITORY-1 backup repositories are not encrypted",
+    "Sealed-file creation and restoration use plaintext temporary inner files without a secure-deletion guarantee",
+    "The original plaintext source is retained; Rat-Trap does not delete, recycle, replace, or securely erase it",
+    "The outer filename is opaque by default, but the encrypted size, outer creation time, declared inner size, chunk count, and access patterns remain visible",
+    "Encrypted size may permit guesses about the original file or file type",
+    "No protection from malware, administrators, keyloggers, memory inspection, or another process on an unlocked computer",
+    "Bulk sealing has no durable journal, crash resume, or idempotent resume into an existing output tree",
+    "Bulk sealing reads a live source tree rather than a VSS point-in-time snapshot",
+    "The optional mapping report is plaintext and reveals original relative paths and their opaque sealed and recovery names",
+    "No ACL or Windows security-descriptor preservation",
+    "The portable Windows executable is not Authenticode-signed and Windows may warn before launch",
+    "No independent cryptographic security audit has yet been completed"
+  ]
+}

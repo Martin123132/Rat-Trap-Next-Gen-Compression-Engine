@@ -1,12 +1,72 @@
-RAT-TRAP 5.3.0 FOR WINDOWS
+RAT-TRAP 5.7.0 FOR WINDOWS
 ==========================
 
 Quick start
 -----------
-1. Extract the ZIP file to a folder.
-2. Double-click Rat-Trap.exe. No Python installation is required.
-3. Use Backups & history for recurring snapshots, or the other tabs for
-   portable archives and Queryable Vaults.
+1. Use a trusted signed MSIX installer when supplied. For the portable build,
+   extract the ZIP file to a folder.
+2. Start Rat-Trap from Windows, or double-click Rat-Trap.exe in the portable
+   build. No Python installation is required.
+3. Use Secure files to protect, verify, or restore individual files; use
+   Backups & history for recurring snapshots.
+
+Windows integration (5.5 Beta)
+------------------------------
+- The MSIX package makes Rat-Trap available in Windows Open with for .rtsf
+  Sealed Files and .gmw archives. Windows keeps control of the user's default
+  application choice.
+- Opening either type from Explorer only selects it in the correct Rat-Trap
+  screen. It never decrypts, verifies, extracts, or modifies the selected file
+  automatically.
+- .rtrk recovery keys are deliberately not registered. Choose a matching
+  recovery key explicitly inside Rat-Trap when authenticating an operation.
+- The installer declares Windows package-integrity enforcement. A public MSIX
+  must still be signed by a trusted publisher whose certificate subject
+  exactly matches the package identity.
+- The unsigned development MSIX is a validation artifact, not an installable
+  public release. Rat-Trap does not ask users to bypass Windows trust warnings.
+
+Company publisher and reliability (5.7 Beta)
+----------------------------
+- Rat-Trap is a product owned and published by TWO HANDS NETWORK LTD under
+  its written agreements with the project's contributors.
+- The compressor implementation was designed and built by Glyn Evans, drawing
+  on Motion-TimeSpace work by Martin Ollett.
+- Microsoft Store MSIX is the selected primary distribution route.
+- Partner Center must assign the exact package Name, Publisher and publisher
+  display name after company verification and Rat-Trap name reservation.
+  Those values are copied verbatim; they are never guessed from the company
+  name.
+- Microsoft signs a Store MSIX after certification. Direct downloads remain
+  a separate signing lane and require their own trusted signature.
+
+Sealed Files (5.4 Beta)
+-----------------------
+1. Open Secure files and choose Protect one file.
+2. Select the existing file, a new opaque .rtsf path, and a new .rtrk
+   recovery-key path in a separate location.
+3. Enter and confirm a password or passphrase of at least 15 characters.
+4. Rat-Trap compresses, encrypts, authenticates, and verifies a copy. It never
+   deletes, replaces, recycles, or securely erases the original.
+5. To check or restore it, choose Verify / restore, enter the password or
+   select the matching recovery key, and restore into a new folder.
+
+The original basename, extension, contents, stored modification time, and
+content checksum remain inside authenticated ciphertext. The recommended
+outside name is RT-<random>.rtsf. A custom outside name remains visible.
+Ordinary applications see ciphertext without a valid credential; the .rtsf
+association is convenience, not access control, and an independent conforming
+reader could decrypt the documented format with a valid credential.
+
+Protect a folder creates one independent .rtsf and .rtrk per regular file.
+The sealed and recovery destination folders must both be new, separate, and
+outside the plaintext source tree. Bulk sealing is not an all-or-nothing
+transaction. The 5.4 Beta has no durable batch journal and cannot resume an
+interrupted batch into the same folders. Already verified outputs remain
+valid; retry with two new destination folders. Rat-Trap offers a complete
+plaintext JSON batch report that maps original relative paths to the opaque
+sealed and recovery filenames. Store that report separately if filenames are
+sensitive.
 
 Encrypted portable archives
 ---------------------------
@@ -32,7 +92,7 @@ Backups & history
 5. Search finds stored filenames, paths and snapshot labels across history.
 6. Quick verify checks repository structure and references. Full verify reads
    every object and reconstructs every file checksum.
-7. Cleanup always previews first. Version 5.3 moves eligible data to
+7. Cleanup always previews first. Version 5.4 moves eligible data to
    recoverable repository trash; it does not yet free that disk space.
 
 Available formats
@@ -73,10 +133,12 @@ Notes
 -----
 - Save every new .gmw file outside the folder being ingested.
 - Keep a backup repository outside the folder it protects.
-- Version 5.3.0 reads encrypted 5.3 archives, 5.0 searchable Vaults, 4.4 hybrid archives, earlier solid
-  archives, and existing v4.2 SQLite block archives.
-- Version 5.3.0 validates the encrypted outer family, inner archive family and required database schema
-  before reading. Unknown, incomplete, or ambiguous SQLite files are rejected.
+- Version 5.7.0 reads 5.4 Sealed Files, encrypted 5.3 archives, 5.0
+  searchable Vaults, 4.4 hybrid archives, earlier solid archives, and
+  existing v4.2 SQLite block archives.
+- Version 5.7.0 validates the encrypted outer family, inner archive family and
+  required database schema before reading. Unknown, incomplete, or ambiguous
+  SQLite files are rejected.
 - Repository schema 1 rejects symbolic links, junctions, alternate data
   streams, sparse files, hard links, NTFS-compressed items and EFS-encrypted
   items instead of silently changing their meaning or copying decrypted
@@ -87,19 +149,24 @@ Notes
   applications are actively changing multiple files.
 - Portable .gmw archives and Vaults can be encrypted. The live backup
   repository remains checksum-verified but unencrypted.
-- Encrypted creation, inspection and Vault queries currently use an isolated
-  plaintext temporary inner archive. It is removed best-effort, but Windows,
-  SSDs, backup tools or malware may retain traces. Secure deletion is not
-  claimed.
+- Encrypted creation, Sealed File creation/verification/restoration,
+  inspection and Vault queries can use an isolated plaintext temporary inner
+  archive. It is removed best-effort, but Windows, SSDs, backup tools or
+  malware may retain traces. Secure deletion is not claimed.
 - Anyone holding the .rtrk recovery file can read its matching archive. Store
   it separately and do not email or upload it beside the archive.
 - Replacing an encrypted output with a plaintext archive requires a separate
   warning and explicit confirmation; the shared API and command line also
   refuse that downgrade by default.
 - Inspect / export can convert a normal archive or Vault to a conventional ZIP.
-- The executable is not digitally signed. Windows may show an
-  unknown-publisher warning. Verify the supplied SHA-256 value before running.
-- See SECURE-ARCHIVE-FORMAT.md, SECURE-ARCHIVE-GATE-5.3.0.md,
+- The development executable and unsigned MSIX are not a trusted public
+  installer. A production MSIX must be signed and timestamped with the
+  publisher identity recorded in its release manifest.
+- See SEALED-FILE-FORMAT.md, SEALED-FILE-GATE-5.4.0.md,
+  WINDOWS-INTEGRATION-GATE-5.5.0.md,
+  COMPANY-PUBLISHER-GATE-5.6.0.md,
+  WINDOWS-RELIABILITY-GATE-5.7.0.md,
+  SECURE-ARCHIVE-FORMAT.md, SECURE-ARCHIVE-GATE-5.3.0.md,
   REPOSITORY-FORMAT.md, BENCHMARK-AUDIT.md and VAULT-README.md for evidence,
   formats and technical limits.
 

@@ -1,0 +1,16 @@
+Workshop maintenance notes
+
+Monday
+- Inspect the archive shelves.
+- Verify the local backup repository.
+- Replace the label on storage box A-104.
+
+Wednesday
+- Run an integrity check.
+- Restore the demonstration folder into a temporary test location.
+- Confirm that the restored tree matches the source.
+
+Friday
+- Review retention previews before approving cleanup.
+- Keep the recovery-key demonstration separate from protected data.
+

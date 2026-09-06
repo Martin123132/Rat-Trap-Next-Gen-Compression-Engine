@@ -4,27 +4,47 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import json
 import os
+import queue
 import sys
 import tempfile
 import threading
+import time
 import tkinter as tk
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
-from typing import Callable
+from typing import Callable, Sequence
 
 try:
-    from . import gmw_tool, repository_engine, secure_engine, vault_engine
+    from . import (
+        diagnostics,
+        gmw_tool,
+        repository_engine,
+        sealed_file,
+        secure_engine,
+        vault_engine,
+    )
 except ImportError:  # Allows direct execution while developing.
-    import gmw_tool  # type: ignore
-    import repository_engine  # type: ignore
-    import secure_engine  # type: ignore
-    import vault_engine  # type: ignore
+    project_root = str(Path(__file__).resolve().parent.parent)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    from rat_trap import (  # type: ignore
+        diagnostics,
+        gmw_tool,
+        repository_engine,
+        sealed_file,
+        secure_engine,
+        vault_engine,
+    )
 
 
 APP_NAME = "Rat-Trap"
-APP_VERSION = "5.3.0"
+APP_VERSION = "5.7.0"
+PUBLISHER_NAME = "TWO HANDS NETWORK LTD"
+SUPPORT_EMAIL = "ollett123123@outlook.com"
 PROFILE_OPTIONS = {
     "Balanced - Zstandard 6 (recommended)": "balanced",
     "Fast - Zstandard 3": "fast",
@@ -37,11 +57,102 @@ PROFILE_NOTES = {
     "smallest": "Tries hardest for the smallest file and also removes exact duplicates. Can be much slower.",
     "vault": "Search files and turn CSV, TSV, JSON, JSONL, and .data files into queryable SQLite tables.",
 }
+_TASK_OPERATION_PREFIXES = (
+    ("Initializing backup repository", "repository_initialize"),
+    ("Opening backup repository", "repository_open"),
+    ("Moving interrupted work", "repository_abandon_job"),
+    ("Checking interrupted backup", "repository_check_jobs"),
+    ("Reading repository integrity", "repository_issues"),
+    ("Restarting backup", "repository_snapshot"),
+    ("Preparing backup", "repository_snapshot"),
+    ("Searching backup history", "repository_search"),
+    ("Restoring and verifying snapshot", "repository_restore"),
+    ("Pinning snapshot", "repository_pin"),
+    ("Unpinning snapshot", "repository_unpin"),
+    ("Creating portable GMW", "repository_export"),
+    ("Fully verifying all repository", "repository_verify_full"),
+    ("Quickly verifying repository", "repository_verify_quick"),
+    ("Preparing retention preview", "repository_retention_preview"),
+    ("Applying verified retention", "repository_retention_apply"),
+    ("Loading structured table catalog", "data_catalog"),
+    ("Loading table schema", "data_load"),
+    ("Querying structured rows", "data_query"),
+    ("Running read-only SQL", "data_sql"),
+    ("Exporting query results", "data_export"),
+    ("Searching Vault", "vault_search"),
+    ("Loading preview", "vault_preview"),
+    ("Exporting selected Vault", "vault_export"),
+    ("Protecting and verifying file", "sealed_create"),
+    ("Authenticating Sealed File", "sealed_verify"),
+    ("Restoring and verifying plaintext", "sealed_restore"),
+    ("Protecting files in folder", "sealed_folder"),
+    ("Creating archive", "archive_create"),
+    ("Extracting files", "archive_extract"),
+    ("Reading and authenticating archive", "archive_inspect"),
+    ("Replacing and verifying password", "archive_change_password"),
+    ("Replacing and verifying recovery", "archive_rotate_recovery"),
+    ("Exporting ZIP", "archive_export_zip"),
+)
 ARCHIVE_TYPES = [
     ("Rat-Trap archives", "*.gmw"),
     ("SQLite databases", "*.db"),
     ("All files", "*.*"),
 ]
+SEALED_FILE_TYPES = [
+    ("Rat-Trap Sealed Files", "*.rtsf"),
+    ("All files", "*.*"),
+]
+
+
+@dataclass(frozen=True)
+class LaunchRequest:
+    """A safe UI preselection requested by Explorer or a command line."""
+
+    action: str
+    path: Path
+
+
+def _parse_launch_request(arguments: Sequence[str]) -> LaunchRequest | None:
+    """Parse launch shortcuts without opening, decrypting, or touching a file."""
+
+    values = list(arguments)
+    if not values:
+        return None
+    actions = {
+        "--open-sealed": "open-sealed",
+        "--open-archive": "open-archive",
+        "--seal-file": "seal-file",
+        "--seal-folder": "seal-folder",
+    }
+    if len(values) == 1 and not values[0].startswith("--"):
+        path = Path(values[0])
+        suffix = path.suffix.lower()
+        if suffix == sealed_file.SEALED_EXTENSION:
+            return LaunchRequest("open-sealed", path)
+        if suffix == ".gmw":
+            return LaunchRequest("open-archive", path)
+        raise ValueError(
+            "A positional launch path must be a Rat-Trap .rtsf Sealed File "
+            "or .gmw archive"
+        )
+    if len(values) == 2 and values[0] in actions:
+        if not values[1]:
+            raise ValueError(f"{values[0]} requires a path")
+        path = Path(values[1])
+        if (
+            values[0] == "--open-sealed"
+            and path.suffix.lower() != sealed_file.SEALED_EXTENSION
+        ):
+            raise ValueError("--open-sealed requires a .rtsf file")
+        if (
+            values[0] == "--open-archive"
+            and path.suffix.lower() != ".gmw"
+        ):
+            raise ValueError("--open-archive requires a .gmw file")
+        return LaunchRequest(actions[values[0]], path)
+    if values[0] in actions:
+        raise ValueError(f"{values[0]} requires exactly one path")
+    raise ValueError(f"Unknown Rat-Trap launch arguments: {' '.join(values)}")
 
 
 def _format_size(value: int) -> str:
@@ -53,6 +164,13 @@ def _format_size(value: int) -> str:
     return f"{size:.1f} TB"
 
 
+def _task_operation_code(label: str) -> str:
+    for prefix, operation in _TASK_OPERATION_PREFIXES:
+        if label.startswith(prefix):
+            return operation
+    return "background_task"
+
+
 def _format_time_ns(value: int) -> str:
     return dt.datetime.fromtimestamp(value / 1_000_000_000).strftime(
         "%d %b %Y, %H:%M"
@@ -61,6 +179,35 @@ def _format_time_ns(value: int) -> str:
 
 def _same_parent(first: Path, second: Path) -> bool:
     return Path(first).resolve().parent == Path(second).resolve().parent
+
+
+def _path_within(path: Path, root: Path) -> bool:
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _directories_overlap(first: Path, second: Path) -> bool:
+    return _path_within(first, second) or _path_within(second, first)
+
+
+def _uses_opaque_sealed_name(path: Path) -> bool:
+    name = Path(path).name
+    prefix = "RT-"
+    suffix = sealed_file.SEALED_EXTENSION
+    if (
+        not name.startswith(prefix)
+        or not name.endswith(suffix)
+        or len(name) != len(prefix) + 32 + len(suffix)
+    ):
+        return False
+    try:
+        int(name[len(prefix) : -len(suffix)], 16)
+    except ValueError:
+        return False
+    return True
 
 
 def _preferred_recovery_directory(
@@ -81,6 +228,69 @@ def _preferred_recovery_directory(
         if candidate.is_dir() and candidate.resolve() != archive_parent:
             return candidate.resolve()
     return archive_parent
+
+
+def _preferred_sealed_recovery_directory(
+    *,
+    source_directory: Path,
+    output_directory: Path,
+    home: Path | None = None,
+) -> Path | None:
+    """Choose an existing recovery location outside both protected trees."""
+
+    user_home = Path.home() if home is None else Path(home)
+    candidates = (
+        user_home / "Documents",
+        user_home / "Desktop",
+        user_home,
+    )
+    for candidate in candidates:
+        if (
+            candidate.is_dir()
+            and not _directories_overlap(candidate, source_directory)
+            and not _directories_overlap(candidate, output_directory)
+        ):
+            return candidate.resolve()
+    return None
+
+
+def _write_new_json(path: Path, payload: object) -> Path:
+    """Atomically publish a new UTF-8 JSON file without replacing anything."""
+
+    destination = Path(path).resolve()
+    if destination.exists():
+        raise FileExistsError(f"Destination already exists: {destination}")
+    if not destination.parent.is_dir():
+        raise FileNotFoundError(
+            f"Destination folder does not exist: {destination.parent}"
+        )
+    encoded = (
+        json.dumps(
+            payload,
+            indent=2,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    descriptor, staging_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        suffix=".rat-trap-report",
+        dir=destination.parent,
+    )
+    staged = Path(staging_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        secure_engine._publish_new(staged, destination)
+        return destination
+    finally:
+        try:
+            staged.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _load_structured_workspace(
@@ -119,18 +329,60 @@ def _load_structured_workspace(
 
 
 class RatTrapApp:
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(
+        self,
+        root: tk.Tk,
+        *,
+        diagnostic_log: diagnostics.LocalDiagnostics | None = None,
+    ) -> None:
         self.root = root
         self.busy = False
+        self._closing = False
+        self._diagnostics_closed = False
+        self._task_events: queue.Queue[tuple[str, object]] | None = None
+        self._task_token: object | None = None
+        self._worker_thread: threading.Thread | None = None
+        self._task_status_lock = threading.Lock()
+        self._pending_task_status: str | None = None
+        self._task_monitor_failed = False
+        self._active_operation: str | None = None
+        self.diagnostics = (
+            diagnostics.LocalDiagnostics()
+            if diagnostic_log is None
+            else diagnostic_log
+        )
         self.action_buttons: list[ttk.Button] = []
         self._saved_action_states: dict[ttk.Button, str] = {}
 
+        root.report_callback_exception = self._report_callback_exception
+        root.protocol("WM_DELETE_WINDOW", self._request_close)
+        root.bind("<Destroy>", self._root_destroyed, add="+")
         root.title(f"{APP_NAME} {APP_VERSION}")
         root.geometry("1100x760")
         root.minsize(900, 650)
 
+        self._configure_window_icon()
         self._configure_style()
         self._build_ui()
+
+    def _configure_window_icon(self) -> None:
+        """Use the executable icon when frozen and the source icon in development."""
+
+        if os.name != "nt":
+            return
+        icon = (
+            Path(sys.executable)
+            if getattr(sys, "frozen", False)
+            else Path(__file__).resolve().parents[1]
+            / "packaging"
+            / "branding"
+            / "rat-trap.ico"
+        )
+        try:
+            self.root.iconbitmap(default=str(icon))
+        except (OSError, tk.TclError):
+            # A missing development-only asset must not prevent the UI opening.
+            pass
 
     def _configure_style(self) -> None:
         style = ttk.Style(self.root)
@@ -156,12 +408,14 @@ class RatTrapApp:
         self.tabs = ttk.Notebook(outer)
         self.tabs.pack(fill=tk.BOTH, expand=True)
 
+        self._build_secure_files_tab()
         self._build_create_tab()
         self._build_repository_tab()
         self._build_vault_tab()
         self._build_data_tab()
         self._build_extract_tab()
         self._build_inspect_tab()
+        self._build_about_tab()
 
         status = ttk.Frame(outer)
         status.pack(fill=tk.X, pady=(14, 0))
@@ -172,9 +426,128 @@ class RatTrapApp:
 
         ttk.Label(
             outer,
-            text=f"Version {APP_VERSION}  |  Personal and academic use",
+            text=(
+                f"Version {APP_VERSION}  |  Published by "
+                f"{PUBLISHER_NAME}  |  Personal and non-commercial use"
+            ),
             style="Subtitle.TLabel",
         ).pack(anchor=tk.E, pady=(8, 0))
+
+    def _build_about_tab(self) -> None:
+        tab = self._new_tab("About")
+        self.about_tab = tab
+
+        ttk.Label(
+            tab,
+            text=f"{APP_NAME} {APP_VERSION}",
+            style="Heading.TLabel",
+        ).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        ttk.Label(
+            tab,
+            text=(
+                f"Published by {PUBLISHER_NAME}. Rat-Trap backs up, compresses, "
+                "protects, searches, and restores files on this computer."
+            ),
+            style="Subtitle.TLabel",
+            wraplength=820,
+        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(0, 20))
+
+        ttk.Label(
+            tab,
+            text="Privacy",
+            style="Heading.TLabel",
+        ).grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        ttk.Label(
+            tab,
+            text=(
+                "Rat-Trap processes files locally. It has no account, advertising, "
+                "telemetry, or automatic diagnostic upload. Some secure operations "
+                "need temporary plaintext working files; Rat-Trap removes them on a "
+                "best-effort basis, but cannot promise secure erasure from storage."
+            ),
+            style="Subtitle.TLabel",
+            wraplength=820,
+        ).grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=(0, 20))
+
+        ttk.Label(
+            tab,
+            text="Support",
+            style="Heading.TLabel",
+        ).grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        ttk.Label(
+            tab,
+            text=(
+                f"Contact {SUPPORT_EMAIL}. Include the Rat-Trap version and error "
+                "reference, but never send a password, recovery-key contents, "
+                "confidential archive, or file contents."
+            ),
+            style="Subtitle.TLabel",
+            wraplength=820,
+        ).grid(row=5, column=0, columnspan=3, sticky=tk.W, pady=(0, 12))
+
+        self.diagnostics_available = bool(
+            getattr(self.diagnostics, "available", False)
+        )
+        diagnostics_display = (
+            str(getattr(self.diagnostics, "log_path", "Unavailable"))
+            if self.diagnostics_available
+            else "Unavailable - no local diagnostic record will be written"
+        )
+        self.diagnostics_path = tk.StringVar(value=diagnostics_display)
+        ttk.Label(tab, text="Local diagnostics").grid(
+            row=6,
+            column=0,
+            sticky=tk.W,
+            pady=8,
+            padx=(0, 12),
+        )
+        diagnostics_entry = ttk.Entry(
+            tab,
+            textvariable=self.diagnostics_path,
+            state="readonly",
+        )
+        diagnostics_entry.grid(
+            row=6,
+            column=1,
+            sticky=tk.EW,
+            pady=8,
+        )
+        ttk.Button(
+            tab,
+            text="Copy support details",
+            command=self._copy_support_details,
+        ).grid(row=6, column=2, sticky=tk.E, pady=8, padx=(10, 0))
+        ttk.Label(
+            tab,
+            text=(
+                "Diagnostics are rotating local records containing error types and "
+                "short operational codes—not passwords, recovery material, paths, "
+                "filenames, or file contents. They can be deleted while Rat-Trap is "
+                "closed."
+            ),
+            style="Subtitle.TLabel",
+            wraplength=820,
+        ).grid(row=7, column=0, columnspan=3, sticky=tk.W, pady=(4, 0))
+
+    def _copy_support_details(self) -> None:
+        if self.diagnostics_available:
+            diagnostic_summary = (
+                r"configured under %LOCALAPPDATA%\Two Hands Network Ltd\Rat-Trap"
+                r"\Diagnostics\rat-trap.log"
+                if os.name == "nt"
+                else "configured in the per-user Rat-Trap local state directory"
+            )
+        else:
+            diagnostic_summary = "unavailable; no local record was written"
+        details = (
+            f"{APP_NAME} {APP_VERSION}\n"
+            f"Publisher: {PUBLISHER_NAME}\n"
+            f"Support: {SUPPORT_EMAIL}\n"
+            f"Local diagnostics: {diagnostic_summary}"
+        )
+        self.root.clipboard_clear()
+        self.root.clipboard_append(details)
+        self.status_text.set("Support details copied")
 
     def _new_tab(self, title: str) -> ttk.Frame:
         tab = ttk.Frame(self.tabs, padding=24)
@@ -204,6 +577,177 @@ class RatTrapApp:
         button = ttk.Button(parent, text=text, command=command, style="Action.TButton")
         button.grid(row=row, column=0, columnspan=3, sticky=tk.E, pady=(24, 0))
         self.action_buttons.append(button)
+
+    def _build_secure_files_tab(self) -> None:
+        tab = self._new_tab("Secure files")
+        self.secure_files_tab = tab
+        tab.rowconfigure(2, weight=1)
+        ttk.Label(
+            tab,
+            text="Compress and protect individual files",
+            style="Heading.TLabel",
+        ).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        ttk.Label(
+            tab,
+            text=(
+                "Sealed Files hide the original name and contents inside "
+                "authenticated encryption. Originals are always retained. "
+                "Keep each .rtrk recovery key separately from its .rtsf file."
+            ),
+            style="Subtitle.TLabel",
+            wraplength=820,
+        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(0, 12))
+
+        self.secure_modes = ttk.Notebook(tab)
+        self.secure_modes.grid(
+            row=2, column=0, columnspan=3, sticky=tk.NSEW
+        )
+
+        protect = ttk.Frame(self.secure_modes, padding=20)
+        protect.columnconfigure(1, weight=1)
+        self.secure_modes.add(protect, text="Protect one file")
+        self.secure_protect_mode = protect
+        self.seal_source = tk.StringVar()
+        self.seal_output = tk.StringVar()
+        ttk.Label(
+            protect,
+            text="Create one opaque .rtsf Sealed File",
+            style="Heading.TLabel",
+        ).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        ttk.Label(
+            protect,
+            text=(
+                "Rat-Trap compresses and encrypts a copy. It never deletes "
+                "or replaces the original file."
+            ),
+            style="Subtitle.TLabel",
+            wraplength=720,
+        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
+        self._path_row(
+            protect,
+            2,
+            "File to protect",
+            self.seal_source,
+            self._choose_seal_source,
+        )
+        self._path_row(
+            protect,
+            3,
+            "Save sealed file",
+            self.seal_output,
+            self._choose_seal_output,
+        )
+        self._action_button(
+            protect,
+            "Protect file",
+            self._start_seal_file,
+            4,
+        )
+
+        restore = ttk.Frame(self.secure_modes, padding=20)
+        restore.columnconfigure(1, weight=1)
+        self.secure_modes.add(restore, text="Open / restore")
+        self.secure_restore_mode = restore
+        self.unseal_source = tk.StringVar()
+        self.unseal_destination = tk.StringVar()
+        ttk.Label(
+            restore,
+            text="Authenticate or restore a Sealed File",
+            style="Heading.TLabel",
+        ).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        ttk.Label(
+            restore,
+            text=(
+                "Opening a .rtsf from Explorer only selects it here; Rat-Trap "
+                "never decrypts automatically. Restoring publishes an ordinary "
+                "plaintext copy and retains the Sealed File."
+            ),
+            style="Subtitle.TLabel",
+            wraplength=760,
+        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
+        self._path_row(
+            restore,
+            2,
+            "Sealed file",
+            self.unseal_source,
+            self._choose_unseal_source,
+        )
+        self._path_row(
+            restore,
+            3,
+            "Restore into",
+            self.unseal_destination,
+            self._choose_unseal_destination,
+        )
+        restore_actions = ttk.Frame(restore)
+        restore_actions.grid(
+            row=4, column=0, columnspan=3, sticky=tk.E, pady=(24, 0)
+        )
+        verify_button = ttk.Button(
+            restore_actions,
+            text="Verify",
+            command=self._start_verify_sealed,
+        )
+        verify_button.pack(side=tk.LEFT, padx=(0, 8))
+        restore_button = ttk.Button(
+            restore_actions,
+            text="Restore plaintext copy",
+            command=self._start_unseal_file,
+            style="Action.TButton",
+        )
+        restore_button.pack(side=tk.LEFT)
+        self.action_buttons.extend((verify_button, restore_button))
+
+        bulk = ttk.Frame(self.secure_modes, padding=20)
+        bulk.columnconfigure(1, weight=1)
+        self.secure_modes.add(bulk, text="Protect a folder")
+        self.secure_bulk_mode = bulk
+        self.bulk_seal_source = tk.StringVar()
+        self.bulk_seal_output = tk.StringVar()
+        self.bulk_recovery_output = tk.StringVar()
+        ttk.Label(
+            bulk,
+            text="Create independent Sealed Files in bulk",
+            style="Heading.TLabel",
+        ).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        ttk.Label(
+            bulk,
+            text=(
+                "Each regular file gets an opaque .rtsf and an independent "
+                ".rtrk key. Both destination folders must be new and outside "
+                "the source tree. Originals are always retained. Interrupted "
+                "beta batches cannot resume into the same folders."
+            ),
+            style="Subtitle.TLabel",
+            wraplength=760,
+        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
+        self._path_row(
+            bulk,
+            2,
+            "Source folder",
+            self.bulk_seal_source,
+            self._choose_bulk_seal_source,
+        )
+        self._path_row(
+            bulk,
+            3,
+            "New sealed folder",
+            self.bulk_seal_output,
+            self._choose_bulk_seal_output,
+        )
+        self._path_row(
+            bulk,
+            4,
+            "New recovery folder",
+            self.bulk_recovery_output,
+            self._choose_bulk_recovery_output,
+        )
+        self._action_button(
+            bulk,
+            "Protect folder",
+            self._start_seal_folder,
+            5,
+        )
 
     def _build_create_tab(self) -> None:
         tab = self._new_tab("Create archive")
@@ -354,6 +898,200 @@ class RatTrapApp:
             "encryption_password": password,
             "recovery_key_output": recovery,
             "allow_plaintext_temp": True,
+        }
+
+    def _prompt_new_sealed_password(self, *, action: str) -> str | None:
+        """Acknowledge temporary plaintext before displaying secret prompts."""
+
+        if not messagebox.askyesno(
+            APP_NAME,
+            f"{action} uses an isolated plaintext temporary working file.\n\n"
+            f"{sealed_file.PLAINTEXT_TEMP_WARNING}\n\nContinue?",
+        ):
+            return None
+        password = simpledialog.askstring(
+            APP_NAME,
+            "Sealed File password or passphrase (at least 15 characters):",
+            show="*",
+            parent=self.root,
+        )
+        if password is None:
+            return None
+        if len(unicodedata.normalize("NFC", password)) < 15:
+            messagebox.showwarning(
+                APP_NAME,
+                "Use a password or passphrase containing at least 15 characters.",
+            )
+            return None
+        confirmation = simpledialog.askstring(
+            APP_NAME,
+            "Enter the same Sealed File password again:",
+            show="*",
+            parent=self.root,
+        )
+        if confirmation is None:
+            return None
+        if password != confirmation:
+            messagebox.showwarning(APP_NAME, "The two passwords did not match.")
+            return None
+        return password
+
+    def _new_sealed_credentials(
+        self,
+        output: Path,
+        *,
+        source: Path | None = None,
+    ) -> dict[str, object] | None:
+        dialog_options: dict[str, object] = {
+            "title": "Save the independent Rat-Trap recovery key",
+            "initialfile": f"{output.stem}.rtrk",
+            "defaultextension": ".rtrk",
+            "filetypes": [
+                ("Rat-Trap recovery keys", "*.rtrk"),
+                ("All files", "*.*"),
+            ],
+        }
+        if source is not None:
+            preferred = _preferred_sealed_recovery_directory(
+                source_directory=source.resolve().parent,
+                output_directory=output.resolve().parent,
+            )
+        else:
+            preferred = _preferred_recovery_directory(output)
+        if preferred is not None:
+            dialog_options["initialdir"] = str(preferred)
+        selected = filedialog.asksaveasfilename(
+            **dialog_options,
+        )
+        if not selected:
+            return None
+        recovery = Path(selected).resolve()
+        if recovery.exists():
+            messagebox.showwarning(
+                APP_NAME,
+                "Recovery keys are never overwritten. Choose a new filename.",
+            )
+            return None
+        if recovery == output.resolve():
+            messagebox.showwarning(
+                APP_NAME,
+                "The Sealed File and recovery key must use different files.",
+            )
+            return None
+        output_directory = output.resolve().parent
+        recovery_directory = recovery.parent
+        if source is not None:
+            source_directory = source.resolve().parent
+            if _directories_overlap(recovery_directory, source_directory):
+                messagebox.showwarning(
+                    APP_NAME,
+                    "Store the recovery key outside the plaintext file's "
+                    "directory tree. Anyone who obtains the key can unlock "
+                    "its matching Sealed File.",
+                )
+                return None
+        nested_directory = _directories_overlap(
+            recovery_directory,
+            output_directory,
+        )
+        same_directory = _same_parent(recovery, output)
+        if nested_directory and not same_directory:
+            messagebox.showwarning(
+                APP_NAME,
+                "The recovery-key folder must not be inside the Sealed File "
+                "folder, and the Sealed File folder must not be inside the "
+                "recovery-key folder. Choose a separate location.",
+            )
+            return None
+        if same_directory and not messagebox.askyesno(
+            APP_NAME,
+            "This recovery key is beside the Sealed File.\n\n"
+            "A disk failure, ransomware incident, or synchronized-folder "
+            "problem could affect both. Store the recovery key separately, "
+            "ideally on another drive or storage account.\n\n"
+            "Save it beside the Sealed File anyway?",
+        ):
+            return None
+        password = self._prompt_new_sealed_password(
+            action="Protecting this file",
+        )
+        if password is None:
+            return None
+        return {
+            "password": password,
+            "recovery_key_output": recovery,
+            "allow_plaintext_temp": True,
+            "allow_recovery_same_directory": same_directory,
+        }
+
+    def _sealed_unlock_credential(
+        self,
+        *,
+        action: str,
+    ) -> dict[str, object] | None:
+        choice = messagebox.askyesnocancel(
+            APP_NAME,
+            f"{action}\n\nUnlock with the password?\n\n"
+            "Choose Yes for password, No for the matching .rtrk recovery "
+            "file, or Cancel to stop.",
+        )
+        if choice is None:
+            return None
+        if choice:
+            password = simpledialog.askstring(
+                APP_NAME,
+                "Sealed File password:",
+                show="*",
+                parent=self.root,
+            )
+            if password is None:
+                return None
+            return {"password": password}
+        selected = filedialog.askopenfilename(
+            title="Open the matching Rat-Trap recovery key",
+            filetypes=[
+                ("Rat-Trap recovery keys", "*.rtrk"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not selected:
+            return None
+        return {"recovery_key": Path(selected)}
+
+    def _sealed_access(
+        self,
+        *,
+        action: str,
+        plaintext_output: bool,
+        output_destination: Path | None = None,
+    ) -> dict[str, object] | None:
+        """Collect explicit risk acknowledgements before any secret prompt."""
+
+        if plaintext_output and not messagebox.askyesno(
+            APP_NAME,
+            f"{sealed_file.PLAINTEXT_OUTPUT_WARNING}\n\n"
+            f"Selected destination:\n{output_destination}\n\nContinue?",
+        ):
+            return None
+        if not messagebox.askyesno(
+            APP_NAME,
+            f"{action} requires an isolated plaintext temporary working "
+            f"file.\n\n{sealed_file.PLAINTEXT_TEMP_WARNING}\n\nContinue?",
+        ):
+            return None
+        credential = self._sealed_unlock_credential(
+            action="Choose how to unlock this Sealed File",
+        )
+        if credential is None:
+            return None
+        return {
+            **credential,
+            "allow_plaintext_temp": True,
+            **(
+                {"allow_plaintext_output": True}
+                if plaintext_output
+                else {}
+            ),
         }
 
     def _unlock_credential(
@@ -949,6 +1687,7 @@ class RatTrapApp:
 
     def _build_inspect_tab(self) -> None:
         tab = self._new_tab("Inspect / export")
+        self.inspect_tab = tab
         ttk.Label(tab, text="Archive details", style="Heading.TLabel").grid(
             row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 8)
         )
@@ -1044,6 +1783,109 @@ class RatTrapApp:
 
     def _inspect_archive_changed(self, *_trace_args: object) -> None:
         self._clear_inspect_state()
+
+    def _choose_seal_source(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Choose the file to protect",
+            filetypes=[("All files", "*.*")],
+        )
+        if not selected:
+            return
+        source = Path(selected)
+        self.seal_source.set(str(source))
+        self.seal_output.set(
+            str(source.parent / sealed_file.default_sealed_name())
+        )
+
+    def _choose_seal_output(self) -> None:
+        source_value = self.seal_source.get().strip()
+        source = Path(source_value) if source_value else None
+        current = self.seal_output.get().strip()
+        selected = filedialog.asksaveasfilename(
+            title="Save the opaque Rat-Trap Sealed File",
+            initialdir=str(source.parent) if source else None,
+            initialfile=(
+                Path(current).name
+                if current
+                else sealed_file.default_sealed_name()
+            ),
+            defaultextension=sealed_file.SEALED_EXTENSION,
+            filetypes=SEALED_FILE_TYPES,
+        )
+        if selected:
+            self.seal_output.set(selected)
+
+    def _choose_unseal_source(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Open a Rat-Trap Sealed File",
+            filetypes=SEALED_FILE_TYPES,
+        )
+        if not selected:
+            return
+        source = Path(selected)
+        self.unseal_source.set(str(source))
+        if not self.unseal_destination.get().strip():
+            self.unseal_destination.set(
+                str(source.parent / "Rat-Trap Restored")
+            )
+
+    def _choose_unseal_destination(self) -> None:
+        selected = filedialog.askdirectory(
+            title="Choose where to restore the plaintext copy"
+        )
+        if selected:
+            self.unseal_destination.set(selected)
+
+    def _choose_bulk_seal_source(self) -> None:
+        selected = filedialog.askdirectory(
+            title="Choose the folder of files to protect"
+        )
+        if not selected:
+            return
+        source = Path(selected)
+        self.bulk_seal_source.set(str(source))
+        output = source.parent / f"{source.name}-sealed"
+        self.bulk_seal_output.set(str(output))
+        recovery_parent = _preferred_sealed_recovery_directory(
+            source_directory=source,
+            output_directory=output,
+        )
+        if recovery_parent is None:
+            self.bulk_recovery_output.set("")
+        else:
+            timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+            self.bulk_recovery_output.set(
+                str(
+                    recovery_parent
+                    / f"Rat-Trap Recovery Keys {timestamp}"
+                )
+            )
+
+    def _choose_bulk_seal_output(self) -> None:
+        selected = filedialog.askdirectory(
+            title="Choose where Rat-Trap should create the new sealed folder"
+        )
+        if selected:
+            current = self.bulk_seal_output.get().strip()
+            name = (
+                Path(current).name
+                if current
+                else "Rat-Trap Sealed Files"
+            )
+            self.bulk_seal_output.set(str(Path(selected) / name))
+
+    def _choose_bulk_recovery_output(self) -> None:
+        selected = filedialog.askdirectory(
+            title="Choose where Rat-Trap should create the new recovery folder"
+        )
+        if selected:
+            current = self.bulk_recovery_output.get().strip()
+            name = (
+                Path(current).name
+                if current
+                else "Rat-Trap Recovery Keys"
+            )
+            self.bulk_recovery_output.set(str(Path(selected) / name))
 
     def _choose_source(self) -> None:
         selected = filedialog.askdirectory(title="Choose the folder to archive")
@@ -1395,9 +2237,7 @@ class RatTrapApp:
                 detail = f"Backing up {completed:,}/{total:,}: {path}"
             else:
                 detail = f"Preparing backup ({completed:,}/{total:,} files)..."
-            self.root.after(
-                0, lambda status=detail: self.status_text.set(status)
-            )
+            self._queue_task_status(detail)
 
         def launch(*, restart: bool) -> None:
             def work():
@@ -2341,6 +3181,382 @@ class RatTrapApp:
 
         self._run_task("Exporting selected Vault files...", work, done)
 
+    def _start_seal_file(self) -> None:
+        source_value = self.seal_source.get().strip()
+        output_value = self.seal_output.get().strip()
+        source = Path(source_value)
+        output = Path(output_value)
+        if not source_value or not source.is_file():
+            messagebox.showwarning(APP_NAME, "Choose an existing file to protect.")
+            return
+        if not output_value:
+            messagebox.showwarning(
+                APP_NAME,
+                "Choose where to save the opaque Sealed File.",
+            )
+            return
+        if output.suffix.lower() != sealed_file.SEALED_EXTENSION:
+            messagebox.showwarning(
+                APP_NAME,
+                "A Rat-Trap Sealed File must use the .rtsf extension.",
+            )
+            return
+        if output.exists():
+            messagebox.showwarning(
+                APP_NAME,
+                "Sealed Files are never overwritten. Choose a new filename.",
+            )
+            return
+        if (
+            not _uses_opaque_sealed_name(output)
+            and not messagebox.askyesno(
+                APP_NAME,
+                "This custom exterior filename will remain visible even "
+                "while the original name and contents are encrypted.\n\n"
+                "For maximum privacy, use Rat-Trap's generated "
+                "RT-<random>.rtsf name.\n\nContinue with this visible name?",
+            )
+        ):
+            return
+        credentials = self._new_sealed_credentials(output, source=source)
+        if credentials is None:
+            return
+
+        def work():
+            return sealed_file.seal_file(
+                source,
+                output,
+                **credentials,
+            )
+
+        def done(result: sealed_file.SealResult) -> None:
+            info = result.sealed_file
+            saving = 0.0
+            if info.original_size:
+                saving = (
+                    1 - info.encrypted_size / info.original_size
+                ) * 100
+            messagebox.showinfo(
+                APP_NAME,
+                "Sealed File created and verified.\n\n"
+                f"Original retained: {result.source}\n"
+                f"Original size: {_format_size(info.original_size or 0)}\n"
+                f"Sealed size: {_format_size(info.encrypted_size)}\n"
+                f"Size change: {saving:.1f}% saved\n\n"
+                f"Sealed File: {info.path}\n"
+                f"Recovery key: {result.recovery_key_path}\n\n"
+                "Keep the recovery key separately from the Sealed File.",
+            )
+
+        self._run_task("Protecting and verifying file...", work, done)
+
+    def _start_verify_sealed(self) -> None:
+        source_value = self.unseal_source.get().strip()
+        source = Path(source_value)
+        if not source_value or not source.is_file():
+            messagebox.showwarning(
+                APP_NAME,
+                "Choose an existing .rtsf Sealed File first.",
+            )
+            return
+        access = self._sealed_access(
+            action="Verifying this Sealed File",
+            plaintext_output=False,
+        )
+        if access is None:
+            return
+
+        def work():
+            return sealed_file.verify_sealed_file(source, **access)
+
+        def done(info: sealed_file.SealedFileInfo) -> None:
+            messagebox.showinfo(
+                APP_NAME,
+                "Sealed File authenticated successfully.\n\n"
+                f"Original name: {info.original_name}\n"
+                f"Original size: {_format_size(info.original_size or 0)}\n"
+                f"SHA-256: {info.original_sha256}\n\n"
+                "No plaintext output was published.",
+            )
+
+        self._run_task("Authenticating Sealed File...", work, done)
+
+    def _start_unseal_file(self) -> None:
+        source_value = self.unseal_source.get().strip()
+        destination_value = self.unseal_destination.get().strip()
+        source = Path(source_value)
+        destination = Path(destination_value)
+        if not source_value or not source.is_file():
+            messagebox.showwarning(
+                APP_NAME,
+                "Choose an existing .rtsf Sealed File first.",
+            )
+            return
+        if not destination_value:
+            messagebox.showwarning(
+                APP_NAME,
+                "Choose where to restore the plaintext copy.",
+            )
+            return
+        if destination.exists() and not destination.is_dir():
+            messagebox.showwarning(
+                APP_NAME,
+                "The plaintext destination must be a folder.",
+            )
+            return
+        access = self._sealed_access(
+            action="Restoring this Sealed File",
+            plaintext_output=True,
+            output_destination=destination.resolve(),
+        )
+        if access is None:
+            return
+
+        def work():
+            return sealed_file.unseal_file(
+                source,
+                destination,
+                replace=False,
+                **access,
+            )
+
+        def done(result: sealed_file.UnsealResult) -> None:
+            messagebox.showinfo(
+                APP_NAME,
+                "Plaintext copy restored and verified.\n\n"
+                f"Restored file: {result.output}\n"
+                f"SHA-256: {result.plaintext_sha256}\n\n"
+                f"Sealed source retained: {source}",
+            )
+
+        self._run_task("Restoring and verifying plaintext copy...", work, done)
+
+    def _start_seal_folder(self) -> None:
+        source_value = self.bulk_seal_source.get().strip()
+        output_value = self.bulk_seal_output.get().strip()
+        recovery_value = self.bulk_recovery_output.get().strip()
+        source = Path(source_value)
+        output = Path(output_value)
+        recovery = Path(recovery_value)
+        if not source_value or not source.is_dir():
+            messagebox.showwarning(
+                APP_NAME,
+                "Choose an existing source folder first.",
+            )
+            return
+        if not output_value or not recovery_value:
+            messagebox.showwarning(
+                APP_NAME,
+                "Choose new, separate sealed-output and recovery-key folders.",
+            )
+            return
+        if output.resolve() == recovery.resolve():
+            messagebox.showwarning(
+                APP_NAME,
+                "Sealed output and recovery keys require different folders.",
+            )
+            return
+        if (
+            _directories_overlap(output, recovery)
+        ):
+            messagebox.showwarning(
+                APP_NAME,
+                "The sealed-output folder and recovery-key folder must not "
+                "contain one another. Choose separate locations.",
+            )
+            return
+        if (
+            _directories_overlap(output, source)
+            or _directories_overlap(recovery, source)
+        ):
+            messagebox.showwarning(
+                APP_NAME,
+                "The sealed-output and recovery-key folders must both be "
+                "outside the plaintext source tree.",
+            )
+            return
+        if output.exists() or recovery.exists():
+            messagebox.showwarning(
+                APP_NAME,
+                "The sealed-output and recovery-key folders must both be new.",
+            )
+            return
+        if (
+            output.resolve().parent == recovery.resolve().parent
+            and not messagebox.askyesno(
+                APP_NAME,
+                "The sealed files and recovery keys will be in sibling "
+                "folders on the same storage location.\n\nFor better "
+                "resilience, put the recovery folder on another drive or "
+                "storage account.\n\nContinue with these folders?",
+            )
+        ):
+            return
+        password = self._prompt_new_sealed_password(
+            action="Protecting this folder",
+        )
+        if password is None:
+            return
+
+        def work():
+            return sealed_file.seal_folder(
+                source,
+                output,
+                recovery,
+                password=password,
+                allow_plaintext_temp=True,
+                continue_on_error=True,
+            )
+
+        def done(result: sealed_file.BulkSealResult) -> None:
+            message = (
+                f"Protected: {result.sealed_count:,}\n"
+                f"Failed: {result.failed_count:,}\n"
+                f"Unprocessed: {result.unprocessed_count:,}\n"
+                "Recovery-only incidents: "
+                f"{result.orphan_recovery_count:,}\n"
+                f"Originals retained: {result.source_directory}\n\n"
+                f"Sealed files: {result.output_directory}\n"
+                f"Recovery keys: {result.recovery_directory}"
+            )
+            has_issues = (
+                result.failed_count
+                or result.unprocessed_count
+                or result.orphan_recovery_count
+                or result.reconciliation_error is not None
+            )
+            if has_issues:
+                failures = [
+                    f"{item.relative_source} [{item.status}]: {item.error}"
+                    for item in result.items
+                    if item.status != "sealed"
+                ]
+                reconciliation = (
+                    "\n\nFinal source reconciliation failed: "
+                    f"{result.reconciliation_error}"
+                    if result.reconciliation_error
+                    else ""
+                )
+                messagebox.showwarning(
+                    APP_NAME,
+                    "Folder protection completed with failures.\n\n"
+                    f"{message}\n\n"
+                    + "\n".join(failures[:8])
+                    + reconciliation,
+                )
+            else:
+                messagebox.showinfo(
+                    APP_NAME,
+                    "Folder protected and verified.\n\n" + message,
+                )
+            self._offer_bulk_seal_report(result)
+
+        self._run_task("Protecting files in folder...", work, done)
+
+    def _offer_bulk_seal_report(
+        self,
+        result: sealed_file.BulkSealResult,
+    ) -> None:
+        if not messagebox.askyesno(
+            APP_NAME,
+            "Save the full batch report?\n\n"
+            "The JSON report lists every original relative path and its "
+            "matching opaque Sealed File and recovery-key path. It is "
+            "ordinary plaintext, so do not store it with the sealed files "
+            "or recovery keys if concealing filenames matters.",
+        ):
+            return
+        selected = filedialog.asksaveasfilename(
+            title="Save the plaintext Rat-Trap batch report",
+            initialfile="Rat-Trap-Sealed-Batch-Report.json",
+            defaultextension=".json",
+            filetypes=[
+                ("JSON files", "*.json"),
+                ("All files", "*.*"),
+            ],
+            confirmoverwrite=False,
+        )
+        if not selected:
+            return
+        destination = Path(selected).resolve()
+        protected_roots = (
+            Path(result.source_directory).resolve(),
+            Path(result.output_directory).resolve(),
+            Path(result.recovery_directory).resolve(),
+        )
+        if any(_path_within(destination, root) for root in protected_roots):
+            messagebox.showwarning(
+                APP_NAME,
+                "Choose a report location outside the plaintext source, "
+                "sealed-output, and recovery-key folders. The report exposes "
+                "the otherwise hidden filename mapping.",
+            )
+            return
+        if destination.exists():
+            messagebox.showwarning(
+                APP_NAME,
+                "Batch reports never overwrite an existing file. Choose a "
+                "new filename.",
+            )
+            return
+        try:
+            saved = _write_new_json(destination, result.as_dict())
+        except (OSError, TypeError, ValueError) as exc:
+            messagebox.showerror(
+                APP_NAME,
+                f"Could not save the batch report:\n{exc}",
+            )
+            return
+        messagebox.showinfo(
+            APP_NAME,
+            "Full plaintext batch report saved.\n\n"
+            f"{saved}\n\nKeep it separate if the original filenames are "
+            "sensitive.",
+        )
+
+    def apply_launch_request(self, request: LaunchRequest) -> None:
+        """Preselect an operation; never authenticate or decrypt on launch."""
+
+        path = request.path
+        self.tabs.select(self.secure_files_tab)
+        if request.action == "open-sealed":
+            self.secure_modes.select(self.secure_restore_mode)
+            self.unseal_source.set(str(path))
+            if not self.unseal_destination.get().strip():
+                self.unseal_destination.set(
+                    str(path.parent / "Rat-Trap Restored")
+                )
+            self.status_text.set(
+                "Sealed File selected; choose Verify or Restore when ready"
+            )
+            return
+        if request.action == "open-archive":
+            self.tabs.select(self.inspect_tab)
+            self.inspect_archive.set(str(path))
+            self.status_text.set(
+                "Archive selected; choose Load details when ready"
+            )
+            return
+        if request.action == "seal-file":
+            self.secure_modes.select(self.secure_protect_mode)
+            self.seal_source.set(str(path))
+            self.seal_output.set(
+                str(path.parent / sealed_file.default_sealed_name())
+            )
+            self.status_text.set(
+                "File selected; choose Protect file when ready"
+            )
+            return
+        if request.action == "seal-folder":
+            self.secure_modes.select(self.secure_bulk_mode)
+            self.bulk_seal_source.set(str(path))
+            self.bulk_seal_output.set(str(path.parent / f"{path.name}-sealed"))
+            self.status_text.set(
+                "Folder selected; choose output locations before protecting"
+            )
+            return
+        raise ValueError(f"Unknown launch action: {request.action}")
+
     def _start_create(self) -> None:
         source = Path(self.source_folder.get().strip())
         output = Path(self.create_archive.get().strip())
@@ -2732,46 +3948,471 @@ class RatTrapApp:
 
         self._run_task("Exporting ZIP...", work, done)
 
-    def _run_task(self, label: str, work: Callable[[], object], done: Callable[[object], None]) -> None:
+    def _root_destroyed(self, event: object) -> None:
+        if getattr(event, "widget", None) is self.root:
+            self._close_diagnostics()
+
+    def _close_diagnostics(self) -> None:
+        if self._diagnostics_closed:
+            return
+        self._diagnostics_closed = True
+        try:
+            self.diagnostics.close()
+        except Exception:
+            # Diagnostics are deliberately non-critical, including at shutdown.
+            pass
+
+    def _request_close(self) -> None:
+        """Protect active archive work from an accidental window close."""
+
+        if self._closing:
+            return
+        if self.busy and self._task_monitor_failed:
+            worker = self._worker_thread
+            try:
+                worker_finished = worker is None or not worker.is_alive()
+            except Exception as exc:
+                self._record_ui_exception(
+                    "ui.worker.state_failed",
+                    exc,
+                    stage="shutdown",
+                )
+                worker_finished = False
+            if worker_finished:
+                operation = self._active_operation
+                self._task_events = None
+                self._task_token = None
+                self._worker_thread = None
+                self._task_monitor_failed = False
+                with self._task_status_lock:
+                    self._pending_task_status = None
+                self._record_restore_failure(
+                    self._restore_task_controls(),
+                    operation=operation,
+                )
+                self._active_operation = None
+        if self.busy:
+            details = {
+                "component": "windows_ui",
+                "status": "busy",
+            }
+            if self._active_operation is not None:
+                details["operation"] = self._active_operation
+            self.diagnostics.record(
+                "app.close.blocked",
+                details=details,
+            )
+            messagebox.showwarning(
+                APP_NAME,
+                "Rat-Trap is still working.\n\n"
+                "The window will stay open until the current operation finishes. "
+                "This protects an archive, backup, or restore from being interrupted.",
+            )
+            return
+        self._closing = True
+        self.diagnostics.record(
+            "app.closed",
+            details={
+                "component": "windows_ui",
+                "status": "complete",
+            },
+        )
+        self._close_diagnostics()
+        self.root.destroy()
+
+    def _record_ui_exception(
+        self,
+        event: str,
+        exception: BaseException,
+        *,
+        stage: str,
+        operation: str | None = None,
+    ) -> str:
+        details = {
+            "component": "windows_ui",
+            "stage": stage,
+            "status": "failed",
+        }
+        selected_operation = (
+            operation
+            if operation is not None
+            else getattr(self, "_active_operation", None)
+        )
+        if selected_operation is not None:
+            details["operation"] = selected_operation
+        return self.diagnostics.record_exception(
+            event,
+            exception,
+            details=details,
+        )
+
+    def _show_error_reference(
+        self,
+        support_id: str,
+        *,
+        callback: bool = False,
+    ) -> None:
+        try:
+            self.status_text.set("Unexpected problem" if callback else "Operation failed")
+        except Exception:
+            pass
+        message = (
+            "Rat-Trap encountered an unexpected interface problem."
+            if callback
+            else "The operation could not be completed."
+        )
+        if bool(getattr(self.diagnostics, "available", False)):
+            diagnostic_note = (
+                "Rat-Trap attempted to write a privacy-safe local diagnostic "
+                "record. Logging failures are non-fatal, so this reference may "
+                "exist only on screen. Any record that is written excludes "
+                "passwords, recovery-key contents, paths, filenames, and file "
+                "contents."
+            )
+        else:
+            diagnostic_note = (
+                "Local diagnostics are unavailable, so no diagnostic record was "
+                "written. The on-screen error reference can still be included in "
+                "a support request."
+            )
+        try:
+            messagebox.showerror(
+                APP_NAME,
+                f"{message}\n\n"
+                f"Error reference: {support_id}\n\n"
+                f"{diagnostic_note}",
+            )
+        except Exception:
+            # Reporting a callback failure must not recursively fail.
+            pass
+
+    def _report_callback_exception(
+        self,
+        exception_type: type[BaseException],
+        exception: BaseException,
+        _traceback: object,
+    ) -> None:
+        """Catch otherwise invisible Tk callback failures in windowed builds."""
+
+        if not isinstance(exception, BaseException):
+            exception = RuntimeError(
+                getattr(exception_type, "__name__", "TkCallbackError")
+            )
+        support_id = self._record_ui_exception(
+            "ui.callback.failed",
+            exception,
+            stage="callback",
+        )
+        self._show_error_reference(support_id, callback=True)
+
+    def _restore_task_controls(self) -> BaseException | None:
+        restore_error: BaseException | None = None
+        try:
+            self.progress.stop()
+        except Exception as exc:
+            restore_error = exc
+        for button in self.action_buttons:
+            try:
+                button.config(
+                    state=self._saved_action_states.get(button, tk.NORMAL)
+                )
+            except Exception as exc:
+                if restore_error is None:
+                    restore_error = exc
+        self._saved_action_states.clear()
+        self.busy = False
+        return restore_error
+
+    def _record_restore_failure(
+        self,
+        restore_error: BaseException | None,
+        *,
+        operation: str | None = None,
+    ) -> str | None:
+        if restore_error is None:
+            return None
+        return self._record_ui_exception(
+            "ui.controls.restore_failed",
+            restore_error,
+            stage="completion",
+            operation=operation,
+        )
+
+    def _fail_task_setup(
+        self,
+        event: str,
+        exception: BaseException,
+        *,
+        stage: str,
+    ) -> None:
+        operation = self._active_operation
+        self._task_events = None
+        self._task_token = None
+        self._worker_thread = None
+        self._task_monitor_failed = False
+        with self._task_status_lock:
+            self._pending_task_status = None
+        restore_id = self._record_restore_failure(
+            self._restore_task_controls(),
+            operation=operation,
+        )
+        support_id = self._record_ui_exception(
+            event,
+            exception,
+            stage=stage,
+            operation=operation,
+        )
+        self._active_operation = None
+        self._show_error_reference(restore_id or support_id)
+
+    def _queue_task_status(self, status: str) -> None:
+        """Queue worker progress without calling Tk from a worker thread."""
+
+        with self._task_status_lock:
+            if self._task_events is not None:
+                self._pending_task_status = status
+
+    def _poll_task_events(self, token: object) -> None:
+        """Apply queued worker results on Tk's main thread."""
+
+        if not self.busy or token is not self._task_token:
+            return
+        events = self._task_events
+        if events is None:
+            self._fail_task_setup(
+                "ui.worker.queue_missing",
+                RuntimeError("Task event queue is unavailable"),
+                stage="polling",
+            )
+            return
+
+        def apply_queued_finish() -> None:
+            while True:
+                kind, payload = events.get_nowait()
+                if kind != "finish":
+                    continue
+                result, done, error = payload
+                self._task_events = None
+                self._task_token = None
+                self._worker_thread = None
+                self._task_monitor_failed = False
+                self._finish_task(result, done, error)
+                return
+
+        try:
+            with self._task_status_lock:
+                pending_status = self._pending_task_status
+                self._pending_task_status = None
+            if pending_status is not None:
+                self.status_text.set(pending_status)
+            apply_queued_finish()
+            return
+        except queue.Empty:
+            pass
+        except Exception as exc:
+            self._recover_task_poll_failure(exc)
+            return
+        worker = self._worker_thread
+        if worker is not None:
+            try:
+                worker_alive = worker.is_alive()
+            except Exception as exc:
+                self._recover_task_poll_failure(exc)
+                return
+            if not worker_alive:
+                # The worker may publish its result between the first empty
+                # queue read and the liveness check. Once is_alive() is false,
+                # no more worker writes can occur, so re-check the stable queue
+                # before treating the result as missing.
+                try:
+                    apply_queued_finish()
+                    return
+                except queue.Empty:
+                    self._fail_task_setup(
+                        "ui.worker.result_missing",
+                        RuntimeError("Worker exited without a result"),
+                        stage="worker",
+                    )
+                except Exception as exc:
+                    self._recover_task_poll_failure(exc)
+                return
+        try:
+            self.root.after(
+                50,
+                lambda current=token: self._poll_task_events(current),
+            )
+        except Exception as exc:
+            self._recover_task_poll_failure(exc)
+
+    def _recover_task_poll_failure(self, exception: BaseException) -> None:
+        """Keep an unmonitored worker protected without freezing Tk."""
+
+        worker = self._worker_thread
+        try:
+            worker_alive = worker is not None and worker.is_alive()
+        except Exception as state_error:
+            self._record_ui_exception(
+                "ui.worker.state_failed",
+                state_error,
+                stage="polling",
+            )
+            worker_alive = True
+        if worker_alive:
+            self._task_monitor_failed = True
+            support_id = self._record_ui_exception(
+                "ui.worker.poll_failed",
+                exception,
+                stage="polling",
+            )
+            try:
+                self.status_text.set(
+                    "Operation still running; restart Rat-Trap after it finishes"
+                )
+            except Exception:
+                pass
+            try:
+                messagebox.showerror(
+                    APP_NAME,
+                    "Rat-Trap lost the interface monitor for the current "
+                    "operation, but it will not interrupt the worker.\n\n"
+                    "Wait for the operation to finish, then close and reopen "
+                    "Rat-Trap. Closing remains blocked while the worker is "
+                    "active.\n\n"
+                    f"Error reference: {support_id}",
+                )
+            except Exception:
+                pass
+            return
+        self._fail_task_setup(
+            "ui.worker.poll_failed",
+            exception,
+            stage="polling",
+        )
+
+    def _run_task(
+        self,
+        label: str,
+        work: Callable[[], object],
+        done: Callable[[object], None],
+    ) -> None:
         if self.busy:
             return
         self.busy = True
-        self.status_text.set(label)
-        self.progress.start(12)
-        self._saved_action_states = {
-            button: str(button.cget("state"))
-            for button in self.action_buttons
-        }
-        for button in self.action_buttons:
-            button.config(state=tk.DISABLED)
+        self._active_operation = _task_operation_code(label)
+        self._task_monitor_failed = False
+        with self._task_status_lock:
+            self._pending_task_status = None
+        self._saved_action_states = {}
+        try:
+            self.status_text.set(label)
+            self.progress.start(12)
+            self._saved_action_states = {
+                button: str(button.cget("state"))
+                for button in self.action_buttons
+            }
+            for button in self.action_buttons:
+                button.config(state=tk.DISABLED)
+        except Exception as exc:
+            self._fail_task_setup(
+                "ui.worker.setup_failed",
+                exc,
+                stage="setup",
+            )
+            return
+
+        try:
+            events: queue.Queue[tuple[str, object]] = queue.Queue()
+        except Exception as exc:
+            self._fail_task_setup(
+                "ui.worker.queue_create_failed",
+                exc,
+                stage="setup",
+            )
+            return
+        token = object()
+        self._task_events = events
+        self._task_token = token
 
         def runner() -> None:
             try:
                 result = work()
-            except Exception as exc:
-                error = str(exc)
-                self.root.after(0, lambda: self._finish_task(None, done, error))
+            except BaseException as exc:
+                events.put(("finish", (None, done, exc)))
             else:
-                self.root.after(0, lambda: self._finish_task(result, done, None))
+                events.put(("finish", (result, done, None)))
 
-        threading.Thread(target=runner, name="rat-trap-worker", daemon=True).start()
+        try:
+            worker = threading.Thread(
+                target=runner,
+                name="rat-trap-worker",
+                daemon=True,
+            )
+        except Exception as exc:
+            self._fail_task_setup(
+                "ui.worker.thread_create_failed",
+                exc,
+                stage="startup",
+            )
+            return
+        self._worker_thread = worker
+        try:
+            self.root.after(
+                50,
+                lambda current=token: self._poll_task_events(current),
+            )
+        except Exception as exc:
+            self._fail_task_setup(
+                "ui.worker.schedule_failed",
+                exc,
+                stage="scheduling",
+            )
+            return
+        try:
+            worker.start()
+        except Exception as exc:
+            self._fail_task_setup(
+                "ui.worker.start_failed",
+                exc,
+                stage="startup",
+            )
 
     def _finish_task(
-        self, result: object | None, done: Callable[[object], None], error: str | None
+        self,
+        result: object | None,
+        done: Callable[[object], None],
+        error: BaseException | None,
     ) -> None:
-        self.progress.stop()
-        for button in self.action_buttons:
-            button.config(
-                state=self._saved_action_states.get(button, tk.NORMAL)
-            )
-        self._saved_action_states.clear()
-        self.busy = False
+        operation = self._active_operation
+        self._active_operation = None
+        restore_error = self._restore_task_controls()
+        restore_id = self._record_restore_failure(
+            restore_error,
+            operation=operation,
+        )
+        if restore_id is not None:
+            self._show_error_reference(restore_id)
+            return
         if error is not None:
-            self.status_text.set("Operation failed")
-            messagebox.showerror(APP_NAME, f"The operation could not be completed.\n\n{error}")
+            support_id = self._record_ui_exception(
+                "ui.worker.failed",
+                error,
+                stage="worker",
+                operation=operation,
+            )
+            self._show_error_reference(support_id)
             return
         self.status_text.set("Ready")
-        done(result)
+        try:
+            done(result)
+        except Exception as exc:
+            support_id = self._record_ui_exception(
+                "ui.completion.failed",
+                exc,
+                stage="completion",
+                operation=operation,
+            )
+            self._show_error_reference(support_id)
+            return
 
 
 def main() -> None:
@@ -2793,9 +4434,51 @@ def main() -> None:
             raise RuntimeError("--self-test-folder requires a folder path") from exc
         _folder_self_test(source)
         return
-    root = tk.Tk()
-    RatTrapApp(root)
-    root.mainloop()
+    diagnostic_log = diagnostics.LocalDiagnostics()
+    try:
+        launch_request = _parse_launch_request(sys.argv[1:])
+    except ValueError as exc:
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror(APP_NAME, str(exc))
+            root.destroy()
+        finally:
+            diagnostic_log.close()
+        return
+    root: tk.Tk | None = None
+    try:
+        root = tk.Tk()
+        app = RatTrapApp(root, diagnostic_log=diagnostic_log)
+        if launch_request is not None:
+            app.apply_launch_request(launch_request)
+        root.mainloop()
+    except Exception as exc:
+        support_id = diagnostic_log.record_exception(
+            "app.startup.failed",
+            exc,
+            details={
+                "component": "windows_ui",
+                "stage": "startup",
+                "status": "failed",
+            },
+        )
+        try:
+            if root is None:
+                root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror(
+                APP_NAME,
+                "Rat-Trap could not start correctly.\n\n"
+                f"Error reference: {support_id}\n\n"
+                "The local diagnostic record excludes passwords, recovery-key "
+                "contents, paths, filenames, and file contents.",
+            )
+            root.destroy()
+        except Exception:
+            pass
+    finally:
+        diagnostic_log.close()
 
 
 def _require_fastcdc_accelerator() -> None:
@@ -2813,8 +4496,48 @@ def _self_test() -> None:
     root.withdraw()
     app = RatTrapApp(root)
     root.update_idletasks()
-    if app.tabs.index("end") != 6:
+    if app.tabs.index("end") != 8:
         raise RuntimeError("GUI did not create all expected tabs")
+    activation_base = Path(tempfile.gettempdir()) / (
+        f".rat-trap-activation-self-test-{os.getpid()}"
+    )
+    sealed_activation = activation_base.with_suffix(".rtsf")
+    archive_activation = activation_base.with_suffix(".gmw")
+    if sealed_activation.exists() or archive_activation.exists():
+        raise RuntimeError("Packaged activation self-test path already exists")
+    sealed_request = _parse_launch_request(
+        ["--open-sealed", str(sealed_activation)]
+    )
+    archive_request = _parse_launch_request(
+        ["--open-archive", str(archive_activation)]
+    )
+    if sealed_request is None or archive_request is None:
+        raise RuntimeError("Packaged activation parser did not return requests")
+    app.apply_launch_request(sealed_request)
+    if (
+        app.unseal_source.get() != str(sealed_activation)
+        or app.tabs.index(app.tabs.select()) != 0
+    ):
+        raise RuntimeError("Sealed File activation did not remain a UI preselection")
+    app.apply_launch_request(archive_request)
+    if (
+        app.inspect_archive.get() != str(archive_activation)
+        or app.tabs.index(app.tabs.select())
+        != app.tabs.index(app.inspect_tab)
+    ):
+        raise RuntimeError("GMW activation did not remain a UI preselection")
+    task_results = []
+    app._run_task(
+        "Packaged task queue self-test...",
+        lambda: "queue-complete",
+        lambda result: task_results.append(result),
+    )
+    task_deadline = time.monotonic() + 5
+    while app.busy and time.monotonic() < task_deadline:
+        root.update()
+        time.sleep(0.01)
+    if app.busy or task_results != ["queue-complete"]:
+        raise RuntimeError("Packaged worker-to-UI task queue failed")
     root.destroy()
 
     with tempfile.TemporaryDirectory(prefix="rat-trap-self-test-") as temporary:
@@ -2906,6 +4629,44 @@ def _self_test() -> None:
             secure_archive, recovery_key=rotated_recovery
         ).verified:
             raise RuntimeError("Packaged rotated recovery key failed")
+        sealed_source = source / "sample.txt"
+        sealed_output_directory = base / "sealed-files"
+        sealed_recovery_directory = base / "sealed-recovery"
+        sealed_output_directory.mkdir()
+        sealed_recovery_directory.mkdir()
+        sealed_output = (
+            sealed_output_directory / sealed_file.default_sealed_name()
+        )
+        sealed_recovery = sealed_recovery_directory / "sample-sealed.rtrk"
+        sealed_restored = base / "sealed-restored"
+        sealed_created = sealed_file.seal_file(
+            sealed_source,
+            sealed_output,
+            password=secure_password,
+            recovery_key_output=sealed_recovery,
+            allow_plaintext_temp=True,
+        )
+        if (
+            not sealed_created.source_retained
+            or not sealed_file.verify_sealed_file(
+                sealed_output,
+                recovery_key=sealed_recovery,
+                allow_plaintext_temp=True,
+            ).content_verified
+        ):
+            raise RuntimeError("Packaged Sealed File verification failed")
+        sealed_unsealed = sealed_file.unseal_file(
+            sealed_output,
+            sealed_restored,
+            password=secure_password,
+            allow_plaintext_temp=True,
+            allow_plaintext_output=True,
+        )
+        if (
+            not sealed_unsealed.sealed_source_retained
+            or Path(sealed_unsealed.output).read_bytes() != expected
+        ):
+            raise RuntimeError("Packaged Sealed File round-trip failed")
         repository = base / "repository"
         repository_restored = base / "repository-restored"
         repository_engine.init_repository(repository)

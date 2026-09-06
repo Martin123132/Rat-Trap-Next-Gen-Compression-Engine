@@ -1,5 +1,9 @@
 # GMW Archive Tool - GUI Versions
 
+Historical interfaces: for the current Windows app and all five guided
+practices, use the [Windows guide](../docs/WINDOWS.md). The current source
+entry point is `windows_guided_preview.py` at the repository root.
+
 This folder contains two GUI versions for the GMW archive tool:
 
 ## 1. Simple GUI (`gmw_gui.py`)
@@ -22,7 +26,7 @@ This folder contains two GUI versions for the GMW archive tool:
 ### Creating an Archive
 1. Run `run_complete_gui.bat`
 2. Click "📦 Compress"
-3. Browse and select your source folder (e.g., `C:\Users\Glyn\Documents\stock`)
+3. Browse and select your source folder (e.g., `C:\Example\Files`)
 4. Browse and choose where to save the `.gmw` archive
 5. Click "Create Archive"
 6. Wait for completion and view statistics

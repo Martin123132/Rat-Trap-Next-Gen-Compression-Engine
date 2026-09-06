@@ -1,4 +1,4 @@
-# Rat-Trap 5.3.0 third-party notices
+# Rat-Trap 5.7.0 third-party notices
 
 Rat-Trap's own source is governed by [`LICENSE.md`](LICENSE.md). The frozen
 Windows application also contains the following separately licensed runtime
@@ -18,11 +18,13 @@ components:
 | CFFI | 2.1.0 | MIT-0 |
 | pycparser | 3.0 | BSD-3-Clause |
 
-The Windows release ZIP contains the upstream licence texts copied from the
-pinned build environment under `THIRD-PARTY-LICENSES`. The OpenSSL licence is
-the Apache License 2.0 text shipped with the statically linked cryptography
-wheel. The ZIP also carries the cryptography wheel and Rust component SBOMs
-under `SBOM`.
+The Windows release ZIP and MSIX contain the upstream licence texts copied
+from the pinned build environment. They are stored under
+`THIRD-PARTY-LICENSES` in the ZIP and
+`Legal/THIRD-PARTY-LICENSES` in the MSIX. The OpenSSL licence is the Apache
+License 2.0 text shipped with the statically linked cryptography wheel. Both
+packages also carry the cryptography wheel and Rust component SBOMs under
+`SBOM` or `Legal/SBOM`, respectively.
 
 Pycparser is a dependency of CFFI in the pinned build environment and may be a
 build-only rather than frozen runtime component; its licence is included

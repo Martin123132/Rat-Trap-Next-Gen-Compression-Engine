@@ -1,0 +1,638 @@
+{
+  "schema": "rat-trap-installer-qa/v1",
+  "app_version": "5.7.0",
+  "packaging_date": "2026-09-05",
+  "test_kind": "Same-host Windows installer lifecycle; not a clean-VM test",
+  "clean_vm": false,
+  "windows_version": "Microsoft Windows NT 10.0.19045.0",
+  "powershell_version": "7.6.5",
+  "checks_passed": 150,
+  "checks_failed": 0,
+  "cleanup_errors": [],
+  "tested_source_hashes": [
+    {
+      "Path": "packaging\\direct\\rat-trap-beta.nsi",
+      "Sha256": "C2DBE9D1B72687DDDE8796B8487E2BBFC31023CDDD9C2F393CACC19DB1542526"
+    },
+    {
+      "Path": "scripts\\build_windows_beta_installer_5_7_0.ps1",
+      "Sha256": "F5C837E81C1AEF5E9C6824D8D8AC10A14CA1DDDE2A54E13400A53FAE3B6578AC"
+    },
+    {
+      "Path": "scripts\\test_windows_beta_installer_5_7_0.ps1",
+      "Sha256": "B21EFA54387544AD2C32371B335BD0D2F92B152F0867D19DE480394D800231A0"
+    }
+  ],
+  "association_test_context": {
+    "existing_referenced_progids": [],
+    "other_application_openwith_entries": "two unique generated sentinel values",
+    "default_and_userchoice_values_written": false
+  },
+  "checks": [
+    {
+      "name": "Isolated QA installer identity",
+      "passed": true
+    },
+    {
+      "name": "occupied-directory-install exit code",
+      "passed": true
+    },
+    {
+      "name": "Occupied unregistered directory remains unchanged",
+      "passed": true
+    },
+    {
+      "name": "default-install exit code",
+      "passed": true
+    },
+    {
+      "name": "Default install frozen 5.7.0 executable",
+      "passed": true
+    },
+    {
+      "name": "Default install complete installed checksum inventory",
+      "passed": true
+    },
+    {
+      "name": "Default install has uninstaller",
+      "passed": true
+    },
+    {
+      "name": "Per-user Apps and Features registration",
+      "passed": true
+    },
+    {
+      "name": "No machine-wide Apps and Features registration",
+      "passed": true
+    },
+    {
+      "name": "Quoted Apps and Features uninstall commands",
+      "passed": true
+    },
+    {
+      "name": "Start menu application shortcut exists",
+      "passed": true
+    },
+    {
+      "name": "Start menu application shortcut target",
+      "passed": true
+    },
+    {
+      "name": "Start menu readme shortcut exists",
+      "passed": true
+    },
+    {
+      "name": "Start menu readme shortcut target",
+      "passed": true
+    },
+    {
+      "name": "Default install .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Default install .gmw ProgID absent",
+      "passed": true
+    },
+    {
+      "name": "Default install .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Default install .rtsf ProgID absent",
+      "passed": true
+    },
+    {
+      "name": "Default install desktop choice",
+      "passed": true
+    },
+    {
+      "name": "Default install persisted option flags",
+      "passed": true
+    },
+    {
+      "name": "Default install preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "installed-application-self-test exit code",
+      "passed": true
+    },
+    {
+      "name": "enable-options-reinstall exit code",
+      "passed": true
+    },
+    {
+      "name": "Options reinstall frozen 5.7.0 executable",
+      "passed": true
+    },
+    {
+      "name": "Options reinstall complete installed checksum inventory",
+      "passed": true
+    },
+    {
+      "name": "Options reinstall has uninstaller",
+      "passed": true
+    },
+    {
+      "name": "Options enabled .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Options enabled .gmw quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Options enabled .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Options enabled .rtsf quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Options enabled desktop choice",
+      "passed": true
+    },
+    {
+      "name": "Options enabled desktop shortcut exists",
+      "passed": true
+    },
+    {
+      "name": "Options enabled desktop shortcut target",
+      "passed": true
+    },
+    {
+      "name": "Options enabled persisted option flags",
+      "passed": true
+    },
+    {
+      "name": "Options enabled preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "preserve-options-reinstall exit code",
+      "passed": true
+    },
+    {
+      "name": "Options preserved on reinstall .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Options preserved on reinstall .gmw quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Options preserved on reinstall .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Options preserved on reinstall .rtsf quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Options preserved on reinstall desktop choice",
+      "passed": true
+    },
+    {
+      "name": "Options preserved on reinstall desktop shortcut exists",
+      "passed": true
+    },
+    {
+      "name": "Options preserved on reinstall desktop shortcut target",
+      "passed": true
+    },
+    {
+      "name": "Options preserved on reinstall persisted option flags",
+      "passed": true
+    },
+    {
+      "name": "Options preserved on reinstall preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "repair-incomplete-install exit code",
+      "passed": true
+    },
+    {
+      "name": "Repaired incomplete installation frozen 5.7.0 executable",
+      "passed": true
+    },
+    {
+      "name": "Repaired incomplete installation complete installed checksum inventory",
+      "passed": true
+    },
+    {
+      "name": "Repaired incomplete installation has uninstaller",
+      "passed": true
+    },
+    {
+      "name": "Repair completes pending registration and restores missing readme",
+      "passed": true
+    },
+    {
+      "name": "Repair preserves choices .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Repair preserves choices .gmw quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Repair preserves choices .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Repair preserves choices .rtsf quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Repair preserves choices desktop choice",
+      "passed": true
+    },
+    {
+      "name": "Repair preserves choices desktop shortcut exists",
+      "passed": true
+    },
+    {
+      "name": "Repair preserves choices desktop shortcut target",
+      "passed": true
+    },
+    {
+      "name": "Repair preserves choices persisted option flags",
+      "passed": true
+    },
+    {
+      "name": "Repair preserves choices preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "locked-exe-reinstall exit code",
+      "passed": true
+    },
+    {
+      "name": "locked-exe-uninstall exit code",
+      "passed": true
+    },
+    {
+      "name": "Locked exe leaves every payload file unchanged",
+      "passed": true
+    },
+    {
+      "name": "Locked exe leaves repair registration unchanged",
+      "passed": true
+    },
+    {
+      "name": "Locked exe .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Locked exe .gmw quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Locked exe .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Locked exe .rtsf quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Locked exe desktop choice",
+      "passed": true
+    },
+    {
+      "name": "Locked exe desktop shortcut exists",
+      "passed": true
+    },
+    {
+      "name": "Locked exe desktop shortcut target",
+      "passed": true
+    },
+    {
+      "name": "Locked exe persisted option flags",
+      "passed": true
+    },
+    {
+      "name": "Locked exe preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "locked-readme-reinstall exit code",
+      "passed": true
+    },
+    {
+      "name": "locked-readme-uninstall exit code",
+      "passed": true
+    },
+    {
+      "name": "Locked readme leaves every payload file unchanged",
+      "passed": true
+    },
+    {
+      "name": "Locked readme leaves repair registration unchanged",
+      "passed": true
+    },
+    {
+      "name": "Locked readme .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Locked readme .gmw quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Locked readme .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Locked readme .rtsf quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Locked readme desktop choice",
+      "passed": true
+    },
+    {
+      "name": "Locked readme desktop shortcut exists",
+      "passed": true
+    },
+    {
+      "name": "Locked readme desktop shortcut target",
+      "passed": true
+    },
+    {
+      "name": "Locked readme persisted option flags",
+      "passed": true
+    },
+    {
+      "name": "Locked readme preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "disable-options-reinstall exit code",
+      "passed": true
+    },
+    {
+      "name": "Options disabled .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Options disabled .gmw ProgID absent",
+      "passed": true
+    },
+    {
+      "name": "Options disabled .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Options disabled .rtsf ProgID absent",
+      "passed": true
+    },
+    {
+      "name": "Options disabled desktop choice",
+      "passed": true
+    },
+    {
+      "name": "Options disabled persisted option flags",
+      "passed": true
+    },
+    {
+      "name": "Options disabled preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "reenable-options-reinstall exit code",
+      "passed": true
+    },
+    {
+      "name": "Options reenabled .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Options reenabled .gmw quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Options reenabled .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Options reenabled .rtsf quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Options reenabled desktop choice",
+      "passed": true
+    },
+    {
+      "name": "Options reenabled desktop shortcut exists",
+      "passed": true
+    },
+    {
+      "name": "Options reenabled desktop shortcut target",
+      "passed": true
+    },
+    {
+      "name": "Options reenabled persisted option flags",
+      "passed": true
+    },
+    {
+      "name": "Options reenabled preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "Reinstall preserves generated user file qa-user-files\\nested\\qa-archive.gmw",
+      "passed": true
+    },
+    {
+      "name": "Reinstall preserves generated user file qa-user-files\\nested\\qa-recovery.rtrk",
+      "passed": true
+    },
+    {
+      "name": "Reinstall preserves generated user file qa-preserved.gmw",
+      "passed": true
+    },
+    {
+      "name": "Reinstall preserves generated user file Legal\\qa-user-note.txt",
+      "passed": true
+    },
+    {
+      "name": "uninstall exit code",
+      "passed": true
+    },
+    {
+      "name": "Uninstall removes only QA Apps and Features registration",
+      "passed": true
+    },
+    {
+      "name": "Uninstall removes QA shortcuts",
+      "passed": true
+    },
+    {
+      "name": "Uninstall removes own ProgID TwoHandsNetwork.RatTrap.Beta.QA.8a274c9481f9491aae3b869ed5751815.GMW",
+      "passed": true
+    },
+    {
+      "name": "Uninstall removes own ProgID TwoHandsNetwork.RatTrap.Beta.QA.8a274c9481f9491aae3b869ed5751815.RTSF",
+      "passed": true
+    },
+    {
+      "name": "Uninstall removes own .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Uninstall removes own .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Uninstall leaves only generated user-owned fixtures, no application payload",
+      "passed": true
+    },
+    {
+      "name": "Uninstall preserves generated user file qa-user-files\\nested\\qa-archive.gmw",
+      "passed": true
+    },
+    {
+      "name": "Uninstall preserves generated user file qa-user-files\\nested\\qa-recovery.rtrk",
+      "passed": true
+    },
+    {
+      "name": "Uninstall preserves generated user file qa-preserved.gmw",
+      "passed": true
+    },
+    {
+      "name": "Uninstall preserves generated user file Legal\\qa-user-note.txt",
+      "passed": true
+    },
+    {
+      "name": "Uninstall preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "unregistered-repeat-uninstall exit code",
+      "passed": true
+    },
+    {
+      "name": "Rejected repeat uninstall preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "normal-uninstall-fresh-install exit code",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall frozen 5.7.0 executable",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall complete installed checksum inventory",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall has uninstaller",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall .gmw quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall .rtsf quoted non-extracting command",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall desktop choice",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall desktop shortcut exists",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall desktop shortcut target",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall persisted option flags",
+      "passed": true
+    },
+    {
+      "name": "Fresh install for ordinary uninstall preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "normal-installed-uninstaller-bootstrap exit code",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall handoff completes and removes its installed executable",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall removes QA shortcuts",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall removes own ProgID TwoHandsNetwork.RatTrap.Beta.QA.8a274c9481f9491aae3b869ed5751815.GMW",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall removes own ProgID TwoHandsNetwork.RatTrap.Beta.QA.8a274c9481f9491aae3b869ed5751815.RTSF",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall removes own .gmw OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall removes own .rtsf OpenWith value",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall leaves only generated user-owned fixtures",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall preserves generated user file qa-user-files\\nested\\qa-archive.gmw",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall preserves generated user file qa-user-files\\nested\\qa-recovery.rtrk",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall preserves generated user file qa-preserved.gmw",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall preserves generated user file Legal\\qa-user-note.txt",
+      "passed": true
+    },
+    {
+      "name": "Ordinary uninstall preserves defaults, UserChoice, other OpenWith values and .rtrk",
+      "passed": true
+    },
+    {
+      "name": "Cleanup restores original shared association values",
+      "passed": true
+    },
+    {
+      "name": "QA installed files and registration cleaned up",
+      "passed": true
+    }
+  ],
+  "limitations": [
+    "No clean Windows VM, SmartScreen UI, or interactive wizard test.",
+    "A compatible same-version reinstall was tested; no future-version upgrade was claimed.",
+    "Generated archive/recovery fixtures test preservation, not user originals."
+  ]
+}

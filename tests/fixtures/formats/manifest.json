@@ -12,6 +12,7 @@
     "fixed_timestamp": 1700000000.0,
     "fixed_secure_timestamp_ns": 1700000000123456789,
     "secure_source_baseline": "v5.3.0",
+    "sealed_profile_source_baseline": "v5.4.0",
     "byte_determinism_verified": true
   },
   "source_tree": {
@@ -179,6 +180,51 @@
         "recovery_slot_count": 1
       },
       "construction": "Deterministic public-test-credential schema-1 envelope over the committed 4.3 solid fixture. All keys, salts, identifiers, nonces, canonical JSON values, derived keys, AAD values, ciphertext and hashes are published in the interoperability vector. Never use these credentials for private data."
+    }
+  ],
+  "sealed_fixtures": [
+    {
+      "name": "rat-trap-sealed-file-1-5.4.rtsf",
+      "family": "RAT-TRAP-ENCRYPTED-1",
+      "schema_version": 1,
+      "profile": "sealed-file",
+      "profile_format": "RAT-TRAP-SEALED-FILE-PROFILE-1",
+      "profile_schema_version": 1,
+      "release_shape": "5.4-sealed-file-profile-1",
+      "bytes": 2043,
+      "sha256": "e71fca1817bcadde1ab708a964b785cb3ffd05fe887ea3c0710f7af1986d8360",
+      "inner_fixture": {
+        "name": "rat-trap-sealed-file-1-5.4-inner.gmw",
+        "bytes": 667,
+        "sha256": "0945eacfcb1c38a244697fa7f259a5ae76d7017a00fb1a25e8151a2debe938de"
+      },
+      "recovery_file": {
+        "name": "rat-trap-sealed-file-1-5.4.rtrk",
+        "bytes": 233,
+        "sha256": "25a3432067e7826e4aae6d5939be68732a2b0a02f2dd2c91511c072f52e8df16"
+      },
+      "test_password": "Rat-Trap 5.4 public sealed fixture",
+      "original": {
+        "name": "Sealed fixture café.txt",
+        "bytes": 392,
+        "sha256": "b00c0b5eabb8e1b91713ae8b3cb7040cf65d2767ccfd25fc387217dc7c801be0",
+        "modified_at_ns": 1700000000000000000,
+        "mode": 438
+      },
+      "expected": {
+        "writer_version": "5.4.0",
+        "file_id": "a102b304c506d708e90afb0c1d2e3f40",
+        "created_at_ns": 1700000000123456790,
+        "cipher": "AES-256-GCM-SIV",
+        "chunk_size": 4194304,
+        "chunk_count": 1,
+        "plaintext_size": 667,
+        "password_slot_count": 1,
+        "recovery_slot_count": 1,
+        "compressor": "zstd",
+        "compression_level": 6
+      },
+      "construction": "Deterministic public-test-credential 5.4 Sealed File profile using the unchanged schema-1 encrypted envelope and an exact one-file GMW-SOLID-2 inner archive. Fixed test keys, nonces and identifiers deliberately replace production CSPRNG and UUID generation. Never use these credentials for private data."
     }
   ],
   "original_writer_references": [

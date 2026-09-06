@@ -1,0 +1,7 @@
+item_id,category,description,quantity,location
+A-101,documents,Reference manuals,12,Shelf 1
+A-102,images,Training diagrams,48,Shelf 2
+A-103,audio,Workshop recordings,6,Shelf 3
+A-104,data,Synthetic inventory exports,20,Shelf 4
+A-105,archive,Demonstration snapshots,3,Shelf 5
+

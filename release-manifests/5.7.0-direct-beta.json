@@ -1,0 +1,197 @@
+{
+  "schema": "rat-trap-direct-beta-manifest/v1",
+  "product": "Rat-Trap",
+  "app_version": "5.7.0",
+  "packaging_date": "2026-09-05",
+  "release_stage": "Unsigned direct-download beta candidate",
+  "publisher": "TWO HANDS NETWORK LTD",
+  "path_base": "repository root",
+  "source": {
+    "repository": "Martin123132/Rat-Trap-Next-Gen-Compression-Engine",
+    "ref": "Local working tree; frozen 5.7.0 app with new direct-beta packaging",
+    "baseline_commit": "e5d14320b919e0081dd92beac3090950f95d5d8b",
+    "engine_rebuilt": false,
+    "includes_uncommitted_prior_work": true,
+    "commit_created": false,
+    "tag_created": false,
+    "remote_push_performed": false,
+    "repository_visibility_changed": false
+  },
+  "frozen_baseline": {
+    "manifest": {
+      "path": "release-manifests/5.7.0.json",
+      "bytes": 12708,
+      "sha256": "0C2DA5DE6E915DABD01FDA8E89D090FBFD5C2D7FE60D4B05423298E8840C0666"
+    },
+    "artifacts": [
+      {
+        "path": "dist/5.7.0/Rat-Trap.exe",
+        "bytes": 18038953,
+        "sha256": "2FDBC470CA51E04E7F38459F0C58089BF487965333C6AE21B6E2886CB14AF273",
+        "unchanged": true
+      },
+      {
+        "path": "dist/msix/5.7.0/development/Rat-Trap-Windows-5.7.0-x64-unsigned.msix",
+        "bytes": 17909407,
+        "sha256": "A246E1A41D1E0ACEDDA734EDA825DFBDFC4FF1B50E3AA950757F723162C1CF4B",
+        "unchanged": true
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "../../outputs/Rat-Trap-Windows-5.7.0-beta-portable.zip",
+      "bytes": 17863808,
+      "sha256": "E3540156601A823C0BD2CCE399270752716B09E909E6E19DA48770BA0B7F67E1",
+      "role": "Portable beta ZIP",
+      "payload_files": 25,
+      "checksummed_payload_files": 24,
+      "payload_architecture": "x64",
+      "payload_authenticode": "NotSigned",
+      "zip_authenticode": "not applicable"
+    },
+    {
+      "path": "../../outputs/Rat-Trap-Windows-5.7.0-beta-setup.exe",
+      "bytes": 17872557,
+      "sha256": "E0F2C9ED275B2A5A4BFD94A3606BF8930A29AF84F1E077B0FAA149D01B682209",
+      "role": "Per-user Windows beta installer",
+      "installed_payload_files": 26,
+      "generated_uninstaller_additional": true,
+      "authenticode": "NotSigned",
+      "requested_execution_level": "asInvoker",
+      "ui_access": false,
+      "launcher_architecture": "x86",
+      "payload_architecture": "x64"
+    },
+    {
+      "path": "../../outputs/Rat-Trap-5.7.0-beta-SHA256SUMS.txt",
+      "bytes": 211,
+      "sha256": "A5FD7E964D6E8BA8A5C310FEEB19664AF4D56FE2E23ED8A0F98CD4499DF41E64",
+      "role": "SHA-256 checksums for both beta downloads; not a publisher signature"
+    }
+  ],
+  "compiler": {
+    "name": "NSIS",
+    "version": "3.12",
+    "official_archive_url": "https://sourceforge.net/projects/nsis/files/NSIS%203/3.12/nsis-3.12.zip/download",
+    "observed_archive_bytes": 2362938,
+    "observed_archive_sha256": "56581F90DB321581C5381193D796FFFCF2D24B2F8FED2160A6C6A3BAA67F2C4F",
+    "observed_makensis_sha256": "B043E554AFEFBFC56315669D0B4779793AEAE67F0F2A7A790E2EA91F05298EFF",
+    "global_install_performed": false,
+    "included_licence": "Legal/NSIS-3.12-COPYING.txt",
+    "byte_reproducible_build_claimed": false,
+    "checksum_note": "Observed download/compiler hashes, not independent proof of publisher identity."
+  },
+  "installer": {
+    "scope": "current user",
+    "minimum_windows": "Windows 10 x64",
+    "app_key": "TwoHandsNetwork.RatTrap.Beta",
+    "install_path": "%LOCALAPPDATA%\\Programs\\Two Hands Network Ltd\\Rat-Trap Beta",
+    "desktop_shortcut": "optional, initially off",
+    "open_with": "optional, initially off",
+    "open_with_extensions": [
+      ".gmw",
+      ".rtsf"
+    ],
+    "changes_file_defaults": false,
+    "associates_recovery_keys": false,
+    "automatic_updater": false,
+    "uninstall_policy": "Explicit installed-file list; preserve user-added archives, recovery keys and other files; no recursive directory removal."
+  },
+  "verification": {
+    "host_windows": "Windows 10 Home 10.0.19045 x64",
+    "portable_packager_powershell_versions_tested": [
+      "5.1",
+      "7.6.5"
+    ],
+    "portable_entry_hash_verification": true,
+    "overwrites_refused": true,
+    "frozen_input_hashes_unchanged": true,
+    "installer_compilation_warnings_as_errors": true,
+    "static_review_remaining_blockers": 0,
+    "lifecycle": {
+      "checks_passed": 150,
+      "checks_failed": 0,
+      "cleanup_errors": [],
+      "qa_summary": {
+        "path": "packaging/direct/qa-results-5.7.0.json",
+        "bytes": 16778,
+        "sha256": "E18FC5DAF106A98CDF1046A43B09DAE8EE847326552EE34D8D97DFD302B14B9B"
+      },
+      "identity": "Unique isolated QA app identity; same final installer source and frozen app payload",
+      "installed_app_self_test_exit_code": 0,
+      "same_version_reinstall_and_repair_tested": true,
+      "incomplete_install_repair_tested": true,
+      "locked_file_checks_tested": true,
+      "user_added_archives_and_recovery_keys_preserved": true,
+      "normal_uninstaller_handoff_tested": true,
+      "existing_referenced_progids_on_host": [],
+      "other_app_openwith_sentinels_preserved": 2
+    },
+    "prior_app_results": {
+      "reference": "release-manifests/5.7.0.json",
+      "date": "2026-07-30",
+      "unit_tests_passed": 221,
+      "fixture_files": 464,
+      "fixture_bytes": 36991791,
+      "full_app_suite_rerun_in_this_packaging_stage": false
+    },
+    "clean_vm_tested": false,
+    "windows_11_tested": false,
+    "interactive_installer_wizard_tested": false,
+    "downloaded_file_security_experience_tested": false,
+    "future_app_version_upgrade_tested": false
+  },
+  "evidence_files": [
+    {
+      "path": "scripts/package_windows_beta_5_7_0.ps1",
+      "bytes": 15213,
+      "sha256": "4FD7BC8C0A192D5DB3BB161C26673C76F2ADFD12207F0FC841088321950B8105"
+    },
+    {
+      "path": "scripts/build_windows_beta_installer_5_7_0.ps1",
+      "bytes": 8958,
+      "sha256": "F5C837E81C1AEF5E9C6824D8D8AC10A14CA1DDDE2A54E13400A53FAE3B6578AC"
+    },
+    {
+      "path": "scripts/test_windows_beta_installer_5_7_0.ps1",
+      "bytes": 27558,
+      "sha256": "B21EFA54387544AD2C32371B335BD0D2F92B152F0867D19DE480394D800231A0"
+    },
+    {
+      "path": "packaging/direct/rat-trap-beta.nsi",
+      "bytes": 12843,
+      "sha256": "C2DBE9D1B72687DDDE8796B8487E2BBFC31023CDDD9C2F393CACC19DB1542526"
+    },
+    {
+      "path": "packaging/direct/README-BETA.txt",
+      "bytes": 5057,
+      "sha256": "5B1C410549819CD1459A2EE593F2E91448FB2830A9B2D256680D4F31684F98D1"
+    },
+    {
+      "path": "packaging/direct/qa-results-5.7.0.json",
+      "bytes": 16778,
+      "sha256": "E18FC5DAF106A98CDF1046A43B09DAE8EE847326552EE34D8D97DFD302B14B9B"
+    },
+    {
+      "path": "docs/DIRECT-DOWNLOAD-BETA-5.7.0.md",
+      "bytes": 7367,
+      "sha256": "9B4CD47128A893991CFB1BE2F005C9E7F796671C4516F88809BE03259D6564E8"
+    },
+    {
+      "path": "docs/DIRECT-BETA-CLEAN-PC-CHECKLIST.md",
+      "bytes": 3156,
+      "sha256": "47A93933A41B73053C439790996385D2ABB41097BBD76BD137E9BD66B6062548"
+    }
+  ],
+  "known_limitations": [
+    "App and installer are unsigned; Windows may warn about or block downloaded executables.",
+    "Local lifecycle tests are not a clean-PC or Windows 11 pass.",
+    "This host had no existing default ProgIDs for the relevant extensions; populated-default clean-PC coverage remains outstanding.",
+    "Same-version repair is tested; a future-version upgrade needs its own test.",
+    "No interactive wizard or HTTPS-downloaded SmartScreen/Smart App Control experience has been validated.",
+    "A completed uninstall preserves user-added files; those files must be moved before a fresh install into that retained directory.",
+    "No broad public release, website deployment, signing purchase, Microsoft Store submission, GitHub push or visibility change was performed."
+  ],
+  "next_gate": "docs/DIRECT-BETA-CLEAN-PC-CHECKLIST.md"
+}

@@ -1,0 +1,82 @@
+{
+  "schema": "rat-trap-controlled-benchmark-2",
+  "created_at": 1784338465.416192,
+  "python": "3.13.13 (tags/v3.13.13:01104ce, Apr  7 2026, 19:25:48) [MSC v.1944 64 bit (AMD64)]",
+  "repetitions": 3,
+  "fixture_scale_mb": 8,
+  "methods": [
+    "solid-zstd-3",
+    "solid-zstd-6-file-dedup",
+    "solid-zstd-19-file-dedup"
+  ],
+  "datasets": {
+    "real:Rat-Trap-Beta-Test-Data": [
+      {
+        "method": "solid-zstd-3",
+        "original_bytes": 36991791,
+        "archive_bytes": 29267301,
+        "retained_percent": 79.11836709933834,
+        "ratio": 1.263929017574938,
+        "compression_seconds_median": 0.7614037999956054,
+        "extraction_seconds_median": 2.2772966000047745,
+        "compression_seconds_all": [
+          0.7614037999956054,
+          0.8407607999979518,
+          0.7354167000012239
+        ],
+        "extraction_seconds_all": [
+          2.5034851000018534,
+          2.2772966000047745,
+          2.076833399994939
+        ],
+        "repetitions": 3,
+        "round_trip_verified": true,
+        "file_count": 464
+      },
+      {
+        "method": "solid-zstd-6-file-dedup",
+        "original_bytes": 36991791,
+        "archive_bytes": 12224927,
+        "retained_percent": 33.04767536127137,
+        "ratio": 3.025931443189804,
+        "compression_seconds_median": 1.2569207999986247,
+        "extraction_seconds_median": 2.1301292999996804,
+        "compression_seconds_all": [
+          1.2425820999997086,
+          1.2569207999986247,
+          1.3350225999965915
+        ],
+        "extraction_seconds_all": [
+          2.1301292999996804,
+          2.0163736999966204,
+          2.194463199994061
+        ],
+        "repetitions": 3,
+        "round_trip_verified": true,
+        "file_count": 464
+      },
+      {
+        "method": "solid-zstd-19-file-dedup",
+        "original_bytes": 36991791,
+        "archive_bytes": 11885225,
+        "retained_percent": 32.12935810542398,
+        "ratio": 3.1124182335631003,
+        "compression_seconds_median": 9.765541300002951,
+        "extraction_seconds_median": 2.8359127000003355,
+        "compression_seconds_all": [
+          9.765541300002951,
+          9.63693489999423,
+          14.21878999999899
+        ],
+        "extraction_seconds_all": [
+          1.5238284000006388,
+          2.8359127000003355,
+          3.5279729000030784
+        ],
+        "repetitions": 3,
+        "round_trip_verified": true,
+        "file_count": 464
+      }
+    ]
+  }
+}

@@ -9,7 +9,13 @@ import zlib
 from contextlib import closing
 from pathlib import Path
 
-from rat_trap import gmw_tool, secure_engine, solid_engine, vault_engine
+from rat_trap import (
+    gmw_tool,
+    sealed_file,
+    secure_engine,
+    solid_engine,
+    vault_engine,
+)
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "formats"
@@ -240,6 +246,196 @@ class FormatCompatibilityTests(unittest.TestCase):
                     corrupt,
                     recovery_key=recovery,
                 )
+
+    def test_sealed_file_golden_fixture_and_profile_compatibility(self) -> None:
+        fixture = MANIFEST["sealed_fixtures"][0]
+        archive = FIXTURE_ROOT / fixture["name"]
+        recovery = FIXTURE_ROOT / fixture["recovery_file"]["name"]
+        inner = FIXTURE_ROOT / fixture["inner_fixture"]["name"]
+        for path, expected in (
+            (archive, fixture),
+            (recovery, fixture["recovery_file"]),
+            (inner, fixture["inner_fixture"]),
+        ):
+            with self.subTest(path=path.name):
+                self.assertEqual(path.stat().st_size, expected["bytes"])
+                self.assertEqual(
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                    expected["sha256"],
+                )
+
+        original = fixture["original"]
+        expected_content = (
+            b"Rat-Trap sealed-file public compatibility marker\n" * 8
+        )
+        self.assertEqual(len(expected_content), original["bytes"])
+        self.assertEqual(
+            hashlib.sha256(expected_content).hexdigest(),
+            original["sha256"],
+        )
+        encrypted_bytes = archive.read_bytes()
+        self.assertNotIn(original["name"].encode("utf-8"), encrypted_bytes)
+        self.assertNotIn(expected_content[:48], encrypted_bytes)
+
+        outer = secure_engine.read_secure_info(archive)
+        self.assertEqual(outer.format, fixture["family"])
+        self.assertEqual(outer.schema_version, fixture["schema_version"])
+        for key in (
+            "writer_version",
+            "file_id",
+            "created_at_ns",
+            "cipher",
+            "chunk_size",
+            "chunk_count",
+            "plaintext_size",
+            "password_slot_count",
+            "recovery_slot_count",
+        ):
+            self.assertEqual(getattr(outer, key), fixture["expected"][key])
+        self.assertFalse(outer.verified)
+
+        locked = sealed_file.read_locked_info(archive)
+        self.assertTrue(locked.locked)
+        self.assertFalse(locked.profile_verified)
+        self.assertFalse(locked.content_verified)
+        self.assertIsNone(locked.profile_format)
+        self.assertIsNone(locked.profile_schema_version)
+        for key in (
+            "original_name",
+            "original_size",
+            "original_sha256",
+            "modified_at_ns",
+            "mode",
+            "compressor",
+            "compression_level",
+        ):
+            self.assertIsNone(getattr(locked, key))
+
+        password_info = sealed_file.verify_sealed_file(
+            archive,
+            password=fixture["test_password"],
+            allow_plaintext_temp=True,
+        )
+        recovery_info = sealed_file.verify_sealed_file(
+            archive,
+            recovery_key=recovery,
+            allow_plaintext_temp=True,
+        )
+        self.assertEqual(password_info.as_dict(), recovery_info.as_dict())
+        self.assertFalse(password_info.locked)
+        self.assertTrue(password_info.profile_verified)
+        self.assertTrue(password_info.content_verified)
+        self.assertEqual(
+            password_info.profile_format,
+            fixture["profile_format"],
+        )
+        self.assertEqual(
+            password_info.profile_schema_version,
+            fixture["profile_schema_version"],
+        )
+        self.assertEqual(password_info.original_name, original["name"])
+        self.assertEqual(password_info.original_size, original["bytes"])
+        self.assertEqual(password_info.original_sha256, original["sha256"])
+        self.assertEqual(
+            password_info.modified_at_ns,
+            original["modified_at_ns"],
+        )
+        self.assertEqual(password_info.mode, original["mode"])
+        self.assertEqual(
+            password_info.compressor,
+            fixture["expected"]["compressor"],
+        )
+        self.assertEqual(
+            password_info.compression_level,
+            fixture["expected"]["compression_level"],
+        )
+
+        entry = solid_engine.inspect_single_file(inner)
+        self.assertEqual(entry.metadata.format, "GMW-SOLID-2")
+        self.assertEqual(entry.metadata.profile, fixture["profile"])
+        self.assertEqual(entry.metadata.compressor, "zstd")
+        self.assertEqual(entry.metadata.compression_level, 6)
+        self.assertEqual(entry.metadata.file_count, 1)
+        self.assertEqual(entry.metadata.directory_count, 0)
+        self.assertEqual(entry.metadata.total_bytes, original["bytes"])
+        self.assertEqual(entry.metadata.entry_order, "path")
+        self.assertIsNone(entry.metadata.zstd_window_log)
+        self.assertFalse(entry.metadata.zstd_long_distance)
+        self.assertFalse(entry.metadata.whole_file_dedup)
+        self.assertEqual(entry.metadata.duplicate_file_count, 0)
+        self.assertEqual(entry.name, original["name"])
+        self.assertEqual(entry.size, original["bytes"])
+        self.assertEqual(entry.sha256, original["sha256"])
+        self.assertEqual(
+            int(entry.mtime * 1_000_000_000),
+            original["modified_at_ns"],
+        )
+        self.assertEqual(entry.mode, original["mode"])
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            password_inner = root / "password-inner.gmw"
+            recovery_inner = root / "recovery-inner.gmw"
+            secure_engine.decrypt_file(
+                archive,
+                password_inner,
+                password=fixture["test_password"],
+            )
+            secure_engine.decrypt_file(
+                archive,
+                recovery_inner,
+                recovery_key=recovery,
+            )
+            self.assertEqual(password_inner.read_bytes(), inner.read_bytes())
+            self.assertEqual(recovery_inner.read_bytes(), inner.read_bytes())
+
+            password_result = sealed_file.unseal_file(
+                archive,
+                root / "password-restored",
+                password=fixture["test_password"],
+                allow_plaintext_temp=True,
+                allow_plaintext_output=True,
+            )
+            recovery_result = sealed_file.unseal_file(
+                archive,
+                root / "recovery-restored",
+                recovery_key=recovery,
+                allow_plaintext_temp=True,
+                allow_plaintext_output=True,
+            )
+            for result in (password_result, recovery_result):
+                restored = Path(result.output)
+                self.assertEqual(restored.name, original["name"])
+                self.assertEqual(restored.read_bytes(), expected_content)
+                self.assertEqual(result.plaintext_sha256, original["sha256"])
+                self.assertTrue(result.sealed_source_retained)
+                self.assertTrue(result.sealed_file.content_verified)
+
+            wrong_output = root / "wrong-password-output"
+            with self.assertRaises(secure_engine.UnlockError):
+                sealed_file.unseal_file(
+                    archive,
+                    wrong_output,
+                    password="wrong public fixture password",
+                    allow_plaintext_temp=True,
+                    allow_plaintext_output=True,
+                )
+            self.assertFalse(wrong_output.exists())
+
+            corrupt = root / "corrupt-sealed.rtsf"
+            damaged = bytearray(archive.read_bytes())
+            damaged[-1] ^= 0x01
+            corrupt.write_bytes(damaged)
+            corrupt_output = root / "corrupt-output"
+            with self.assertRaises(secure_engine.SecureArchiveError):
+                sealed_file.unseal_file(
+                    corrupt,
+                    corrupt_output,
+                    recovery_key=recovery,
+                    allow_plaintext_temp=True,
+                    allow_plaintext_output=True,
+                )
+            self.assertFalse(corrupt_output.exists())
 
     def test_future_vault_schema_fails_closed_without_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
