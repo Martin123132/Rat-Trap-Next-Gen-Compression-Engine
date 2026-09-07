@@ -92,7 +92,7 @@ See [support guidance](SUPPORT.md), [privacy](PRIVACY.md) and
 [security reporting](SECURITY.md). Never send passwords, recovery keys or
 confidential files in a public issue.
 
-The compressor implementation was designed and built by **Glyn Evans**, drawing
+The compressor implementation was designed and built by **Glyn Evans and Martin Ollett**, drawing
 on Motion-TimeSpace work by **Martin Ollett**.
 [Historical project narrative and provenance](docs/HISTORICAL-PROJECT-NARRATIVE.md)
 and the [original experiments](historical/README.md) remain available.
