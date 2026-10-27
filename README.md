@@ -9,12 +9,12 @@ backups and protected files. Keep your files useful after you put them away.
 
 ## Download for Windows
 
-**[Download Rat-Trap for Windows](https://github.com/Martin123132/Rat-Trap-Next-Gen-Compression-Engine/releases/download/v5.7.0-preview.6/Rat-Trap-Windows-x64-setup.exe)**
+**[Download Rat-Trap for Windows](https://github.com/Martin123132/Rat-Trap-Next-Gen-Compression-Engine/releases/download/v5.7.0-preview.12/Rat-Trap-Windows-x64-setup.exe)**
 
 Windows 10 or later, 64-bit. No Python, Codex or Rat-Trap account required.
 
 This is an **unsigned public preview**. Read the [installation guide](docs/WINDOWS.md)
-and [release notes and checksum](docs/releases/5.7.0-preview.6.md). If Windows
+and [release notes and checksum](docs/releases/5.7.0-preview.12.md). If Windows
 blocks it, do not disable security protection. Keep originals and independent
 backups while using a preview.
 
@@ -27,6 +27,13 @@ backups while using a preview.
   text without extracting the entire collection.
 - **Keep earlier versions within reach.** Browse backup history and restore an
   older snapshot into a separate folder, leaving your current files alone.
+- **Keep projects organised.** The Library brings stored work, a project
+  timeline, cross-Library filename search and direct single-file restore
+  together in one place.
+- **Save your backup setup.** Remember a source, destination and project in a
+  backup plan, then create another version when you choose **Back up now**.
+- **Check what you keep.** Run a manual Library health check on supported
+  Vaults and versioned backups and see dated results alongside your work.
 - **Protect files with a recovery route.** Optional authenticated archive
   encryption and independent Sealed Files support passwords and separately
   stored recovery keys.
@@ -44,11 +51,14 @@ backups while using a preview.
 | Make a compact archive or share a folder | **GMW archive** — Fast, Balanced or Smallest |
 | Search stored filenames, text and data tables | **Queryable Vault** |
 | Keep versions and recover an earlier state | **Backups & history** |
+| Organise stored projects and run saved backup plans | **Library & timeline** |
 | Protect an individual file | **Sealed File** with a separate recovery key |
 
 Live backup repositories are not encrypted in this release. Choose the
 supported encrypted portable formats when you need that protection.
 Compression by itself is not encryption.
+Saved backup plans run manually; no background scheduling is included. A
+Library entry or health check is not an independent backup.
 
 ## Your first few clicks
 
@@ -75,7 +85,8 @@ preserved results, formats, compatibility, security boundaries and test evidence
 - [Benchmark audit and complete comparisons](BENCHMARK-AUDIT.md)
 - [Benchmark history and evidence status](docs/BENCHMARK-HISTORY.md)
 - [Public benchmark result files](benchmarks/results/2026-07-18/README.md)
-- [Release qualification](docs/releases/5.7.0-preview.6.md)
+- [Earlier preview qualification](docs/releases/5.7.0-preview.6.md)
+- [Latest preview qualification](docs/releases/5.7.0-preview.12.md)
 - [Run from source and contribute](CONTRIBUTING.md)
 
 ## Support and commercial use

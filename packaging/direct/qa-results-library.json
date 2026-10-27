@@ -1,0 +1,41 @@
+{
+  "schema": "rat-trap-library-installer-qa/v1",
+  "date": "2026-10-20",
+  "product": "Rat-Trap Desktop Preview 2",
+  "version": "5.7.0.7",
+  "support_version": "5.7.0-desktop-preview.2-library.1",
+  "passed": true,
+  "checks": 225,
+  "failed_checks": 0,
+  "cleanup_errors": 0,
+  "platform": "Windows 10 x64, build 19045",
+  "clean_vm": false,
+  "upgrade_from": "5.7.0.6",
+  "test_identity": "TwoHandsNetwork.RatTrap.DesktopPreview2.QA.eecba2b115514c7185302ccbaeab8a02",
+  "coverage": [
+    "Previous-version installation",
+    "Same-product upgrade",
+    "Four installed Library self-tests",
+    "Locked-file refusal",
+    "Repair",
+    "Optional integration and default-association preservation",
+    "Both uninstall paths",
+    "Generated user-file retention",
+    "QA cleanup and unchanged normal installation"
+  ],
+  "normal_installation_modified": false,
+  "normal_app_installed_automatically": false,
+  "raw_evidence": {
+    "path": "build/library-qa/eecba2b115514c7185302ccbaeab8a02/lifecycle-report.json",
+    "bytes": 51028,
+    "sha256": "F3448FE7BE395773F80CFA4AD250717DE6904062C9FB80123F87F0B37E1D8662",
+    "contains_local_paths": true,
+    "public_distribution": false
+  },
+  "installer_sha256": "26F209B5592008BEC07CB9B71C7BE3E2F15F45AE22B76E88A54B34FEC9812B62",
+  "limitations": [
+    "Same-host automated checks, not a clean Windows machine or Windows 11 test.",
+    "No interactive wizard or SmartScreen acceptance test.",
+    "Unsigned preview; no Store certification or independent security audit."
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "schema": "rat-trap-library-search-release/v1",
+  "stage": "Library-wide search",
+  "application_version": "5.7.0-desktop-preview.2-library.3",
+  "installer_version": "5.7.0.9",
+  "engine_version": "5.7.0",
+  "publisher": "TWO HANDS NETWORK LTD",
+  "app_key": "TwoHandsNetwork.RatTrap.DesktopPreview2",
+  "signed": false,
+  "published_to_remote": false,
+  "normal_user_app_installed": false,
+  "qualification_completed_utc": "2026-10-20T23:49:01.8163104Z",
+  "artifacts": [
+    {
+      "path": "dist/library-search-1a15bb1d817/Rat-Trap-Desktop-Preview-2.exe",
+      "bytes": 19295750,
+      "sha256": "F6C7B7D43E19CF771354E64E8A3B0FB2F5CD7F7302E92AA0254C153DE61FBDE2"
+    },
+    {
+      "path": "dist/library-installer-search-1a15bb1d817/Rat-Trap-Library-Search-Windows-x64-setup.exe",
+      "bytes": 19145170,
+      "sha256": "06BED8BAB330D0DB9F068F51578FBD93C5D3B345B8A1AD1D2FF0C43499E2D842"
+    },
+    {
+      "path": "dist/library-search-1a15bb1d817/BUILD-MANIFEST.json",
+      "bytes": 25278,
+      "sha256": "0AA165DD71ACD56F5CAF25A9FD6066A9279024DB621D7E4C51F853DDE24FC4CF"
+    }
+  ],
+  "source_checks": [
+    {
+      "scope": "full regression discovery",
+      "tests": 602,
+      "passed": 601,
+      "skipped": 1,
+      "seconds": 735.655
+    },
+    {
+      "scope": "final search backend and Library UI, including additional edge cases",
+      "tests": 62,
+      "passed": 62,
+      "skipped": 0,
+      "seconds": 133.383
+    }
+  ],
+  "skip_reason": "Native Windows symlink creation permission unavailable; deterministic path-safety checks passed.",
+  "packaged_self_tests": [
+    "--self-test",
+    "--ui-self-test",
+    "--tutorial-self-test",
+    "--library-self-test",
+    "--store-folder-self-test",
+    "--library-search-self-test"
+  ],
+  "source_hashes_verified": 36,
+  "installer_qualification": {
+    "upgrade_from": "5.7.0.8",
+    "upgrade_to": "5.7.0.9",
+    "checks": 227,
+    "failed": 0,
+    "cleanup_errors": 0,
+    "raw_local_report": "build/library-qa/f779cc4db10c4acbb1e84ec865bae3c5/lifecycle-report.json",
+    "raw_local_report_sha256": "CA965BC59D79629C61FFCA011C1FA032DA562CCBFA00FB11FBBE58E9F4BB642A",
+    "sanitized_report": "packaging/direct/qa-results-library-search.json"
+  },
+  "sources": [
+    {
+      "path": "rat_trap/library.py",
+      "sha256": "A87AD97811673422B88DD439A9491B6C9A09C2532CFB894351DAA42F82B76401"
+    },
+    {
+      "path": "rat_trap/library_app.py",
+      "sha256": "CA6EC3631AB63739B639DD9A33282E1FA7484B6B33723AA5281CFA143C746539"
+    },
+    {
+      "path": "rat_trap/library_search.py",
+      "sha256": "FDF34F286D869B25B21D1E9890C1BB5ED9C846D4C8B037C34CE5A136B30EA6D9"
+    },
+    {
+      "path": "rat_trap/solid_engine.py",
+      "sha256": "AB04A8002E98B5C3BE757B381880C9E3BD1F420D8097F8821A7AC85CE49B0D49"
+    },
+    {
+      "path": "tests/test_library_search.py",
+      "sha256": "09EF17BE3C1B195B6D11F65D973E90783F0CCEC990E5031A1963A0DCBA2248FB"
+    },
+    {
+      "path": "tests/test_library_app.py",
+      "sha256": "B2F09BC536C69F21F5F95C078432B6ECCDDEACA51E01D5B5F4E5F5008E9EBB95"
+    },
+    {
+      "path": "docs/LIBRARY-SEARCH.md",
+      "sha256": "8AD20C3DCABF031ED3767C5B682C97B6977E03672E0D650766A891351649C5C2"
+    },
+    {
+      "path": "docs/LIBRARY-SEARCH-VALIDATION.md",
+      "sha256": "0DEB413395EC173AA0D55B179D8EE3D8284F9B528E138212658A48C3BCC92BE8"
+    },
+    {
+      "path": "scripts/build_windows_library_search.ps1",
+      "sha256": "786984C80EC7932A17AF79CAF3D924A7565C758A327414134EF7C6C75E19B352"
+    },
+    {
+      "path": "scripts/build_windows_library_search_installer.ps1",
+      "sha256": "0B18C3E00E8E630F19957A600DCF1091F6CAFDC800246F64C83514313879CEEC"
+    },
+    {
+      "path": "scripts/test_windows_library_search_installer.ps1",
+      "sha256": "452C508578E97BD13A07EECDA303F2C985D60488A74574CB337166DEE15A952B"
+    },
+    {
+      "path": "packaging/direct/rat-trap-library-search.nsi",
+      "sha256": "2EF99810AA9667AC106E78B478360D9E47D4379245E964E2E5C202A937D233A7"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-SEARCH.txt",
+      "sha256": "AD988F21E39937C6A0734A4CDF727CA80E60FBFD5719B933795A1FAD1EEC4BD2"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-SEARCH-INSTALLER.txt",
+      "sha256": "640F6F91817031D1184DDD3398962EB2B3B5C83C8DD1097C50E521D61B558290"
+    },
+    {
+      "path": "packaging/direct/qa-results-library-search.json",
+      "sha256": "64A18318295775644443E6FDC6340ED2868BCCA9916741B759DDF4A454E32B37"
+    }
+  ],
+  "handoff": {
+    "workspace_path": "outputs/00 - START HERE/Install Rat-Trap.exe",
+    "version": "5.7.0.9",
+    "sha256": "06BED8BAB330D0DB9F068F51578FBD93C5D3B345B8A1AD1D2FF0C43499E2D842",
+    "previous_version": "5.7.0.8",
+    "previous_installer_sha256": "FA28C70D425E3011016D5CFD409E3726DF93AF8916B58D0B35793B220EA98256",
+    "previous_handoff_backup": "build/library-search-handoff-before-5.7.0.9-search-1a15bb1d817"
+  },
+  "limitations": [
+    "Unsigned local preview; not Microsoft Store approval or independent security audit.",
+    "Same-host Windows 10 build 19045 and PowerShell 7.6.5, not clean-VM or Windows 11 qualification.",
+    "Filename and Library metadata search, not full-text content search or full payload verification.",
+    "No persistent filename index. Protected inner filenames excluded.",
+    "Explicit scan/result limits; solid archives require streaming decompression and can take time."
+  ]
+}

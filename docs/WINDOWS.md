@@ -2,7 +2,7 @@
 
 ## One download
 
-[Download the Windows x64 installer](https://github.com/Martin123132/Rat-Trap-Next-Gen-Compression-Engine/releases/download/v5.7.0-preview.6/Rat-Trap-Windows-x64-setup.exe).
+[Download the Windows x64 installer](https://github.com/Martin123132/Rat-Trap-Next-Gen-Compression-Engine/releases/download/v5.7.0-preview.12/Rat-Trap-Windows-x64-setup.exe).
 
 Use this executable, not GitHub's source-code ZIP or an older portable/MSIX
 package. It is the current guided application with all five tutorials.
@@ -10,7 +10,7 @@ Python, Codex and a Rat-Trap account are not required.
 
 This public preview targets Windows 10 or later, 64-bit. The recorded
 qualification was on Windows 10; clean Windows 11 acceptance is still
-outstanding. See the [release notes](releases/5.7.0-preview.6.md) for exact
+outstanding. See the [release notes](releases/5.7.0-preview.12.md) for exact
 versions, checksums and test scope.
 
 ## Before installing
@@ -31,7 +31,7 @@ Get-FileHash -LiteralPath .\Rat-Trap-Windows-x64-setup.exe -Algorithm SHA256
 The result must match:
 
 ```text
-1A20D60641D79D7F5CDFDB3DACFC326B14845559E4B400975FFEACA8F6764AB5
+DA03D4BB04EE3389D23D0D5DA58AE8EFD5352915925F12039E41A8607E8256A4
 ```
 
 A matching checksum checks the file against this release record; it is not
@@ -49,9 +49,10 @@ a code-signing certificate or independent security certification.
 
 The installed name stays the same so an existing Preview 2 installation is
 updated in place instead of adding another app. The support label is
-`5.7.0-desktop-preview.2-tutorial.4`; the Windows numeric version is
-`5.7.0.6`. The embedded older guide's “private build” wording describes the
-build's test history; these exact bytes are now offered as the public preview.
+`5.7.0-desktop-preview.2-library.6`; the Windows numeric version is
+`5.7.0.12`. The application is the previously qualified build; the installer
+was rebuilt for public release with an additional shortcut-uninstall safeguard.
+Its embedded guide describes the original local-preview qualification.
 
 The five guided practices cover Vault search, folder compression, restoring
 an archive, protecting and recovering a file, and browsing backup history.
@@ -70,6 +71,10 @@ Keep originals and an independent backup while using the preview.
   can be searched without extracting the entire collection.
 - **Backups & history:** manually create snapshots and restore an earlier
   version into a new folder. Live repositories are not encrypted.
+- **Library & timeline:** organise stored items by project, search filenames,
+  restore supported individual files, and run a manual health check.
+  Save a backup plan and choose **Back up now** when you want another version.
+  Plans do not run automatically.
 - **Sealed Files:** protect a copy of an individual file, with password access
   and an independent recovery key.
 

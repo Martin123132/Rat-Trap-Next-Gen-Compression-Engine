@@ -1,0 +1,142 @@
+{
+  "schema": "rat-trap-library-store-release/v1",
+  "stage": "Store a folder in Library",
+  "application_version": "5.7.0-desktop-preview.2-library.2",
+  "installer_version": "5.7.0.8",
+  "engine_version": "5.7.0",
+  "publisher": "TWO HANDS NETWORK LTD",
+  "app_key": "TwoHandsNetwork.RatTrap.DesktopPreview2",
+  "signed": false,
+  "published_to_remote": false,
+  "normal_user_app_installed": false,
+  "qualification_completed_utc": "2026-10-20T23:05:01.5571009Z",
+  "artifacts": [
+    {
+      "path": "dist/library-store-verified-20261021-1a15b8bdf7e/Rat-Trap-Desktop-Preview-2.exe",
+      "bytes": 19277406,
+      "sha256": "9BC3DE95B93FA602161F041C2FC485D7928D31D55E03B5AB4FF29C1BFC0D53FD"
+    },
+    {
+      "path": "dist/library-installer-store-verified-20261021-1a15b8bdf7e/Rat-Trap-Library-Store-Windows-x64-setup.exe",
+      "bytes": 19126694,
+      "sha256": "FA28C70D425E3011016D5CFD409E3726DF93AF8916B58D0B35793B220EA98256"
+    },
+    {
+      "path": "dist/library-store-verified-20261021-1a15b8bdf7e/BUILD-MANIFEST.json",
+      "bytes": 25138,
+      "sha256": "85A5831ADACD550B0B6BC49F0418B4AD39F1F2EE4143278599FD10D45A25CAE8"
+    }
+  ],
+  "source_checks": [
+    {
+      "scope": "full discovery before final narrow fixes",
+      "tests": 577,
+      "passed": 576,
+      "skipped": 1,
+      "seconds": 521.682
+    },
+    {
+      "scope": "final Library + Store-folder backend and UI",
+      "tests": 92,
+      "passed": 91,
+      "skipped": 1,
+      "seconds": 70.868
+    },
+    {
+      "scope": "final repeated concurrent-catalogue stress",
+      "tests": 40,
+      "passed": 40,
+      "skipped": 0,
+      "seconds": 35.562
+    }
+  ],
+  "skip_reason": "Native Windows symlink creation permission unavailable; deterministic path-safety checks passed.",
+  "packaged_self_tests": [
+    "--self-test",
+    "--ui-self-test",
+    "--tutorial-self-test",
+    "--library-self-test",
+    "--store-folder-self-test"
+  ],
+  "source_hashes_verified": 35,
+  "installer_qualification": {
+    "upgrade_from": "5.7.0.7",
+    "upgrade_to": "5.7.0.8",
+    "checks": 226,
+    "failed": 0,
+    "cleanup_errors": 0,
+    "raw_local_report": "build/library-qa/420a45cc163b419aba4605d814995526/lifecycle-report.json",
+    "raw_local_report_sha256": "A5EFB54647175E91D4935E7D33794EA583E0068D706FD7D6D664B2783354146F",
+    "sanitized_report": "packaging/direct/qa-results-library-store.json"
+  },
+  "sources": [
+    {
+      "path": "rat_trap/library.py",
+      "sha256": "579C7B0EE1B56160F8EAA6A943E2E9FEE90AAA44DA95CCE14B8D106184A2FBF2"
+    },
+    {
+      "path": "rat_trap/library_app.py",
+      "sha256": "43D1F556249315B0A358B87427D5268DCF6BA66FBE59EC54204E805A408FBBF7"
+    },
+    {
+      "path": "rat_trap/library_storage.py",
+      "sha256": "59BD41DFC1F4F94F9D73E812CF5769A017F7DCEBD1B30932704F80A6C895286E"
+    },
+    {
+      "path": "tests/test_library.py",
+      "sha256": "6074C03B47F78B16B458CA5802CF9D272E899D71E5950C9A33CEC15673AE97E6"
+    },
+    {
+      "path": "tests/test_library_app.py",
+      "sha256": "91AB783E7B05D17E7E3ADF450F87584D10F6F36E66880F86BA14C12E4BFB358A"
+    },
+    {
+      "path": "tests/test_library_storage.py",
+      "sha256": "A045E3C8F371B6A26F347E94AA3C8648DA0D02E18D46329E5D11110B64431D72"
+    },
+    {
+      "path": "scripts/build_windows_library_store.ps1",
+      "sha256": "9EB72E7BD543956D7B7D423BA50501220283785CB90C935966B053F0C731ABA0"
+    },
+    {
+      "path": "scripts/build_windows_library_store_installer.ps1",
+      "sha256": "5D9431C50982201D78ED198B94E69DEEF0A65BE6B379B8B41D25559A2DBCEEEE"
+    },
+    {
+      "path": "scripts/test_windows_library_store_installer.ps1",
+      "sha256": "5DC33CA803E3CF0C9D77425B73437A9E3B142AC340B038EA99C9BE8FAD3032F4"
+    },
+    {
+      "path": "packaging/direct/rat-trap-library-store.nsi",
+      "sha256": "CEE2A43823C4ACCE237B627AA3E66A4944C095AEE5F9F18E923F8EC70E8BF86F"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-STORE.txt",
+      "sha256": "0F9FE9CCD5F02B9D47D3412EE1894F31B0CDAC623AF528DB58F7037F99DE9C6B"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-STORE-INSTALLER.txt",
+      "sha256": "64DD4B27D6B92D49F058F028C10D56EB82B57F3EB15EBA579B5A938F67668E58"
+    },
+    {
+      "path": "docs/LIBRARY-STORE.md",
+      "sha256": "BA7914B4A0956D2A573BDE893125AC3650B1D417E2EA5F69410C24F7093C2EA2"
+    },
+    {
+      "path": "docs/LIBRARY-STORE-VALIDATION.md",
+      "sha256": "D657533C556939575FBF5E8AC0FC8BF1E56FB584FFEFCC9BD01548B316576A10"
+    }
+  ],
+  "handoff": {
+    "installer": "../../outputs/00 - START HERE/Install Rat-Trap.exe",
+    "sha256": "FA28C70D425E3011016D5CFD409E3726DF93AF8916B58D0B35793B220EA98256",
+    "previous_handoff_backup": "build/library-store-handoff-before-store-final-20261020-1a15b89e735"
+  },
+  "limitations": [
+    "Same-host Windows 10 build 19045; no clean VM or Windows 11 qualification.",
+    "No signing, Store approval or independent cryptographic audit.",
+    "Windows PowerShell 5.1 preflight blocked by existing execution policy; no policy changed.",
+    "Full discovery preceded final resumed-backup and catalogue-serialization changes; final focused and packaged checks cover final code.",
+    "Live backup repositories and Library metadata are not encrypted."
+  ]
+}

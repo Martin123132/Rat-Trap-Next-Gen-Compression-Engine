@@ -757,7 +757,11 @@ def _open_tar_stream(
             decompressed,
             max_output_bytes,
         )
-    tf = tarfile.open(fileobj=decompressed, mode="r|")
+    try:
+        tf = tarfile.open(fileobj=decompressed, mode="r|")
+    except BaseException:
+        decompressed.close()
+        raise
     return limited, decompressed, tf
 
 

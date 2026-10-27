@@ -1,0 +1,157 @@
+{
+  "schema": "rat-trap-library-plans-release/v1",
+  "stage": "Saved backup plans and manual Back up now",
+  "application_version": "5.7.0-desktop-preview.2-library.6",
+  "installer_version": "5.7.0.12",
+  "engine_version": "5.7.0",
+  "publisher": "TWO HANDS NETWORK LTD",
+  "app_key": "TwoHandsNetwork.RatTrap.DesktopPreview2",
+  "signed": false,
+  "published_to_remote": false,
+  "normal_user_app_installed": false,
+  "qualification_completed_utc": "2026-10-21T19:29:56Z",
+  "artifacts": [
+    {
+      "path": "dist/library-plans-1a15fe5adce/Rat-Trap-Desktop-Preview-2.exe",
+      "bytes": 19353572,
+      "sha256": "DE53C59C35ABDA56C7CBCB28490597084F954F31E3A06283B80240B855332FD6"
+    },
+    {
+      "path": "dist/library-plans-1a15fe5adce/BUILD-MANIFEST.json",
+      "bytes": 25690,
+      "sha256": "296331667A80FCCA936E4C5F30040119277B38916211B487D723DC2E2010A8CE"
+    },
+    {
+      "path": "dist/library-installer-plans-1a15fe5adce/Rat-Trap-Library-Plans-Windows-x64-setup.exe",
+      "bytes": 19205918,
+      "sha256": "83A5FAF6B5D7CE823E4C5A9BE290A709719B1E2288BF8153A0C6CCE060B18394"
+    }
+  ],
+  "source_checks": [
+    {
+      "scope": "full regression discovery",
+      "tests": 704,
+      "passed": 703,
+      "skipped": 1,
+      "seconds": 622.165,
+      "local_log": "build/plans-1a15fe5adce-regression.log"
+    },
+    {
+      "scope": "manual plan backend and Library interface",
+      "tests": 36,
+      "passed": 36,
+      "skipped": 0,
+      "seconds": 33.602,
+      "local_log": "build/plans-1a15fe5adce-focused.log"
+    },
+    {
+      "scope": "dedicated high-DPI geometry rerun after shortening oversized button label",
+      "tests": 1,
+      "passed": 1,
+      "skipped": 0,
+      "seconds": 6.806
+    }
+  ],
+  "skip_reason": "Native Windows symbolic-link creation permission unavailable; non-native path/reparse guard tests ran.",
+  "packaged_self_tests": [
+    "--self-test",
+    "--ui-self-test",
+    "--tutorial-self-test",
+    "--library-self-test",
+    "--store-folder-self-test",
+    "--library-search-self-test",
+    "--library-restore-self-test",
+    "--library-health-self-test",
+    "--backup-plans-self-test"
+  ],
+  "source_hashes_verified": 39,
+  "installer_qualification": {
+    "upgrade_from": "5.7.0.11",
+    "upgrade_to": "5.7.0.12",
+    "checks": 230,
+    "failed": 0,
+    "cleanup_errors": 0,
+    "raw_local_report": "build/library-qa/e04ab376227240aead6413d2e6d17024/lifecycle-report.json",
+    "raw_local_report_sha256": "78F87CED1D832736B9998F359E61EB6E0BA533CF775358D33D0B61C9B4806B28",
+    "sanitized_report": "packaging/direct/qa-results-library-plans.json"
+  },
+  "sources": [
+    {
+      "path": "rat_trap/library.py",
+      "sha256": "F76F6FB423AFB75FCE0145B2CC57B07B8424E3FE17C041AADE2FDB4909CDF122"
+    },
+    {
+      "path": "rat_trap/library_app.py",
+      "sha256": "EF99552FA9C1DA079D0507B8597F7CEB7A1ADB64270FE86435EB27DA71F75213"
+    },
+    {
+      "path": "rat_trap/library_plans.py",
+      "sha256": "A8B02B5AD478FEFB76DAAEE28537BC04E75CF150F038E84B8A87042115A99513"
+    },
+    {
+      "path": "rat_trap/repository_engine.py",
+      "sha256": "652F3AF5AF71409B3999C0D23C4B68B694B1A7E479B3F18E7F80605C88AA2746"
+    },
+    {
+      "path": "tests/test_library_plans.py",
+      "sha256": "7C4401992872DD81C2559C196D665F0BC55854619B8D762701152C5ADDE82ADE"
+    },
+    {
+      "path": "tests/test_library_app.py",
+      "sha256": "4E4582F11A49A1F9077663BA433A24CC38607D38F71B9AEFE5351F49F30A459D"
+    },
+    {
+      "path": "docs/LIBRARY-PLANS.md",
+      "sha256": "9A92A335B359419469D49EC7485C86091F1D8111BFAA905B4EB68D0AB2AD64D4"
+    },
+    {
+      "path": "docs/LIBRARY-PLANS-VALIDATION.md",
+      "sha256": "5CD18191A7426FAD6FFE5C0A769CA8002C397A3EC6B47C1D2B9E30BF90F2D0CB"
+    },
+    {
+      "path": "scripts/build_windows_library_plans.ps1",
+      "sha256": "8DEEF5722B96EB90A8F74848ED5C9AA7EC7EF3ABCAA8A71DFA09FD7156E3E95C"
+    },
+    {
+      "path": "scripts/build_windows_library_plans_installer.ps1",
+      "sha256": "35CBBFBB3463D7F66649DC075C7D10C5A3F24ECDB3B74E3602FCE1D64E126AAC"
+    },
+    {
+      "path": "scripts/test_windows_library_plans_installer.ps1",
+      "sha256": "4412F53D74975E5F4DC03857D32B6D16481661ADFCD92E297715388E8B906734"
+    },
+    {
+      "path": "packaging/direct/rat-trap-library-plans.nsi",
+      "sha256": "CA73CA9B3DBF4383FC8F039DC77A56AA5264E44B1B018AD15565AE45821986B1"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-PLANS.txt",
+      "sha256": "1DFBD51B91F1C5D095CAB20BC7B576D34D5F9E3A80AB0FF36682363220A8C5ED"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-PLANS-INSTALLER.txt",
+      "sha256": "042C6D03D74835EDFD9565B64FA80B6D1812117915AC70BD4FC0F12625DC2CA8"
+    },
+    {
+      "path": "packaging/direct/qa-results-library-plans.json",
+      "sha256": "44A2B932043D2D99F9F305D3C044F89D2BC8526A4AE37CD83EFC050E319A5BDA"
+    }
+  ],
+  "handoff": {
+    "workspace_path": "outputs/00 - START HERE/Install Rat-Trap.exe",
+    "version": "5.7.0.12",
+    "sha256": "83A5FAF6B5D7CE823E4C5A9BE290A709719B1E2288BF8153A0C6CCE060B18394",
+    "previous_version": "5.7.0.11",
+    "previous_installer_sha256": "02B2B6A4CA09C30B5F6E4C3F48EDB4198FB8298DE665C7E1AAE6547C4E6BBEEB",
+    "previous_handoff_backup": "build/library-plans-handoff-before-5.7.0.12-1a15fe5adce"
+  },
+  "limitations": [
+    "Unsigned local preview; not Microsoft Store approval or independent security audit.",
+    "Same-host Windows 10 build 19045 / PowerShell 7.6.5, not clean-VM or Windows 11 qualification.",
+    "Explicit manual runs only: no scheduler, watcher, startup task, background service, automatic retention or source deletion.",
+    "Versioned backup repositories are not encrypted; plans and receipts contain plaintext local paths/metadata, never saved credentials.",
+    "Successful backup publication is separate from catalogue/receipt storage, full health verification, restore drills and independent backups.",
+    "Ordinary local drive paths only; interrupted runs and pending recovery work require explicit review.",
+    "No live-source filesystem snapshot, secure metadata erasure or hostile same-account/administrator guarantee."
+  ]
+}

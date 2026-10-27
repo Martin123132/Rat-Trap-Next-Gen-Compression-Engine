@@ -1,0 +1,178 @@
+{
+  "schema": "rat-trap-library-release/v1",
+  "product": "Rat-Trap Desktop Preview 2",
+  "publisher": "TWO HANDS NETWORK LTD",
+  "date": "2026-10-20",
+  "application_version": "5.7.0-desktop-preview.2-library.1",
+  "installer_version": "5.7.0.7",
+  "base_engine_version": "5.7.0",
+  "stage": "Unsigned local Library and project timeline preview; not published to GitHub or Microsoft Store",
+  "app_key": "TwoHandsNetwork.RatTrap.DesktopPreview2",
+  "source_base_commit": "71c11952add08fc832a8e3d2a2f8df69673b7f64",
+  "source_changes": "Additive local Library implementation, tests, build recipes and evidence; not committed by this task",
+  "path_base": "repository root",
+  "artifacts": [
+    {
+      "path": "dist/library-final-0d6dc566d9044333841e7f512fe845e6/Rat-Trap-Desktop-Preview-2.exe",
+      "bytes": 19264123,
+      "sha256": "382E97CC5620EEA2230B5252905EDFF193BC9B749A77524866D82B964FB271E9"
+    },
+    {
+      "path": "dist/library-installer-final-0d6dc566d9044333841e7f512fe845e6/Rat-Trap-Library-Windows-x64-setup.exe",
+      "bytes": 19113230,
+      "sha256": "26F209B5592008BEC07CB9B71C7BE3E2F15F45AE22B76E88A54B34FEC9812B62"
+    },
+    {
+      "path": "dist/library-final-0d6dc566d9044333841e7f512fe845e6/BUILD-MANIFEST.json",
+      "bytes": 24989,
+      "sha256": "03DA606548F3F4EBB0E164BE77735E9B7F8B7D32CF81BDA87B5F8B7A2828DBB4"
+    }
+  ],
+  "validation": {
+    "full_suite": {
+      "tests": 549,
+      "passed": 548,
+      "skipped": 1,
+      "seconds": 448.625,
+      "scope": "Before the final Library-only routing and duplicate-registration fixes"
+    },
+    "final_library_suite": {
+      "tests": 63,
+      "passed": 62,
+      "skipped": 1,
+      "seconds": 46.892,
+      "scope": "All 37 backend and 26 UI tests on the final Library implementation"
+    },
+    "skip": "Native Windows symlink creation permission unavailable; deterministic reparse and hard-link refusal tests passed",
+    "source_self_tests": [
+      "--library-self-test",
+      "--tutorial-self-test"
+    ],
+    "packaged_self_tests": [
+      "--self-test",
+      "--ui-self-test",
+      "--tutorial-self-test",
+      "--library-self-test"
+    ],
+    "packaged_self_tests_passed": true,
+    "installer_qa": {
+      "summary": "packaging/direct/qa-results-library.json",
+      "checks": 225,
+      "passed": true,
+      "cleanup_errors": 0
+    },
+    "payload_and_34_build_source_hashes_independently_verified": true
+  },
+  "current_handoff": {
+    "mutable_latest_pointer": true,
+    "files": [
+      {
+        "path": "../../outputs/00 - START HERE/Install Rat-Trap.exe",
+        "bytes": 19113230,
+        "sha256": "26F209B5592008BEC07CB9B71C7BE3E2F15F45AE22B76E88A54B34FEC9812B62"
+      },
+      {
+        "path": "../../outputs/00 - START HERE/READ ME FIRST.txt",
+        "bytes": 4049,
+        "sha256": "50CB0ACC97A22DC73FD42B437F5FB6153F4B70EEE012E11E6011162E91C923A9"
+      }
+    ],
+    "replaced_previous_sha256": "1A20D60641D79D7F5CDFDB3DACFC326B14845559E4B400975FFEACA8F6764AB5",
+    "recoverable_previous_handoff": "build/library-handoff-before-0d6dc566d9044333841e7f512fe845e6"
+  },
+  "features": [
+    "Explicit registration of archives, Vaults, Sealed Files and backup repositories",
+    "Stable project and item IDs, assignment, rename and metadata-only removal",
+    "Dated notes and project timeline",
+    "Exact saved snapshot navigation without automatic restore",
+    "Identity-checked relocation and explicit source refresh"
+  ],
+  "privacy": {
+    "catalogue": "Local unencrypted metadata",
+    "protected_contents": "Not decrypted or indexed by Library",
+    "recovery_keys": "Not accepted for registration",
+    "automatic_upload": false,
+    "automatic_capture": false
+  },
+  "unchanged": [
+    "Archive engines and format versions",
+    "Five existing guided walkthroughs",
+    "Installed product identity",
+    "Normal user installation and existing stored data",
+    "Prior release recipes, manifests and artifacts"
+  ],
+  "deferred": [
+    "Calendar integration",
+    "External integration API",
+    "Scheduled or automatic capture",
+    "Dedicated Library guided walkthrough",
+    "Encrypted Library catalogue"
+  ],
+  "new_source_sha256": [
+    {
+      "path": "docs/LIBRARY-BUILD.md",
+      "sha256": "F863B78F66BF02BCE5EF23064AAE1AF775D571357C9EA58230F96DBBEE4710DE"
+    },
+    {
+      "path": "docs/LIBRARY-VALIDATION.md",
+      "sha256": "8A44522899D93DA49D8B942C916F72A78C59868F32BE6118A084BDEFCD61E786"
+    },
+    {
+      "path": "docs/LIBRARY.md",
+      "sha256": "5FF48FDBFF9090AAEC97BEA063036327A8350C8ABA4D0BCD43EB51ABA94BA45B"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-INSTALLER.txt",
+      "sha256": "DC076589B4F11802C7538471A9E4A4D08EB2F8515D255D3EED7FD6F6884FFEA4"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY.txt",
+      "sha256": "D21140D1EBC6EB83FA715255F2A9FDA9763966AEC3CCEA521C6C84E3551CD4F3"
+    },
+    {
+      "path": "packaging/direct/rat-trap-library.nsi",
+      "sha256": "F30C1AA5C1C4B7CD990C7721B80F83DA606901BBE683778965E171AE4EB2FDB9"
+    },
+    {
+      "path": "rat_trap/library.py",
+      "sha256": "F769862DA324D122F7C240274820AF63E8E2D6067C7A742AD61E7AB6A34BE650"
+    },
+    {
+      "path": "rat_trap/library_app.py",
+      "sha256": "487CC1A32822E618D626DDA227CFE5F55719FDD7B6AF1C6816C80D7B3AC5532F"
+    },
+    {
+      "path": "scripts/build_windows_library.ps1",
+      "sha256": "E80739B1655334046174D20DAB661C3AD2FC00A92DA8A11EA0A31769100E4533"
+    },
+    {
+      "path": "scripts/build_windows_library_installer.ps1",
+      "sha256": "FEB130015458FC3B298CE4CCEEAD6C9D719E5475D095C8B725D4EAAF7B39CD2F"
+    },
+    {
+      "path": "scripts/test_windows_library_installer.ps1",
+      "sha256": "1A10E63C4BE05C9465486B8AD10E77D3FF84D16994E0E832215FFF0C7A91CA7B"
+    },
+    {
+      "path": "tests/test_library.py",
+      "sha256": "21482FC9269CA896C1E5D0690094E36E3F139204616D74BA66C4228952D9CA0D"
+    },
+    {
+      "path": "tests/test_library_app.py",
+      "sha256": "45990CA5634E294E34285F0C358BBD83480135B92CA74750586FF162BB8A477B"
+    },
+    {
+      "path": "windows_library_preview.py",
+      "sha256": "86BD6D6DD2220A893ED716F71623B34CD9D3164AE10210F3D45A636DC78D3463"
+    }
+  ],
+  "published_to_github": false,
+  "installed_for_normal_user": false,
+  "signed": false,
+  "limitations": [
+    "Same-host Windows 10 qualification, not clean-machine/Windows 11 or interactive visual acceptance.",
+    "Not a new compression algorithm or benchmark claim.",
+    "The catalogue is an organiser, not a second copy or integrity guarantee.",
+    "Use copies and retain originals plus an independent backup."
+  ]
+}

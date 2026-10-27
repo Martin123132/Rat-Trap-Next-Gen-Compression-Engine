@@ -1,0 +1,154 @@
+{
+  "schema": "rat-trap-library-restore-release/v1",
+  "stage": "Direct single-file restore from Library",
+  "application_version": "5.7.0-desktop-preview.2-library.4",
+  "installer_version": "5.7.0.10",
+  "engine_version": "5.7.0",
+  "publisher": "TWO HANDS NETWORK LTD",
+  "app_key": "TwoHandsNetwork.RatTrap.DesktopPreview2",
+  "signed": false,
+  "published_to_remote": false,
+  "normal_user_app_installed": false,
+  "qualification_completed_utc": "2026-10-21T01:11:58.289Z",
+  "artifacts": [
+    {
+      "path": "dist/library-restore-1a15bf2009e/Rat-Trap-Desktop-Preview-2.exe",
+      "bytes": 19310184,
+      "sha256": "D16DFA37149581CD3FA186717DCB757400C478118440C1E491D068E320249A7D"
+    },
+    {
+      "path": "dist/library-restore-1a15bf2009e/BUILD-MANIFEST.json",
+      "bytes": 25421,
+      "sha256": "3CEE336BBB83F22088F6FFFCE243E1436D6B4D7E042B2FB1A0F6B9DC61DA6FF6"
+    },
+    {
+      "path": "dist/library-installer-restore-1a15bf2009e/Rat-Trap-Library-Restore-Windows-x64-setup.exe",
+      "bytes": 19160316,
+      "sha256": "BAE09E42C3EE2555361798A92A14479C1C6D6458C1E8DF82DA6D1AA24828CC91"
+    }
+  ],
+  "source_checks": [
+    {
+      "scope": "full regression discovery",
+      "tests": 638,
+      "passed": 637,
+      "skipped": 1,
+      "seconds": 1055.156,
+      "local_log": "build/restore-1a15bf2009e-regression.log"
+    },
+    {
+      "scope": "direct restore backend and Library interface",
+      "tests": 72,
+      "passed": 72,
+      "skipped": 0,
+      "seconds": 193.624
+    }
+  ],
+  "skip_reason": "Native Windows symbolic-link creation permission unavailable; separately confirmed by focused probe.",
+  "packaged_self_tests": [
+    "--self-test",
+    "--ui-self-test",
+    "--tutorial-self-test",
+    "--library-self-test",
+    "--store-folder-self-test",
+    "--library-search-self-test",
+    "--library-restore-self-test"
+  ],
+  "source_hashes_verified": 37,
+  "installer_qualification": {
+    "upgrade_from": "5.7.0.9",
+    "upgrade_to": "5.7.0.10",
+    "checks": 228,
+    "failed": 0,
+    "cleanup_errors": 0,
+    "raw_local_report": "build/library-qa/fa2b032021b548faa954b12964e5e75b/lifecycle-report.json",
+    "raw_local_report_sha256": "B9C77737BE0DEB4D48A6C462FDC082020E11849471AC10FA0CB682B5E05A5EAA",
+    "sanitized_report": "packaging/direct/qa-results-library-restore.json"
+  },
+  "sources": [
+    {
+      "path": "rat_trap/library.py",
+      "sha256": "D5EC85778C8134E874C8376776BDC774211A0ECFA9C05DA39D460FDAB106E823"
+    },
+    {
+      "path": "rat_trap/library_app.py",
+      "sha256": "2C15376E3B43F4147C3D5CD13BE03E483DC4E0DF688F0C59E6BE227BB570023F"
+    },
+    {
+      "path": "rat_trap/library_restore.py",
+      "sha256": "B70D56E365AD1916F2C18A667DD9444584A13ECEA2C94303C0F02F86EF9E3EE8"
+    },
+    {
+      "path": "rat_trap/library_search.py",
+      "sha256": "FDF34F286D869B25B21D1E9890C1BB5ED9C846D4C8B037C34CE5A136B30EA6D9"
+    },
+    {
+      "path": "rat_trap/repository_engine.py",
+      "sha256": "255626945D9D87CB634C47FB0F7B3142E25F52931A536454E561F26620C25B36"
+    },
+    {
+      "path": "rat_trap/vault_engine.py",
+      "sha256": "F7018AA08AF1449DA069C31CC9298D67A0262842F6B4D09AC879C8AC0FC869BF"
+    },
+    {
+      "path": "tests/test_library_restore.py",
+      "sha256": "C56DDE302820924864FAD26359CEB870D85FA0FBA9C539E3768DFF23BFC98FE2"
+    },
+    {
+      "path": "tests/test_library_app.py",
+      "sha256": "6C77F003D3780AEFDBDCDEAAC4F49E493B76A153BDD3F8D4984A6805A5D9B9BA"
+    },
+    {
+      "path": "docs/LIBRARY-RESTORE.md",
+      "sha256": "1BB0972F002368EEDE6901FC248DE0117C056CEFEA0BA49A5B69691BADB18616"
+    },
+    {
+      "path": "docs/LIBRARY-RESTORE-VALIDATION.md",
+      "sha256": "CB3C5B52442D91F71260FA07B21CDC9AABB29CD0FE8E9C88C82A9FC43920EE4D"
+    },
+    {
+      "path": "scripts/build_windows_library_restore.ps1",
+      "sha256": "6BBDE46BFB1F589C907F13974F2E69D5C2254F71EA4C13770EBBB9C7E314821F"
+    },
+    {
+      "path": "scripts/build_windows_library_restore_installer.ps1",
+      "sha256": "38F475594FCADD5994601EB5DEBECD660572E8735CC9978386773C97C8E99458"
+    },
+    {
+      "path": "scripts/test_windows_library_restore_installer.ps1",
+      "sha256": "937594EC2AF32CF1CB85A3F572D52B61B0FE84CD329BA4602B3ABF6E5E8680F9"
+    },
+    {
+      "path": "packaging/direct/rat-trap-library-restore.nsi",
+      "sha256": "ADE88AF52231A5E45C157A6F8CEBFAA9469213B9C9C1A55B71CE689CE3490C46"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-RESTORE.txt",
+      "sha256": "2D4ED9FB018A739E955FBBC50EC0FC72D20882837F49E54EBCAD0D9C67D37F5D"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-RESTORE-INSTALLER.txt",
+      "sha256": "9E67DFDA12F17AF22B455989F11272F979BC1D93F94A9D13D0C26EEA54884292"
+    },
+    {
+      "path": "packaging/direct/qa-results-library-restore.json",
+      "sha256": "BF20B6A361845D0F5F503F0B014E345A7B4DB0AAE36059F191F63CB44240DB01"
+    }
+  ],
+  "handoff": {
+    "workspace_path": "outputs/00 - START HERE/Install Rat-Trap.exe",
+    "version": "5.7.0.10",
+    "sha256": "BAE09E42C3EE2555361798A92A14479C1C6D6458C1E8DF82DA6D1AA24828CC91",
+    "previous_version": "5.7.0.9",
+    "previous_installer_sha256": "06BED8BAB330D0DB9F068F51578FBD93C5D3B345B8A1AD1D2FF0C43499E2D842",
+    "previous_handoff_backup": "build/library-restore-handoff-before-5.7.0.10-1a15bf2009e"
+  },
+  "limitations": [
+    "Unsigned local preview; not Microsoft Store approval or independent security audit.",
+    "Same-host Windows 10 build 19045 / PowerShell 7.6.5, not clean-VM or Windows 11 qualification.",
+    "Individual unencrypted Vault or exact backup-snapshot files only; no batch restore or existing-folder merges.",
+    "Checksums verify selected restored data, not every file in the containing archive/repository.",
+    "Plaintext restored files and local timeline receipts; temporary data is not securely erased.",
+    "Windows no-replace publication; no atomic live-source filesystem snapshot or same-account adversary guarantee."
+  ]
+}

@@ -480,11 +480,11 @@ def create_vault(
             pass
 
 
-def _open_readonly(path: Path) -> sqlite3.Connection:
+def _open_readonly(path: Path, *, immutable: bool = False) -> sqlite3.Connection:
     path = path.resolve()
     if not path.is_file():
         raise ValueError(f"Vault '{path}' not found")
-    connection = sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
+    connection = sqlite3.connect(f"{path.as_uri()}?mode=ro" + ("&immutable=1" if immutable else ""), uri=True)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA query_only = ON")
     connection.execute("PRAGMA foreign_keys = ON")
@@ -743,6 +743,7 @@ def _stream_file(
     *,
     max_chunk_size: int,
     collect_limit: int = 0,
+    checkpoint=None,
 ) -> bytes:
     decompressor = zstd.ZstdDecompressor()
     file_digest = hashlib.sha256()
@@ -757,6 +758,8 @@ def _stream_file(
     )
     chunk_count = 0
     for row in rows:
+        if checkpoint is not None:
+            checkpoint()
         if int(row["ordinal"]) != chunk_count:
             raise ValueError(f"Vault file has invalid chunk ordering: {vault_file.path!r}")
         if row["compressor"] != "zstd":
@@ -832,12 +835,18 @@ def extract_vault(
     output_dir: Path,
     *,
     paths: Optional[Sequence[str]] = None,
+    immutable: bool = False,
 ) -> VaultMetadata:
+    """Extract selected members, or all files.
+
+    ``immutable`` is for callers that have checked source identity and refused
+    active SQLite sidecars/writers. Ordinary callers retain read-only mode.
+    """
     archive = Path(archive).resolve()
     output_dir = Path(output_dir)
     selected = None if paths is None else {_normalise_member_path(path).as_posix() for path in paths}
 
-    with closing(_open_readonly(archive)) as connection:
+    with closing(_open_readonly(archive, immutable=immutable)) as connection:
         metadata = _load_metadata(connection)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_dir = output_dir.resolve()
@@ -951,8 +960,9 @@ def export_zip(archive: Path, output_zip: Path) -> VaultMetadata:
             pass
 
 
-def verify_vault(archive: Path) -> VaultMetadata:
-    with closing(_open_readonly(Path(archive))) as connection:
+def verify_vault(archive: Path, *, immutable: bool = False, checkpoint=None) -> VaultMetadata:
+    """Verify stored file data; immutable is for prechecked, idle sources."""
+    with closing(_open_readonly(Path(archive), immutable=immutable)) as connection:
         metadata = _load_metadata(connection)
         result = connection.execute("PRAGMA integrity_check").fetchone()[0]
         if result != "ok":
@@ -960,12 +970,15 @@ def verify_vault(archive: Path) -> VaultMetadata:
         file_count = 0
         total_bytes = 0
         for row in connection.execute("SELECT * FROM files ORDER BY id"):
+            if checkpoint is not None:
+                checkpoint()
             vault_file = _row_to_file(row)
             _stream_file(
                 connection,
                 vault_file,
                 _NullWriter(),
                 max_chunk_size=metadata.chunk_size,
+                checkpoint=checkpoint,
             )
             file_count += 1
             total_bytes += vault_file.size

@@ -979,6 +979,7 @@ def _load_pack_index(
     config: dict[str, object],
     *,
     full: bool = False,
+    checkpoint=None,
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
     with closing(_open_sqlite_readonly(path, immutable=True)) as connection:
         try:
@@ -1028,6 +1029,8 @@ def _load_pack_index(
         stored_bytes = 0
         decompressor = zstd.ZstdDecompressor()
         for row in object_rows:
+            if checkpoint is not None:
+                checkpoint()
             item = dict(row)
             object_id = item.get("object_id")
             raw_size = item.get("raw_size")
@@ -2632,6 +2635,7 @@ def init_repository(
     chunk_avg: int = DEFAULT_CHUNK_AVG,
     chunk_max: int = DEFAULT_CHUNK_MAX,
     zstd_level: int = DEFAULT_ZSTD_LEVEL,
+    require_new: bool = False,
 ) -> RepositoryInfo:
     root = Path(repository).resolve()
     _validate_chunking(chunk_min, chunk_avg, chunk_max)
@@ -2640,6 +2644,8 @@ def init_repository(
     if root.exists() and not root.is_dir():
         raise RepositoryError(f"Repository path is not a folder: {root}")
     if (root / _CONFIG_NAME).exists():
+        if require_new:
+            raise RepositoryError("A repository appeared at the new destination; review it before using it")
         config = _load_config(root)
         with _repository_lock(root):
             config = _load_config(root)
@@ -2672,6 +2678,8 @@ def init_repository(
         # acquired the lifecycle lock. Reuse its durable identity and never
         # overwrite it with a losing process's configuration.
         if (root / _CONFIG_NAME).exists():
+            if require_new:
+                raise RepositoryError("A repository appeared at the new destination; review it before using it")
             config = _load_config(root)
             _validate_requested_repository_settings(
                 config,
@@ -2802,6 +2810,7 @@ def create_snapshot(
     label: str = "",
     restart: bool = False,
     progress: Optional[Callable[[dict[str, object]], None]] = None,
+    preflight: Optional[Callable[[], None]] = None,
 ) -> SnapshotInfo:
     root = Path(repository).resolve()
     source_argument = Path(source)
@@ -2817,6 +2826,12 @@ def create_snapshot(
         raise RepositoryError("Repository and source folders must not overlap")
     source_id = _source_id(source)
     with _repository_lock(root):
+        # Saved plans pin their source/destination and refuse pending work
+        # here, before cache updates or automatic recovery. Other callers
+        # retain the existing behaviour when no preflight is supplied.
+        if preflight is not None:
+            preflight()
+            config = _load_config(root)
         _ensure_catalog_locked(root, config)
         recovered = _recover_ready_jobs_locked(root, config)
         if source_id in recovered:
@@ -3195,7 +3210,21 @@ def restore_snapshot(
     repository: Path,
     snapshot_id: str,
     destination: Path,
+    *,
+    paths: Optional[Sequence[str]] = None,
+    expected_manifest_sha256: Optional[str] = None,
 ) -> RestoreResult:
+    """Restore a whole snapshot, or explicitly selected files, to a new folder.
+
+    Selected paths are exact file paths, never directory prefixes/globs. A
+    manifest pin lets discovery callers refuse a changed snapshot identity.
+    Existing whole-snapshot callers retain their original behavior.
+    """
+    if paths is not None and (isinstance(paths, (str, bytes)) or not paths or len(paths) > 10000):
+        raise RepositoryError("Select between 1 and 10000 exact file paths")
+    selected = None if paths is None else {_normalise_stored_path(path) for path in paths}
+    if expected_manifest_sha256 is not None and not _is_hex(expected_manifest_sha256, 64):
+        raise RepositoryError("Expected snapshot checksum is invalid")
     root = Path(repository).resolve()
     destination = Path(destination).resolve()
     config = _load_config(root)
@@ -3219,12 +3248,21 @@ def restore_snapshot(
             _recover_ready_jobs_locked(root, config)
             _ensure_catalog_locked(root, config)
             manifest = _snapshot_manifest_locked(root, config, snapshot_id)
+            if expected_manifest_sha256 is not None and _manifest_hash(manifest) != expected_manifest_sha256:
+                raise RepositoryError("The exact requested snapshot has changed; no replacement version was restored")
             entries = manifest["entries"]
             assert isinstance(entries, list)
             directories = [
                 entry for entry in entries if entry["kind"] == "directory"
             ]
             files = [entry for entry in entries if entry["kind"] == "file"]
+            if selected is not None:
+                files = [entry for entry in files if entry["path"] in selected]
+                if {entry["path"] for entry in files} != selected:
+                    raise RepositoryError("One or more selected files are absent from this exact snapshot")
+                parents = {parent.as_posix() for path in selected for parent in PurePosixPath(path).parents
+                           if parent.as_posix() != "."}
+                directories = [entry for entry in directories if entry["path"] in parents]
             for entry in directories:
                 _safe_destination(temporary, str(entry["path"])).mkdir(
                     parents=True, exist_ok=False
@@ -3280,14 +3318,12 @@ def restore_snapshot(
                 raise RepositoryError("Restore destination appeared during restore")
             _move_directory_new(temporary, destination)
             published = True
-        inventory = manifest["inventory"]
-        assert isinstance(inventory, dict)
         return RestoreResult(
             snapshot_id=snapshot_id,
             destination=str(destination),
-            file_count=int(inventory["file_count"]),
-            directory_count=int(inventory["directory_count"]),
-            restored_bytes=int(inventory["total_bytes"]),
+            file_count=len(files),
+            directory_count=len(directories),
+            restored_bytes=sum(int(entry["size"]) for entry in files),
         )
     finally:
         if not published:

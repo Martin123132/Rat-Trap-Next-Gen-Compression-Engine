@@ -1,0 +1,152 @@
+{
+  "schema": "rat-trap-library-health-release/v1",
+  "stage": "Read-only Library Health Check for Vaults and versioned backups",
+  "application_version": "5.7.0-desktop-preview.2-library.5",
+  "installer_version": "5.7.0.11",
+  "engine_version": "5.7.0",
+  "publisher": "TWO HANDS NETWORK LTD",
+  "app_key": "TwoHandsNetwork.RatTrap.DesktopPreview2",
+  "signed": false,
+  "published_to_remote": false,
+  "normal_user_app_installed": false,
+  "qualification_completed_utc": "2026-10-21T17:10:36Z",
+  "artifacts": [
+    {
+      "path": "dist/library-health-1a15eedbe87/Rat-Trap-Desktop-Preview-2.exe",
+      "bytes": 19330725,
+      "sha256": "115A4FE42F321F3D4BAB92CA8BB3778249F623807355A71523D389F87B0819A5"
+    },
+    {
+      "path": "dist/library-health-1a15eedbe87/BUILD-MANIFEST.json",
+      "bytes": 25557,
+      "sha256": "D4F646ADDF3C12AF31F5F01706CB013F42BA05BF47910A770CE2AEC6645DF7F2"
+    },
+    {
+      "path": "dist/library-installer-health-1a15eedbe87/Rat-Trap-Library-Health-Windows-x64-setup.exe",
+      "bytes": 19181767,
+      "sha256": "02B2B6A4CA09C30B5F6E4C3F48EDB4198FB8298DE665C7E1AAE6547C4E6BBEEB"
+    }
+  ],
+  "source_checks": [
+    {
+      "scope": "full regression discovery",
+      "tests": 668,
+      "passed": 667,
+      "skipped": 1,
+      "seconds": 623.522,
+      "local_log": "build/health-1a15eedbe87-regression.log"
+    },
+    {
+      "scope": "health-check backend and Library interface",
+      "tests": 78,
+      "passed": 78,
+      "skipped": 0,
+      "seconds": 99.679
+    }
+  ],
+  "skip_reason": "Native Windows symbolic-link creation permission unavailable; non-native path/reparse guard tests ran.",
+  "packaged_self_tests": [
+    "--self-test",
+    "--ui-self-test",
+    "--tutorial-self-test",
+    "--library-self-test",
+    "--store-folder-self-test",
+    "--library-search-self-test",
+    "--library-restore-self-test",
+    "--library-health-self-test"
+  ],
+  "source_hashes_verified": 38,
+  "installer_qualification": {
+    "upgrade_from": "5.7.0.10",
+    "upgrade_to": "5.7.0.11",
+    "checks": 229,
+    "failed": 0,
+    "cleanup_errors": 0,
+    "raw_local_report": "build/library-qa/ca38858cfb234cd7b91f55b09c450c90/lifecycle-report.json",
+    "raw_local_report_sha256": "34002E2756DE20A83E162DFB0BC575E09BDABB3898175AB4B8B7151F7C476BE7",
+    "sanitized_report": "packaging/direct/qa-results-library-health.json"
+  },
+  "sources": [
+    {
+      "path": "rat_trap/library.py",
+      "sha256": "24E041B25559B17FE30D7E21C5EBF752794F41FB2EA790800033F2BA27EAFCCD"
+    },
+    {
+      "path": "rat_trap/library_app.py",
+      "sha256": "959D3B3BB34DEE20EF05A4E09FF88836D8C15F3A46093AA3D92BB389E65BD328"
+    },
+    {
+      "path": "rat_trap/library_health.py",
+      "sha256": "F079936D3C4B9B68E66E1F1958FDBE49B1D8063D5250608BEF21D3881AE0CD9F"
+    },
+    {
+      "path": "rat_trap/repository_engine.py",
+      "sha256": "80BC9752E546F3CAA65379FA4B3A12C3AF13DCCDF50196A06D017948DB80975F"
+    },
+    {
+      "path": "rat_trap/vault_engine.py",
+      "sha256": "5ED9860E2376C6DD997F45F3588F12BA974CDE3AD1760AF4DBB893413DFDC1EC"
+    },
+    {
+      "path": "tests/test_library_health.py",
+      "sha256": "D2D98F83C1ED5FC3614F7BA9B26C7B6E98E0F5FEB01AA306E9D23B8BF7374E03"
+    },
+    {
+      "path": "tests/test_library_app.py",
+      "sha256": "1B44DE75C767725484B93BCAC9B5A6906615A907707EE23032287B9173E85C04"
+    },
+    {
+      "path": "docs/LIBRARY-HEALTH.md",
+      "sha256": "1BCC9AFCB0B26414B0922AC6D731A3673212AEC750952DBD4A88F0D1079E1DA3"
+    },
+    {
+      "path": "docs/LIBRARY-HEALTH-VALIDATION.md",
+      "sha256": "356414C4A25AC9B3402E31838C4E20B5C9B6A053495E5BBFF8F2A4164650C190"
+    },
+    {
+      "path": "scripts/build_windows_library_health.ps1",
+      "sha256": "4147E1B1F1AF4273761AAA5A55F46C6727FA6843B114DA9C9A926564E0BBDEF6"
+    },
+    {
+      "path": "scripts/build_windows_library_health_installer.ps1",
+      "sha256": "C59BFAF8BFF0D961E50106946F7EC2E8FA83C86663368B063DCCE0129BBCE22D"
+    },
+    {
+      "path": "scripts/test_windows_library_health_installer.ps1",
+      "sha256": "063AAAC488C4765C5A121009369BB441D962B414831B285009CF177E661855F8"
+    },
+    {
+      "path": "packaging/direct/rat-trap-library-health.nsi",
+      "sha256": "14A1E902237BC19713618DD876DAA92C3588733265213EBF7C5274E68058B0F9"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-HEALTH.txt",
+      "sha256": "B54DC4A249C9C127DC0795FEEDD30515CB84F44724EC115C85715D76CC3D6157"
+    },
+    {
+      "path": "packaging/direct/README-LIBRARY-HEALTH-INSTALLER.txt",
+      "sha256": "021A9D30210495509BE8F0DD885C51D0A0E0996CAA0F22B3CC4B95DAD96FD3D0"
+    },
+    {
+      "path": "packaging/direct/qa-results-library-health.json",
+      "sha256": "42F31CF8A076F4AA65565B1F26C1B0C6C933E913FC4CCC3641B4DD5B46A7905B"
+    }
+  ],
+  "handoff": {
+    "workspace_path": "outputs/00 - START HERE/Install Rat-Trap.exe",
+    "version": "5.7.0.11",
+    "sha256": "02B2B6A4CA09C30B5F6E4C3F48EDB4198FB8298DE665C7E1AAE6547C4E6BBEEB",
+    "previous_version": "5.7.0.10",
+    "previous_installer_sha256": "BAE09E42C3EE2555361798A92A14479C1C6D6458C1E8DF82DA6D1AA24828CC91",
+    "previous_handoff_backup": "build/library-health-handoff-before-5.7.0.11-1a15eedbe87"
+  },
+  "limitations": [
+    "Unsigned local preview; not Microsoft Store approval or independent security audit.",
+    "Same-host Windows 10 build 19045 / PowerShell 7.6.5, not clean-VM or Windows 11 qualification.",
+    "Unencrypted Vaults and completed versioned backups only; protected contents remain Locked and ordinary archive contents are Not checked.",
+    "Historical manual checks, not continuous monitoring, an independent backup or a restore drill.",
+    "Repository cache, trash, original source folders and search-index semantics are outside the verified scope.",
+    "Plaintext local receipts can contain filenames; no stored-file repair, recovery, pruning, restore, decryption or deletion.",
+    "Bounded preview resources and cooperative cancellation; no live-source filesystem snapshot or same-account adversary guarantee."
+  ]
+}

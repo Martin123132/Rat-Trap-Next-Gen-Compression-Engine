@@ -8,27 +8,44 @@ historical results remain part of the record.
 
 ## Current application and qualification
 
-The latest recorded guided application is
-**`5.7.0-desktop-preview.2-tutorial.4`**, with numeric application/installer
-version **`5.7.0.6`** and base engine version **`5.7.0`**. Its installed product
+The latest recorded Library application is
+**`5.7.0-desktop-preview.2-library.6`**, with numeric application/installer
+version **`5.7.0.12`** and base engine version **`5.7.0`**. Its installed product
 name remains **Rat-Trap Desktop Preview 2**, published by
 **TWO HANDS NETWORK LTD**. These identify different layers of the same current
 application, not three different downloads.
 
-The [guided-history release record](../release-manifests/guided-history.json)
-identifies the exact application and installer hashes, build inputs, runtime,
-dependency versions and qualification on 6 September 2026. The
-[sanitized installer QA record](../packaging/direct/qa-results-guided-history.json)
+The [Library plans release record](../release-manifests/library-plans.json)
+identifies the application and original local installer hashes, build inputs,
+runtime, dependency versions and qualification on 21 October 2026. The public
+installer uses the same application but was rebuilt with an uninstall-shortcut
+safeguard; its exact hash and separate qualification are in the
+[public release notes](releases/5.7.0-preview.12.md). The
+[sanitized installer QA record](../packaging/direct/qa-results-library-plans.json)
 contains the individual lifecycle checks. The recorded results are:
 
-- 488 source tests passed, with no failures or skips. Two disjoint partitions
-  covered every discovered test identifier once.
-- Three packaged self-test entry points passed and passed again on the
+- 704 source tests ran: 703 passed and one was skipped because native Windows
+  symbolic-link creation permission was unavailable.
+- Nine packaged self-test entry points passed and passed again on the
   isolated installed application.
-- 224 installer lifecycle checks passed, with no cleanup errors, including
-  the specific `5.7.0.5` to `5.7.0.6` upgrade under a fresh QA identity.
+- 230 installer lifecycle checks passed, with no cleanup errors, including
+  the specific `5.7.0.11` to `5.7.0.12` upgrade under a fresh QA identity.
 - All five guided practices are available: Vault search, folder compression,
   archive restoration, file protection/recovery and backup history.
+- Library adds project organisation, timeline, cross-Library filename search,
+  supported single-file restore, manual storage health checks and saved manual
+  backup plans. See the [Library guide](LIBRARY.md) and
+  [plan validation](LIBRARY-PLANS-VALIDATION.md).
+
+Separate [public-installer validation](releases/5.7.0-preview.12-validation.md)
+records 243 passing checks for an isolated QA build of the rebuilt Setup recipe
+and the earlier intermittent shortcut-removal failure, including its repeat.
+It covers the specific public
+`5.7.0.6` to `5.7.0.12` path under an isolated QA identity.
+
+The previous publicly released `5.7.0.6` qualification remains in the
+[guided-history record](../release-manifests/guided-history.json) and its
+[installer QA record](../packaging/direct/qa-results-guided-history.json).
 
 These are functional and release-qualification results, **not competitive
 compression benchmarks, independent security certification or a guarantee of
@@ -63,7 +80,8 @@ fixtures and frozen evidence JSON are exempted from Git text conversion.
 | Individual Sealed File | `.rtsf` profile 1; [Sealed File implementation](../rat_trap/sealed_file.py) | One opaque encrypted file containing one original, with its own `.rtrk` recovery key | Copy-only protection; does not remove the source or force every file on the computer to use Rat-Trap |
 
 The current Windows entry point is
-[`windows_guided_preview.py`](../windows_guided_preview.py).
+[`windows_library_preview.py`](../windows_library_preview.py), which adds
+the Library workspace through [`library_app.py`](../rat_trap/library_app.py).
 [`guided_app.py`](../rat_trap/guided_app.py) adds safe fictional practices to
 the existing desktop and Windows workflow layers. The tutorial wrappers use
 the production engines; they do not replace them with simulated results.
@@ -118,6 +136,18 @@ an explicit preview/apply plan and recoverable trash; moving data to trash
 does not free disk space. Pack compaction and permanent trash expiry are not
 implemented.
 
+**Library.** Its schema-v1 local catalogue contains unencrypted project names,
+storage identities and locations, notes, health receipts and explicitly saved
+backup-plan source paths. It is not another copy of the files. Library-wide
+search does not automatically unlock protected content. Direct Library restore
+currently covers one file from an unencrypted Vault or an exact backup
+snapshot, into a new destination. The manual health check covers supported
+Vaults and completed versioned backups, not the backup cache, trash, original
+source folders or locked contents. Results are historical, not continuous
+monitoring. Saved backup plans run only on explicit confirmation; there is no
+background scheduler or automatic retention. See [health scope](LIBRARY-HEALTH.md),
+[direct restore](LIBRARY-RESTORE.md) and [saved plans](LIBRARY-PLANS.md).
+
 **Protection.** Live repositories and ordinary unencrypted archives are not
 authenticated-encryption containers. Hash checks alone are not authentication
 against an attacker able to rewrite the archive or repository. Protected
@@ -150,7 +180,8 @@ product claims trace back to this complete evidence.
 | July 2026 Rat-Trap 4.4 engine selection | Seven isolated diagnostic categories, then three application profiles on a 464-file, 36,991,791-byte folder | Accepted archive runs required exact restoration. The compact corpus deliberately includes a large exact-duplicate fixture; aggregate ratios are not representative of every folder |
 | Rat-Trap 5.0 Vault validation | Search-only Vault size, indexing, queries, verification, extraction and export on the corrected corpus | A separately useful search/storage tradeoff, not a smaller-container claim than the Balanced archive |
 | Rat-Trap 5.1 Structured Vault validation | Typed sources/rows, filters, SQL and exact restoration on the same corpus | Additional relational representation increases size. Query timings and limits belong to this dataset and implementation |
-| Rat-Trap 5.7 plus guided tutorial.4 qualification | Source tests, compatibility/safety workflows, packaged self-tests and installer lifecycle | Current functional evidence, not a new compression or competitor benchmark matrix |
+| Rat-Trap 5.7 guided tutorial.4 qualification | Source tests, compatibility/safety workflows, packaged self-tests and installer lifecycle | Historical functional evidence, not a new compression or competitor benchmark matrix |
+| Rat-Trap 5.7 Library plans qualification | Source and focused tests, packaged self-tests and installer lifecycle | Current functional evidence, not a new compression or competitor benchmark matrix |
 
 For example, the historical 4.4 Balanced profile stored 36,991,791 source
 bytes in 12,224,927 archive bytes: **66.95% saved on that exact corpus**.
@@ -232,7 +263,7 @@ From a fresh checkout in PowerShell, using that Python runtime:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-build-5.7.0.txt
-.\.venv\Scripts\python.exe windows_guided_preview.py
+.\.venv\Scripts\python.exe windows_library_preview.py
 ```
 
 The following commands run against the source checkout without requiring the
@@ -241,39 +272,38 @@ CLI package to be installed:
 ```powershell
 .\.venv\Scripts\python.exe -m rat_trap.cli --help
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe windows_guided_preview.py --self-test
-.\.venv\Scripts\python.exe windows_guided_preview.py --ui-self-test
-.\.venv\Scripts\python.exe windows_guided_preview.py --tutorial-self-test
+.\.venv\Scripts\python.exe windows_library_preview.py --self-test
+.\.venv\Scripts\python.exe windows_library_preview.py --ui-self-test
+.\.venv\Scripts\python.exe windows_library_preview.py --tutorial-self-test
+.\.venv\Scripts\python.exe windows_library_preview.py --backup-plans-self-test
 ```
 
 Tests create temporary fictional fixtures, including intentionally corrupted
 archives. Windows- and Tk-dependent tests need an appropriate Windows desktop
 session; a headless or other-platform run is not equivalent to the recorded
 Windows qualification. Do not point destructive test fixtures at personal
-data. The `--ui-self-test` and `--tutorial-self-test` guided entry points share
-the tutorial harness; their separate invocation is not two independent test
-implementations.
+data. The `--ui-self-test` and `--library-self-test` modes share the Library
+UI harness; their separate invocation is not two independent test implementations.
 
 ### Windows packaging is a separate release operation
 
-The existing [guided application builder](../scripts/build_windows_guided_history.ps1),
-[installer builder](../scripts/build_windows_guided_history_installer.ps1) and
-[installer lifecycle harness](../scripts/test_windows_guided_history_installer.ps1)
-preserve and verify frozen prior-release evidence. They require **Windows
-PowerShell 5.1**, the exact environment above, recorded historical artifacts
-and, for Setup, the pinned NSIS compiler. They intentionally fail when those
-inputs are missing. A plain source clone does not contain all private
-`build/` and `dist/` prerequisites, so these are not advertised as a one-command
-clean-checkout release build.
+The [Library plans application builder](../scripts/build_windows_library_plans.ps1)
+and [installer builder](../scripts/build_windows_library_plans_installer.ps1)
+use the pinned environment above and, for Setup, the pinned NSIS compiler.
+The separate [installer lifecycle harness](../scripts/test_windows_library_plans_installer.ps1)
+requires recorded previous-release artifacts. It intentionally fails when those
+inputs are missing. A plain source clone does not contain the historical
+`build/` and `dist/` qualification inputs; byte-for-byte reproducible
+clean-checkout installer builds are not claimed.
 
-Within a complete release workspace, the
-[guided-history build instructions](GUIDED-HISTORY-LESSON.md) use fresh output
+Within a prepared release workspace, the
+[Library plans build instructions](LIBRARY-PLANS.md#build-and-test) use fresh output
 directories and record payload/source hashes. The lifecycle harness installs
 and removes a fresh **QA** product identity; it is not a read-only unit test
 and must be run deliberately. It does not install or remove the normal user
 application. The older root `build_windows.ps1` targets the base Windows
-interface, not the current guided entry point. Do not confuse that output
-with the qualified guided installer.
+interface, not the current Library entry point. Do not confuse that output
+with the qualified Library installer.
 
 ## Earlier release gates and ownership
 

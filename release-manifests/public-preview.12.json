@@ -1,0 +1,101 @@
+{
+  "schema": "rat-trap-public-preview-release/v1",
+  "tag": "v5.7.0-preview.12",
+  "publisher": "TWO HANDS NETWORK LTD",
+  "application_version": "5.7.0-desktop-preview.2-library.6",
+  "installer_version": "5.7.0.12",
+  "base_engine_version": "5.7.0",
+  "signed": false,
+  "prerelease": true,
+  "qualification_completed_utc": "2026-10-27T22:31:35Z",
+  "application": {
+    "path": "dist/library-plans-1a15fe5adce/Rat-Trap-Desktop-Preview-2.exe",
+    "bytes": 19353572,
+    "sha256": "DE53C59C35ABDA56C7CBCB28490597084F954F31E3A06283B80240B855332FD6"
+  },
+  "installer": {
+    "local_path": "dist/library-installer-public-20261027/Rat-Trap-Library-Public-Windows-x64-setup.exe",
+    "public_asset": "Rat-Trap-Windows-x64-setup.exe",
+    "bytes": 19206173,
+    "sha256": "DA03D4BB04EE3389D23D0D5DA58AE8EFD5352915925F12039E41A8607E8256A4",
+    "description": "Rebuilt installer with shortcut-uninstall safeguard; application payload is unchanged."
+  },
+  "previous_local_installer_sha256": "83A5FAF6B5D7CE823E4C5A9BE290A709719B1E2288BF8153A0C6CCE060B18394",
+  "qualification": {
+    "source_regression": {
+      "tests": 704,
+      "passed": 703,
+      "skipped": 1,
+      "seconds": 622.165,
+      "record": "release-manifests/library-plans.json"
+    },
+    "focused_rerun": {
+      "tests": 36,
+      "passed": 36,
+      "skipped": 0,
+      "seconds": 36.457
+    },
+    "public_upgrade_fixed_installer": {
+      "from": "5.7.0.6",
+      "to": "5.7.0.12",
+      "checks": 243,
+      "failed": 0,
+      "cleanup_errors": 0,
+      "qa_installer_sha256": "CA5C6AE1DE4A8BFD82D5CCC7A36980778EBEC50F520E71BB7578E3DCB68D620C",
+      "sanitized_report": "packaging/direct/qa-results-public-preview12-fixed.json",
+      "raw_local_report_sha256": "C41B44BE1AEA62A8BED873127EB3F61225A851F17368903F1AF49242F3B2ECA3"
+    },
+    "initial_original_installer_diagnostic": {
+      "checks": 185,
+      "failed": 1,
+      "failure": "Generated QA Start-menu shortcut remained after uninstall; immediate cause not established.",
+      "sanitized_report": "packaging/direct/qa-results-public-preview12-initial.json"
+    },
+    "repeat_original_installer_diagnostic": {
+      "checks": 230,
+      "failed": 0,
+      "sanitized_report": "packaging/direct/qa-results-public-preview12-original-repeat.json"
+    }
+  },
+  "sources": [
+    {
+      "path": "packaging/direct/rat-trap-library-public.nsi",
+      "sha256": "52CEAAAC293D09008E50700EF693128F909E4C41376A0AFACD4478E9D178359D"
+    },
+    {
+      "path": "scripts/build_windows_library_public_installer.ps1",
+      "sha256": "6BFA88AA0EEB3FADA0B0FC68D413DD4767CA9B838E05F709EBD5EF5B961FB986"
+    },
+    {
+      "path": "scripts/test_windows_public_library_installer.ps1",
+      "sha256": "0C2148655CFECCA86A1505AD2650D9E20E68E6431C7A733DFD715CCABA834466"
+    },
+    {
+      "path": "scripts/test_windows_public_library_fixed_installer.ps1",
+      "sha256": "CF25C57C2B6FD65FF5028C18FC204BAF24A688B51098FE8D63C06DB23C16CDE3"
+    },
+    {
+      "path": "packaging/direct/qa-results-public-preview12-initial.json",
+      "sha256": "F3921D9701EEFDD6484D03E31025CF073AEC47744FF3C3CE9351ADA33A4E9DB1"
+    },
+    {
+      "path": "packaging/direct/qa-results-public-preview12-original-repeat.json",
+      "sha256": "8AB241EFD27B659748F661F1C4C6D80AA3551C527C1161326F37F54FC22FF312"
+    },
+    {
+      "path": "packaging/direct/qa-results-public-preview12-fixed.json",
+      "sha256": "B67C1440A667617A6816D3F13B3687877A2357CC5862A19D73D2C037106AD5A1"
+    },
+    {
+      "path": "docs/releases/5.7.0-preview.12-validation.md",
+      "sha256": "93C11282B97624C90910E765B772ECFF61278E605145E786811F9D703A05BEFE"
+    }
+  ],
+  "limitations": [
+    "Unsigned local-development-host qualification; not independent security certification, clean Windows 11 acceptance or Microsoft Store approval.",
+    "QA installers use separate test identities and are not byte-identical to the public installer.",
+    "Manual backup plans only; live versioned backup repositories and local Library metadata are not encrypted.",
+    "The first diagnostic left a generated QA shortcut despite the harness reporting no cleanup errors; later isolated runs completed their checks.",
+    "This is not a new competitive compression benchmark."
+  ]
+}

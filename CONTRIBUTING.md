@@ -1,6 +1,6 @@
 # Run from source and contribute
 
-Rat-Trap's current Windows entry point is `windows_guided_preview.py`.
+Rat-Trap's current Windows entry point is `windows_library_preview.py`.
 The [Windows installer](docs/WINDOWS.md) is for people who just want the app;
 these instructions are for source users and contributors.
 
@@ -16,7 +16,7 @@ From the repository root in PowerShell:
 ```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-build-5.7.0.txt
-.\.venv\Scripts\python.exe windows_guided_preview.py
+.\.venv\Scripts\python.exe windows_library_preview.py
 .\.venv\Scripts\python.exe -m rat_trap.cli --help
 ```
 
@@ -29,9 +29,11 @@ installation. To install the CLI into your virtual environment, use
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe windows_guided_preview.py --self-test
-.\.venv\Scripts\python.exe windows_guided_preview.py --ui-self-test
-.\.venv\Scripts\python.exe windows_guided_preview.py --tutorial-self-test
+.\.venv\Scripts\python.exe windows_library_preview.py --self-test
+.\.venv\Scripts\python.exe windows_library_preview.py --ui-self-test
+.\.venv\Scripts\python.exe windows_library_preview.py --tutorial-self-test
+.\.venv\Scripts\python.exe windows_library_preview.py --library-self-test
+.\.venv\Scripts\python.exe windows_library_preview.py --backup-plans-self-test
 ```
 
 Windows/Tk tests require an appropriate desktop session; a headless run is
@@ -48,7 +50,7 @@ outside a public clone.
 ## Find the right files
 
 - `rat_trap/`: current engines, interfaces and tutorial implementations.
-- `windows_guided_preview.py`: current desktop entry point.
+- `windows_library_preview.py`: current desktop entry point.
 - `tests/`: functional, format, safety, UI and packaging checks.
 - `docs/TECHNICAL.md`: formats, limitations and complete evidence navigation.
 - `benchmarks/`: measurement tools and published historical results.
